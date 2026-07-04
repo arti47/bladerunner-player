@@ -1,0 +1,27 @@
+{
+  "rules": {
+    "campaigns": {
+      "$cid": {
+        ".read": "auth != null && data.child('members').child(auth.uid).exists()",
+        "meta": { ".write": "auth != null && (!data.exists() || data.parent().child('members').child(auth.uid).child('role').val() == 'gm')" },
+        "members": {
+          "$uid": { ".write": "auth != null && ($uid === auth.uid || data.parent().child(auth.uid).child('role').val() == 'gm')" }
+        },
+        "combat": { ".write": "auth != null && root.child('campaigns').child($cid).child('members').child(auth.uid).exists()" },
+        "broadcast": { ".write": "auth != null && root.child('campaigns').child($cid).child('members').child(auth.uid).child('role').val() == 'gm'" }
+      }
+    },
+    "characters": {
+      "$chid": {
+        ".read": "auth != null && (data.child('owner').val() === auth.uid || root.child('campaigns').child(data.child('campaignId').val()).child('members').child(auth.uid).exists())",
+        ".write": "auth != null && (!data.exists() || data.child('owner').val() === auth.uid || newData.child('owner').val() === auth.uid || root.child('campaigns').child(data.child('campaignId').val()).child('members').child(auth.uid).child('role').val() == 'gm')"
+      }
+    },
+    "joinCodes": {
+      ".read": "auth != null",
+      "$code": {
+        ".write": "auth != null && (!data.exists() || root.child('campaigns').child(data.val()).child('members').child(auth.uid).child('role').val() == 'gm')"
+      }
+    }
+  }
+}

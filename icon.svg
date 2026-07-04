@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Blade Runner Player">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10151d"/>
+      <stop offset="1" stop-color="#05070a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.38" r="0.6">
+      <stop offset="0" stop-color="#ffb02e" stop-opacity="0.9"/>
+      <stop offset="0.5" stop-color="#ff4d8d" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#37e2e2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <circle cx="256" cy="196" r="150" fill="url(#glow)"/>
+  <!-- origami-unicorn-inspired abstract mark (generic, no trade dress) -->
+  <path d="M150 300 L256 150 L362 300 L322 300 L256 214 L190 300 Z" fill="#ffb02e"/>
+  <path d="M196 330 L316 330 L296 372 L216 372 Z" fill="#37e2e2"/>
+  <rect x="150" y="392" width="212" height="10" rx="5" fill="#ff4d8d"/>
+</svg>

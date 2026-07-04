@@ -1,0 +1,14 @@
+{
+  "name": "Blade Runner Player",
+  "short_name": "BR Player",
+  "description": "Player companion for the Blade Runner RPG — create characters, track cases, and roll dice.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0d12",
+  "theme_color": "#0a0d12",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

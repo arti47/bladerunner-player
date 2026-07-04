@@ -1,0 +1,19 @@
+# Dependencies (dev-only test harness)
+node_modules/
+
+# OS / editor cruft
+.DS_Store
+
+# Local machine-specific Claude settings (not shared)
+.claude/settings.local.json
+
+# firebase-config.js IS committed for this project (owner opted to ship real keys
+# so multiplayer works on the live site). Firebase web API keys are not classic
+# secrets — access is governed by database.rules.json + auth. Keep those rules
+# locked down. If you fork this and don't want keys public, replace them and set
+# FIREBASE_ENABLED = false.
+
+# Scratch / extraction working files (never committed)
+scratchpad/
+*-raw.txt
+*-clean.txt

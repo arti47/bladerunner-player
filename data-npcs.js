@@ -1,0 +1,72 @@
+// data-npcs.js — Typical NPCs (14)  [Core Rulebook Ch09]
+// Canonical adversary/NPC list for the compendium and the combat tracker.
+// attrs use A–D levels; skills are the notable ones (others default D).
+// health is the listed Health rating. Replicant NPC rule: +1 STR/AGI, +2 Health
+// (already baked where the book lists a Replicant NPC).
+// NPC-build baseline: average human = C in all attributes.
+
+export const NPCS = [
+  { key: "lapd_officer", name: "Uniformed LAPD Officer",
+    attrs: { STR: "B", AGI: "C", INT: "C", EMP: "C" },
+    skills: { hand_to_hand: "C", firearms: "C", driving: "C" },
+    health: 5, gear: ["Police Truncheon", "Police Heavy Duty Street Gear"], nature: "human" },
+  { key: "blade_runner", name: "Blade Runner",
+    attrs: { STR: "B", AGI: "B", INT: "B", EMP: "C" },
+    skills: { hand_to_hand: "C", firearms: "B", stealth: "C", observation: "B", insight: "B", driving: "C" },
+    health: 5, gear: ["PK-D 5223 Blaster"], nature: "human" },
+  { key: "street_urchin", name: "Street Urchin",
+    attrs: { STR: "D", AGI: "B", INT: "C", EMP: "C" },
+    skills: { mobility: "C", stealth: "C" },
+    health: 4, gear: ["Knife"], nature: "human" },
+  { key: "street_thug", name: "Street Thug",
+    attrs: { STR: "B", AGI: "C", INT: "D", EMP: "D" },
+    skills: { hand_to_hand: "C", firearms: "C" },
+    health: 5, gear: ["Knife or Brass Knuckles"], nature: "human" },
+  { key: "street_hustler", name: "Street Hustler",
+    attrs: { STR: "C", AGI: "C", INT: "B", EMP: "B" },
+    skills: { mobility: "C", manipulation: "B" },
+    health: 4, gear: ["Folding Knife"], nature: "human" },
+  { key: "metrokab_driver", name: "Metrokab Driver",
+    attrs: { STR: "C", AGI: "C", INT: "C", EMP: "B" },
+    skills: { observation: "C", insight: "C" },
+    health: 4, gear: ["Metrokab"], nature: "human" },
+  { key: "newsrag_reporter", name: "Newsrag Reporter",
+    attrs: { STR: "C", AGI: "C", INT: "B", EMP: "B" },
+    skills: { observation: "C", manipulation: "C", insight: "B" },
+    health: 4, gear: ["Camera"], nature: "human" },
+  { key: "doxie", name: "Doxie",
+    attrs: { STR: "C", AGI: "B", INT: "C", EMP: "B" },
+    skills: { stealth: "C", manipulation: "B" },
+    health: 5, gear: [], nature: "replicant" },
+  { key: "replicant_sympathizer", name: "Replicant Sympathizer",
+    attrs: { STR: "C", AGI: "B", INT: "C", EMP: "B" },
+    skills: { mobility: "C", stealth: "C" },
+    health: 5, gear: ["Folding Knife"], nature: "human" },
+  { key: "human_supremacist", name: "Human Supremacist",
+    attrs: { STR: "B", AGI: "C", INT: "D", EMP: "D" },
+    skills: { hand_to_hand: "C" },
+    health: 5, gear: ["Club"], nature: "human" },
+  { key: "business_executive", name: "Business Executive",
+    attrs: { STR: "C", AGI: "C", INT: "B", EMP: "B" },
+    skills: { observation: "C", manipulation: "C", insight: "C" },
+    health: 4, gear: [".357 Subcompact"], nature: "human" },
+  { key: "corporate_killer", name: "Corporate Killer",
+    attrs: { STR: "B", AGI: "B", INT: "C", EMP: "D" },
+    skills: { hand_to_hand: "C", firearms: "B", stealth: "C", driving: "C" },
+    health: 5, gear: ["Ender Assault Rifle or PK-D M1887 20 Gauge"], nature: "human" },
+  { key: "lab_technician", name: "Lab Technician",
+    attrs: { STR: "C", AGI: "C", INT: "B", EMP: "C" },
+    skills: { observation: "C", tech: "B" },
+    health: 4, gear: [], nature: "human" },
+  { key: "medical_doctor", name: "Medical Doctor",
+    attrs: { STR: "C", AGI: "C", INT: "B", EMP: "C" },
+    skills: { observation: "C", medical_aid: "B" },
+    health: 4, gear: ["Surgeon's Field Kit"], nature: "human" },
+];
+
+// NPC-build guidance for the GM screen  [Ch09]
+export const NPC_BUILD = {
+  averageHuman: "C in all attributes.",
+  typicalReplicant: "B in Strength and/or Agility.",
+  replicantNpcRule: "Replicant NPC: +1 level to Strength or Agility, and +2 Health.",
+};
