@@ -8,7 +8,7 @@
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import { el, sectionTitle, segmentNav, resultModal, rollLogCard, showToast, promptModal, confirmModal } from "./ui.js";
-import { rollDie, uid, clear } from "./core.js";
+import { rollDie, successesFor, uid, clear } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { RollLog } from "./store.js";
 
@@ -31,6 +31,24 @@ function readSoloState() {
 }
 function writeSoloState(st) { try { localStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch (e) {} }
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// Two-tier roll helpers (Solo Mode oracle procedure): roll D6 to pick a block,
+// then a second die scoped to only that block's entries.
+// Cipher/Location store flat arrays of 3 equal blocks of 12 (D6 1–2/3–4/5–6 → D12).
+function rollColumn(flat) {
+  const d6 = rollDie(6);
+  const bi = d6 <= 2 ? 0 : d6 <= 4 ? 1 : 2;
+  const d = rollDie(12);
+  return { d6, d, entry: flat[bi * 12 + (d - 1)] };
+}
+// Grouped tables carry their own { secondDie, blockRanges, blocks }.
+function rollGrouped(tbl) {
+  const d6 = rollDie(6);
+  const bi = Math.max(0, tbl.blockRanges.findIndex(([lo, hi]) => d6 >= lo && d6 <= hi));
+  const block = tbl.blocks[bi];
+  const d = rollDie(tbl.secondDie);
+  return { d6, d, secondDie: tbl.secondDie, entry: block[Math.min(d, block.length) - 1] };
+}
 
 export function renderSolo(mount, rerender) {
   clear(mount);
@@ -58,6 +76,23 @@ export function renderSolo(mount, rerender) {
     const pinLine = pin || `[${label}] ${text}`;
     record(label, text, pinLine);
     resultModal({ title, pinLine, onPin: pinNote, render });
+  };
+  // Hypothesis Check (Solo Mode): roll the hypothesis's rating dice as Base Dice
+  // (6+ = 1 success, 10+ = 2), no push. ≥2 successes = crit, 1 = success, 0 = fail.
+  const hypothesisCheck = (h) => {
+    const sizes = String(h.die).split("/").map((p) => parseInt(p.replace(/\D/g, ""), 10) || 6);
+    const dice = sizes.map((size) => { const face = rollDie(size); return { size, face, succ: successesFor(face) }; });
+    const succ = dice.reduce((n, d) => n + d.succ, 0);
+    const out = succ >= 2 ? S.HYPOTHESIS_CHECK.crit : succ >= 1 ? S.HYPOTHESIS_CHECK.success : S.HYPOTHESIS_CHECK.failure;
+    const faces = dice.map((d) => `D${d.size}:${d.face}`).join(", ");
+    const ppTxt = `${out.pp > 0 ? "+" : ""}${out.pp} PP`;
+    record("Hypothesis Check", `${faces} · ${out.name} (${ppTxt})`, `[Hypothesis] ${h.text} → ${out.name} (${ppTxt})`);
+    resultModal({ title: "Hypothesis Check", pinLine: `[Hypothesis] ${h.text} → ${out.name} (${ppTxt})`, onPin: pinNote, render: (b) => b.append(
+      el("p", { class: "muted" }, `“${h.text}”`),
+      el("p", { class: "muted small" }, `Rating ${h.die} · rolled ${faces} · ${succ} success${succ === 1 ? "" : "es"}`),
+      el("h3", { class: "roll-result " + (out.pp > 0 ? "roll-result--ok" : "roll-result--warn") }, `${out.name} — ${ppTxt} (if this ends the case)`),
+      el("p", {}, out.text),
+      el("p", { class: "muted small" }, "Cannot be pushed. " + S.HYPOTHESIS_CHECK.convincing)) });
   };
 
   // header + segmented nav
@@ -143,8 +178,32 @@ export function renderSolo(mount, rerender) {
       grid(
         btn("🎲 Scene Category (D12)", () => { const roll = rollDie(12); const res = S.SCENE_CATEGORIES[roll - 1]; show({ label: "Scene Category", text: res.name, pin: `[Scene Category] ${res.name} — ${res.detail}`, title: `Scene Category — ${roll} (D12)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res.name), el("p", {}, res.detail), el("div", { class: "roll-eyebrow" }, "Suggested Skills"), el("p", { class: "muted" }, res.skills.join(", "))) }); }),
         btn("🎲 NPC Skill (D8)", () => { const roll = rollDie(8); const res = lookupRange(S.NPC_SKILL_LEVEL, roll); show({ label: "NPC Skill", text: res.name, pin: `[NPC Skill] ${res.name} (${res.dice})`, title: `NPC Skill Level — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res.name), el("p", { class: "muted" }, `Dice pool: ${res.dice}`)) }); }),
-        btn("🎲 Cipher", () => { const m = pick(S.CIPHER_METHOD), f = pick(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m} × ${f}`, title: "Cipher Oracle", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m} × ${f}`), el("p", { class: "muted roll-center" }, `Method: ${m}  |  Focus: ${f}`)) }); }),
-        btn("🎲 Location", () => { const e = pick(S.LOCATION_ENVIRONMENT), p = pick(S.LOCATION_PLACE); show({ label: "Location", text: `${e} ${p}`, title: "Location Generator", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${e} ${p}`), el("p", { class: "muted roll-center" }, `Environment: ${e}  |  Place: ${p}`)) }); }))));
+        btn("🎲 Cipher", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher Oracle", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); }),
+        btn("🎲 Location", () => { const e = rollColumn(S.LOCATION_ENVIRONMENT), p = rollColumn(S.LOCATION_PLACE); show({ label: "Location", text: `${e.entry} ${p.entry}`, pin: `[Location] ${e.entry} ${p.entry}`, title: "Location Generator", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${e.entry} ${p.entry}`), el("p", { class: "muted roll-center" }, `Environment D6=${e.d6}/D12=${e.d}  |  Place D6=${p.d6}/D12=${p.d}`)) }); }))));
+
+    // Imagining Clues (p.18): Meaning + Evidence Descriptor + Evidence Type.
+    root.append(card("Imagining Clues", "Assemble a clue: what it means, and the evidence itself.",
+      grid(
+        btn("🎲 Meaning (D8)", () => { const r = rollDie(8); const t = S.CLUE_MEANING[r - 1]; show({ label: "Clue Meaning", text: t, pin: `[Meaning] ${t}`, title: `Clue Meaning — ${r} (D8)`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) }); }),
+        btn("🎲 Evidence Descriptor", () => { const g = rollGrouped(S.CLUE_EVIDENCE_DESCRIPTOR); const e = g.entry; show({ label: "Evidence Descriptor", text: `${e.result} — ${e.detail}`, pin: `[Evidence] ${e.result}: ${e.detail}`, title: `Evidence Descriptor — D6=${g.d6}/D10=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, e.result), el("p", { class: "muted" }, e.detail)) }); }),
+        btn("🎲 Evidence Type", () => { const g = rollGrouped(S.CLUE_EVIDENCE_TYPE); show({ label: "Evidence Type", text: g.entry, pin: `[Evidence Type] ${g.entry}`, title: `Evidence Type — D6=${g.d6}/D12=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
+        btn("⚡ Full clue", () => {
+          const m = S.CLUE_MEANING[rollDie(8) - 1];
+          const d = rollGrouped(S.CLUE_EVIDENCE_DESCRIPTOR).entry, t = rollGrouped(S.CLUE_EVIDENCE_TYPE).entry;
+          show({ label: "Clue", text: `${d.result} ${t}`, pin: `[Clue] ${d.result} ${t} — ${d.detail} Meaning: ${m}`, title: "Imagined Clue",
+            render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${d.result} ${t}`), el("p", {}, d.detail), el("div", { class: "roll-eyebrow" }, "Meaning"), el("p", { class: "muted" }, m)) });
+        }, "primary"))));
+
+    // Character / NPC generator (p.19): Sphere + Trait (+ Skill Level).
+    root.append(card("Character (NPC)", "Generate an NPC: their sphere of life and a defining trait.",
+      grid(
+        btn("🎲 Sphere", () => { const g = rollGrouped(S.CHARACTER_SPHERE); show({ label: "Sphere", text: g.entry, pin: `[Sphere] ${g.entry}`, title: `Character Sphere — D6=${g.d6}/D8=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
+        btn("🎲 Trait", () => { const g = rollGrouped(S.CHARACTER_TRAIT); show({ label: "Trait", text: g.entry, pin: `[Trait] ${g.entry}`, title: `Character Trait — D6=${g.d6}/D12=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
+        btn("⚡ Full NPC", () => {
+          const sph = rollGrouped(S.CHARACTER_SPHERE).entry, tr = rollGrouped(S.CHARACTER_TRAIT).entry, sk = lookupRange(S.NPC_SKILL_LEVEL, rollDie(8));
+          show({ label: "NPC", text: `${tr} · ${sph}`, pin: `[NPC] ${tr} character from ${sph}; ${sk.name}`, title: "Generated NPC",
+            render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${tr} · ${sph}`), el("p", {}, `A ${tr.toLowerCase()} character connected to ${sph.toLowerCase()}.`), el("div", { class: "roll-eyebrow" }, "Skill Level"), el("p", { class: "muted" }, `${sk.name} — ${sk.dice}`)) });
+        }, "primary"))));
   }
 
   function panelTrack(root) {
@@ -172,14 +231,14 @@ export function renderSolo(mount, rerender) {
     root.append(timerCard);
 
     // Hypotheses
-    const hypCard = card("Hypothesis Tracker", "Track theories and rating dice. Review at each Shift's end.");
+    const hypCard = card("Hypothesis Tracker", "Track theories and rating dice; review at each Shift's end. Use 🎲 Check to test a hypothesis (rolls its rating; no push).");
     const hypList = el("div", { class: "hyp-list" });
     if (!st.hypotheses.length) hypList.append(el("p", { class: "muted" }, "No active hypotheses."));
     st.hypotheses.forEach((h, i) => {
       const stepHyp = (dir) => { const idx = S.ESCALATION_STEPS.indexOf(h.die) + dir; if (idx >= 0 && idx < S.ESCALATION_STEPS.length) { h.die = S.ESCALATION_STEPS[idx]; writeSoloState(st); rerender(); } };
       hypList.append(el("div", { class: "hyp-row" },
         el("div", { class: "hyp-row__main" }, el("strong", { class: "hyp-row__die" }, `[${h.die}]`), el("span", {}, h.text)),
-        el("div", { class: "btn-row" }, btn("▲", () => stepHyp(1), "sm ghost"), btn("▼", () => stepHyp(-1), "sm ghost"), btn("✕", () => { st.hypotheses.splice(i, 1); writeSoloState(st); rerender(); }, "sm ghost"))));
+        el("div", { class: "btn-row" }, btn("🎲 Check", () => hypothesisCheck(h), "sm"), btn("▲", () => stepHyp(1), "sm ghost"), btn("▼", () => stepHyp(-1), "sm ghost"), btn("✕", () => { st.hypotheses.splice(i, 1); writeSoloState(st); rerender(); }, "sm ghost"))));
     });
     hypCard.append(hypList, btn("＋ Add Hypothesis", async () => { const t = await promptModal("Hypothesis theory / lead", { title: "Add Hypothesis", okLabel: "Add" }); if (t && t.trim()) { st.hypotheses.push({ id: uid(), text: t.trim(), die: "D6" }); writeSoloState(st); rerender(); } }, "sm"));
     root.append(hypCard);

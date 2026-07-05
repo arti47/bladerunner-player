@@ -158,7 +158,9 @@ export const HYPOTHESIS = {
   reviewCadence: "Review at the end of each Shift.",
 };
 
-// Cipher table — roll a Method and/or a Focus (each D6×D12 = 36 words)
+// Cipher table (Solo Mode pp.15–16) — roll a Method and/or a Focus.
+// TWO-TIER roll: D6 picks a block (1–2, 3–4, 5–6), then D12 picks the entry
+// within that block. The flat arrays below are in block order (3 blocks × 12).
 export const CIPHER_METHOD = [
   "Abandon", "Aid", "Attack", "Betray", "Bribe", "Capture", "Change", "Chase", "Command", "Conceal", "Conspire", "Control",
   "Create", "Deceive", "Defy", "Demand", "Destroy", "Discover", "Endure", "Escape", "Fight", "Flee", "Hunt", "Infiltrate",
@@ -170,7 +172,9 @@ export const CIPHER_FOCUS = [
   "Power", "Rebellion", "Secret", "Surveillance", "Technology", "Temptation", "Time", "Trust", "Truth", "Vice", "Victim", "Violence",
 ];
 
-// Location table — roll an Environment and a Place (each 36)
+// Location table (Solo Mode p.20) — roll an Environment and/or a Place.
+// TWO-TIER roll: D6 picks a block (1–2, 3–4, 5–6), then D12 picks the entry.
+// Flat arrays in block order (3 blocks × 12).
 export const LOCATION_ENVIRONMENT = [
   "Abandoned", "Bleak", "Blocked", "Breached", "Chaotic", "Claustrophobic", "Cluttered", "Confined", "Crowded", "Damaged", "Dangerous", "Dark",
   "Decaying", "Empty", "Familiar", "Garish", "Hazy", "Hidden", "Isolated", "Large", "Lavish", "Luxurious", "Maze-like", "Neon-lit",
@@ -181,6 +185,93 @@ export const LOCATION_PLACE = [
   "Facility", "Factory", "Garage", "Headquarters", "Home", "Hospital", "Hotel", "Lab", "Library", "Lobby", "Monument", "Municipal building",
   "Nightclub", "Office", "Restaurant", "Rooftop", "Ruin", "Safehouse", "Shop", "Street", "Transit hub", "Tunnel", "Viaduct", "Warehouse",
 ];
+
+// ---------------------------------------------------------------------------
+// IMAGINING CLUES  [Solo Mode p.18] — assemble a clue from three tables.
+// ---------------------------------------------------------------------------
+// Clue Table 1: Meaning — D8 (flat).
+export const CLUE_MEANING = [
+  "Involves your personal experiences or memories",
+  "Contradicts a previous fact or clue",
+  "Affirms a previous fact or clue",
+  "Connects to a known location",
+  "Connects to a new location",
+  "Connects to a known person",
+  "Connects to an unknown or mysterious person",
+  "Is mysterious, but intriguing",
+];
+// Clue Table 2: Evidence Descriptor — TWO-TIER: D6 block (1–3, 4–6) then D10.
+export const CLUE_EVIDENCE_DESCRIPTOR = {
+  secondDie: 10, blockRanges: [[1, 3], [4, 6]],
+  blocks: [
+    [
+      { result: "Altered", detail: "It is modified from its original form or function." },
+      { result: "Contradictory", detail: "It conflicts with a previously understood aspect of the case." },
+      { result: "Corrupted", detail: "It has been tampered with or degraded." },
+      { result: "Counterfeit", detail: "It is forged or faked." },
+      { result: "Disguised", detail: "It hides its true nature or purpose." },
+      { result: "Disturbed", detail: "It is displaced or disarranged." },
+      { result: "Familiar", detail: "It shares characteristics with another piece of evidence." },
+      { result: "Flawed", detail: "It is marred by damage or defect." },
+      { result: "Hidden", detail: "It is purposely concealed." },
+      { result: "Marked", detail: "It bears a message or symbol." },
+    ],
+    [
+      { result: "Misplaced", detail: "It is in the wrong place or environment." },
+      { result: "Missing", detail: "It should be here, but is not." },
+      { result: "Obvious", detail: "It is readily apparent." },
+      { result: "Partial", detail: "It is incomplete or fragmented." },
+      { result: "Replaced", detail: "It is swapped for something else." },
+      { result: "Residual", detail: "It is a trace of something left behind." },
+      { result: "Ruined", detail: "It is destroyed or broken." },
+      { result: "Sensitive", detail: "It relates to or exposes protected information." },
+      { result: "Subtle", detail: "It is unremarkable or inconspicuous." },
+      { result: "Unexpected", detail: "It should not be here." },
+    ],
+  ],
+};
+// Clue Table 3: Evidence Type — TWO-TIER: D6 block (1–3, 4–6) then D12.
+export const CLUE_EVIDENCE_TYPE = {
+  secondDie: 12, blockRanges: [[1, 3], [4, 6]],
+  blocks: [
+    ["Ammunition", "Body", "Book/magazine", "Container", "Credentials", "Device", "Document", "Furnishing", "Garment", "ID card", "Jewelry", "Key"],
+    ["Map", "Marking/stain", "Memento", "Message", "Note", "Photograph", "Print/track", "Recording", "Substance", "Symbol/logo", "Tool", "Weapon"],
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// CHARACTER (NPC) GENERATOR  [Solo Mode p.19] — Sphere + Trait.
+// ---------------------------------------------------------------------------
+// Character Table 1: Sphere — TWO-TIER: D6 block (1–3, 4–6) then D8.
+export const CHARACTER_SPHERE = {
+  secondDie: 8, blockRanges: [[1, 3], [4, 6]],
+  blocks: [
+    ["Commerce", "Craftsmanship", "Crime", "Entertainment", "Espionage", "Ideology", "Labor", "Law"],
+    ["Media", "Medicine", "Politics", "Science", "Security", "Street life", "Technology", "Warfare"],
+  ],
+};
+// Character Table 2: Trait — TWO-TIER: D6 block (1–2, 3–4, 5–6) then D12.
+export const CHARACTER_TRAIT = {
+  secondDie: 12, blockRanges: [[1, 2], [3, 4], [5, 6]],
+  blocks: [
+    ["Aged", "Aggressive", "Alluring", "Aloof", "Argumentative", "Arrogant", "Athletic", "Charming", "Curt", "Demanding", "Desperate", "Eccentric"],
+    ["Evasive", "Fearful", "Fidgety", "Flirty", "Forlorn", "Glamorous", "Gruff", "Harried", "Helpful", "High-strung", "Inquisitive", "Intimidating"],
+    ["Passive", "Polished", "Ruthless", "Scarred", "Secretive", "Suspicious", "Tattooed", "Uncanny", "Unkempt", "Unserious", "Violent", "Youthful"],
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// HYPOTHESIS CHECK  [Solo Mode p.~22] — test a rated hypothesis.
+// Roll one or two Base Dice per its rating (e.g. "D12/D6"); count successes as a
+// skill roll (6+ = 1, 10+ = 2). Cannot be pushed. Rewards apply if it ends a case.
+// ---------------------------------------------------------------------------
+export const HYPOTHESIS_CHECK = {
+  note: "Roll Base Dice equal to the hypothesis's rating. At least one success (6+) proves it out. This roll CANNOT be pushed.",
+  crit: { name: "Critical Success", pp: 5, text: "Two or more successes — you tie the case up cleanly. Any remaining threads can wait for another day." },
+  success: { name: "Success", pp: 3, text: "One success — the hypothesis proves out, but with a twist or complication. Wrapping up likely needs another scene or two." },
+  failure: { name: "Failure", pp: -3, text: "No successes — you were mistaken, duped, or betrayed. End the case dramatically, or press on with a new hypothesis." },
+  convincing: "Used to convince someone (not to end a case): a success grants advantage (a failure, disadvantage) to a related MANIPULATION or CONNECTIONS roll instead of changing Promotion Points.",
+};
 
 // Downtime Event table — D12, Home & Street columns
 export const DOWNTIME_EVENT = [

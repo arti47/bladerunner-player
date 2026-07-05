@@ -129,6 +129,40 @@ test("Solo oracle tables sized right", () => {
   for (const k of ["relevance", "complication", "hook"]) assert.equal(SO.CASE_BRIEFING[k].length, 12, `briefing ${k}`);
 });
 
+test("Cipher/Location word lists are 3 blocks of 12 (D6→D12)", () => {
+  for (const arr of [SO.CIPHER_METHOD, SO.CIPHER_FOCUS, SO.LOCATION_ENVIRONMENT, SO.LOCATION_PLACE])
+    assert.equal(arr.length, 36); // 3 blocks × 12; the roll picks a block by D6 then a D12
+});
+
+test("Imagining Clues tables well-formed (Solo p.18)", () => {
+  assert.equal(SO.CLUE_MEANING.length, 8);                 // D8 flat
+  assert.deepEqual(SO.CLUE_EVIDENCE_DESCRIPTOR.blockRanges, [[1, 3], [4, 6]]);
+  assert.equal(SO.CLUE_EVIDENCE_DESCRIPTOR.secondDie, 10);
+  assert.equal(SO.CLUE_EVIDENCE_DESCRIPTOR.blocks.length, 2);
+  for (const blk of SO.CLUE_EVIDENCE_DESCRIPTOR.blocks) {
+    assert.equal(blk.length, 10);
+    for (const e of blk) assert.ok(e.result && e.detail, `descriptor entry needs result+detail`);
+  }
+  assert.equal(SO.CLUE_EVIDENCE_TYPE.secondDie, 12);
+  for (const blk of SO.CLUE_EVIDENCE_TYPE.blocks) assert.equal(blk.length, 12);
+});
+
+test("Character generator tables well-formed (Solo p.19)", () => {
+  assert.equal(SO.CHARACTER_SPHERE.secondDie, 8);
+  assert.deepEqual(SO.CHARACTER_SPHERE.blockRanges, [[1, 3], [4, 6]]);
+  for (const blk of SO.CHARACTER_SPHERE.blocks) assert.equal(blk.length, 8);
+  assert.equal(SO.CHARACTER_TRAIT.secondDie, 12);
+  assert.deepEqual(SO.CHARACTER_TRAIT.blockRanges, [[1, 2], [3, 4], [5, 6]]);
+  assert.equal(SO.CHARACTER_TRAIT.blocks.length, 3);
+  for (const blk of SO.CHARACTER_TRAIT.blocks) assert.equal(blk.length, 12);
+});
+
+test("Hypothesis Check rewards (Solo)", () => {
+  assert.equal(SO.HYPOTHESIS_CHECK.crit.pp, 5);
+  assert.equal(SO.HYPOTHESIS_CHECK.success.pp, 3);
+  assert.equal(SO.HYPOTHESIS_CHECK.failure.pp, -3);
+});
+
 // ---------------------------------------------------------------------------
 // Dice engine primitives (core.js)  [§3.1]
 // ---------------------------------------------------------------------------
