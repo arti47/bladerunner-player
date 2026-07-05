@@ -163,6 +163,15 @@ test("Hypothesis Check rewards (Solo)", () => {
   assert.equal(SO.HYPOTHESIS_CHECK.failure.pp, -3);
 });
 
+test("NPC Tactics + Chase Maneuvers cover a full D8 (Solo Combat & Chases)", () => {
+  const cover = (tbl) => { for (let r = 1; r <= 8; r++) assert.ok(R.lookupRange(tbl, r), `no row for D8=${r}`); };
+  cover(SO.NPC_TACTICS); cover(SO.NPC_CHASE_MANEUVERS);
+  assert.equal(R.lookupRange(SO.NPC_TACTICS, 1).name, "Reckless");
+  assert.equal(R.lookupRange(SO.NPC_TACTICS, 8).name, "Cowardly");
+  assert.equal(R.lookupRange(SO.NPC_CHASE_MANEUVERS, 3).pursuer, "Pursue");
+  assert.equal(R.lookupRange(SO.NPC_CHASE_MANEUVERS, 3).prey, "Flee");
+});
+
 // ---------------------------------------------------------------------------
 // Dice engine primitives (core.js)  [§3.1]
 // ---------------------------------------------------------------------------

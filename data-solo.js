@@ -142,6 +142,24 @@ export const NPC_SKILL_LEVEL = [
 ];
 export const NPC_SKILL_DEFAULT = "Competent (C/C)";
 
+// NPC Tactics — D8 (Solo Mode: Combat & Chases, p.013). Informs an NPC's
+// overarching combat strategy when the right action isn't obvious.
+export const NPC_TACTICS = [
+  { range: [1, 1], name: "Reckless", behavior: "Closes the distance, throws caution to the wind, deals as much damage as possible." },
+  { range: [2, 4], name: "Strategic", behavior: "Moves decisively, picks high-value targets, surrounds and flanks." },
+  { range: [5, 7], name: "Careful", behavior: "Hangs back, sticks to cover, coordinates with allies, takes the shot when it counts." },
+  { range: [8, 8], name: "Cowardly", behavior: "Stays hidden, flees if given the chance, lashes out when cornered." },
+];
+
+// NPC Chase Maneuvers — D8 (Solo Mode: Combat & Chases). Roll to secretly
+// determine an NPC's maneuver each Round; pursuer and prey read different columns.
+export const NPC_CHASE_MANEUVERS = [
+  { range: [1, 1], pursuer: "Stand and shoot", prey: "Stand and shoot" },
+  { range: [2, 5], pursuer: "Pursue", prey: "Flee" },
+  { range: [6, 7], pursuer: "Cut off", prey: "Block or hide" },
+  { range: [8, 8], pursuer: "Stand and shoot", prey: "Stand and shoot" },
+];
+
 // Escalating Base-Die tracks (Countdown Timer & Hypotheses): D6→D8→D10→D12→D12/D6→…→D12/D12
 export const ESCALATION_STEPS = ["D6", "D8", "D10", "D12", "D12/D6", "D12/D8", "D12/D10", "D12/D12"];
 export const COUNTDOWN_TIMER = {
