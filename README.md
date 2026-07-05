@@ -11,7 +11,7 @@ Vanilla JavaScript ES modules, **no build step**. Clone and open it and it just 
 > flavor text is paraphrased. Not affiliated with or endorsed by the publisher or
 > rights-holders. If you publish or distribute this app, licensing is your responsibility.
 
-## Run it locally
+## Run it locally 
 
 Any static file server works (ES modules need `http(s)://`, not `file://`):
 
