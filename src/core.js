@@ -46,3 +46,10 @@ export function rollDice(sizes) {
 }
 export function totalSuccesses(dice) { return dice.reduce((n, d) => n + d.successes, 0); }
 export function totalBanes(dice) { return dice.reduce((n, d) => n + (d.isBane ? 1 : 0), 0); }
+
+// One-line outcome summary for the roll log: "Critical success · 2 successes · 1 bane".
+export function outcomeSummary(succ, banes) {
+  const base = succ >= 2 ? "Critical success" : succ >= 1 ? "Success" : "Failure";
+  const s = `${base} · ${succ} success${succ === 1 ? "" : "es"}`;
+  return banes ? `${s} · ${banes} bane${banes === 1 ? "" : "s"}` : s;
+}

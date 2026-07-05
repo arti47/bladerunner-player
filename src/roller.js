@@ -5,7 +5,7 @@
 // the net is capped at one (Ch03). Push re-rolls every die not showing a 1; each 1
 // in the final pool inflicts damage (STR/AGI) or stress (INT/EMP), and Replicants
 // always take stress (Ch03/Ch04). All rolls read successes; crit dice read faces.
-import { el, rollDie, successesFor, titleCase } from "./core.js";
+import { el, rollDie, successesFor, titleCase, outcomeSummary } from "./core.js";
 import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
 import * as R from "./rules.js";
@@ -31,11 +31,6 @@ function pushPool(dice) { return dice.map((d) => (d.bane || d.succ > 0 ? d : mak
 const sumSucc = (dice) => dice.reduce((n, d) => n + d.succ, 0);
 const sumBane = (dice) => dice.reduce((n, d) => n + (d.bane ? 1 : 0), 0);
 
-// One-line summary for the global roll log.
-function outcomeSummary(succ, banes) {
-  const base = succ >= 1 ? (succ >= 2 ? "Critical success" : "Success") : "Failure";
-  return `${base} · ${succ} succ${succ === 1 ? "" : "es"}${banes ? ` · ${banes} bane${banes === 1 ? "" : "s"}` : ""}`;
-}
 function logRoll({ label, text, charId = null, charName = null, source = "roll" }) {
   try { RollLog.add({ label, text, charId, charName, source }); } catch { /* storage best-effort */ }
 }

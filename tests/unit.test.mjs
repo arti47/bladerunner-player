@@ -170,6 +170,15 @@ test("successesFor: 6+ = 1 success, 10+ = 2", () => {
   for (let f = 1; f <= 12; f++) assert.equal(core.successesFor(f), f >= 10 ? 2 : f >= 6 ? 1 : 0, `face ${f}`);
 });
 
+test("outcomeSummary spelling + pluralization (roll-log text)", () => {
+  assert.equal(core.outcomeSummary(0, 0), "Failure · 0 successes");
+  assert.equal(core.outcomeSummary(1, 0), "Success · 1 success");
+  assert.equal(core.outcomeSummary(2, 0), "Critical success · 2 successes");
+  assert.equal(core.outcomeSummary(0, 2), "Failure · 0 successes · 2 banes");
+  assert.equal(core.outcomeSummary(3, 1), "Critical success · 3 successes · 1 bane");
+  for (const n of [0, 1, 2, 3]) assert.ok(!core.outcomeSummary(n, 0).includes("succes "), "no 'succes' typo");
+});
+
 test("rollDie stays within range; rollDice reports successes + banes", () => {
   for (const size of core.DIE_SIZES)
     for (let i = 0; i < 500; i++) { const f = core.rollDie(size); assert.ok(f >= 1 && f <= size, `d${size} rolled ${f}`); }
