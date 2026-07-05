@@ -441,11 +441,17 @@ textarea.input { resize: vertical; font-family: inherit; }
 .rolllog__count { font-size: .8rem; font-weight: 400; }
 .rolllog__list { display: flex; flex-direction: column; gap: .2rem; margin-top: .4rem; max-height: 260px; overflow-y: auto; }
 .rolllog__empty { padding: .4rem .2rem; }
-.rolllog__row { display: grid; grid-template-columns: auto auto 1fr auto; align-items: baseline; gap: .5rem; padding: .35rem .2rem; border-top: 1px solid var(--line); font-size: .85rem; }
-.rolllog__time { font-variant-numeric: tabular-nums; font-size: .72rem; }
-.rolllog__label { color: var(--amber); font-weight: 600; white-space: nowrap; }
-.rolllog__text { color: var(--text); overflow-wrap: anywhere; }
-.rolllog__row-actions { display: flex; gap: .1rem; }
+/* Two-row layout: time+label on top (label truncates), result text below.
+   Long combat labels can't starve the result into a 1-char column. */
+.rolllog__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "time label actions" "text text actions";
+  align-items: baseline; column-gap: .5rem; row-gap: .12rem;
+  padding: .4rem .2rem; border-top: 1px solid var(--line); font-size: .85rem; }
+.rolllog__time { grid-area: time; font-variant-numeric: tabular-nums; font-size: .72rem; }
+.rolllog__label { grid-area: label; color: var(--amber); font-weight: 600; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rolllog__text { grid-area: text; color: var(--text); overflow-wrap: anywhere; }
+.rolllog__row-actions { grid-area: actions; display: flex; gap: .1rem; align-self: start; }
 .rolllog__foot { margin-top: .5rem; display: flex; justify-content: flex-end; }
 
 .iconbtn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: .85rem; padding: .15rem .3rem; border-radius: 6px; line-height: 1; }
