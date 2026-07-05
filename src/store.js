@@ -8,6 +8,8 @@ import { mirrorCharacter, mirrorCombat } from "./sync.js";
 const KEY = STORAGE_PREFIX + "characters";
 const ACTIVE = STORAGE_PREFIX + "activeCharacter";
 const COMBAT = STORAGE_PREFIX + "combat";
+const ROLLLOG = STORAGE_PREFIX + "rolllog";
+const ROLLLOG_CAP = 150;
 
 function readMap() {
   try { return JSON.parse(localStorage.getItem(KEY) || "{}"); }
@@ -51,6 +53,23 @@ export const Store = {
   getActiveId() { return localStorage.getItem(ACTIVE) || null; },
   setActiveId(id) { if (id) localStorage.setItem(ACTIVE, id); else localStorage.removeItem(ACTIVE); },
   getActive() { const id = this.getActiveId(); return id ? this.get(id) : null; },
+};
+
+// Global roll log — every dice roll across the app (sheet, combat, solo, GM)
+// appends here newest-first, capped. Entries: { id, ts, source, charId?, charName?,
+// label, text, pin? }. Local-only (not mirrored). The sheet filters by charId for a
+// per-character view; Home shows the whole log.
+export const RollLog = {
+  list() { try { return JSON.parse(localStorage.getItem(ROLLLOG) || "[]"); } catch { return []; } },
+  add(entry) {
+    const list = this.list();
+    list.unshift({ id: uid(), ts: Date.now(), source: "roll", ...entry });
+    if (list.length > ROLLLOG_CAP) list.length = ROLLLOG_CAP;
+    localStorage.setItem(ROLLLOG, JSON.stringify(list));
+    return list[0];
+  },
+  remove(id) { localStorage.setItem(ROLLLOG, JSON.stringify(this.list().filter((e) => e.id !== id))); },
+  clear() { localStorage.removeItem(ROLLLOG); },
 };
 
 // Local combat state (Phase 4). Phase 5 mirrors this to Firebase via sync.js.

@@ -27,7 +27,7 @@ export function countSpecialty(character, key) {
 // ---- Normalization / migration --------------------------------------------
 // Never crash on old/partial data — back-fill defaults. Bump SCHEMA_VERSION and
 // add a migration branch whenever the schema grows (CLAUDE.md §7).
-export const SCHEMA_VERSION = 2; // v2: state.dead, state.permanentResolveLoss, injury ids (Phase 4)
+export const SCHEMA_VERSION = 3; // v3: per-character journal[] (roll log is a separate global store)
 
 export function normalizeCharacter(c = {}) {
   const attributes = { STR: "C", AGI: "C", INT: "C", EMP: "C", ...(c.attributes || {}) };
@@ -57,6 +57,7 @@ export function normalizeCharacter(c = {}) {
     },
     inventory: { items: [], ...(c.inventory || {}) },
     notes: c.notes || "",
+    journal: Array.isArray(c.journal) ? c.journal : [],   // v3: timestamped journal entries
     advancementLog: Array.isArray(c.advancementLog) ? c.advancementLog : [],
     campaignId: c.campaignId || null,
     owner: c.owner || null,

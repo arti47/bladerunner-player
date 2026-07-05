@@ -2,12 +2,12 @@
 // Live vitals clamped to true maxima, condition toggles, resource counters,
 // attributes/skills/specialties display, faithful inventory (no encumbrance),
 // flavor + notes + portrait. All mutations persist through Store immediately.
-import { el, clear, titleCase, rollDie } from "./core.js";
+import { el, clear, titleCase, rollDie, uid } from "./core.js";
 import * as D from "../data.js";
 import * as R from "./rules.js";
 import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress } from "./derived.js";
-import { Store } from "./store.js";
-import { showToast, confirmModal, promptModal, modal, sectionTitle } from "./ui.js";
+import { Store, RollLog } from "./store.js";
+import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard } from "./ui.js";
 import { navigate } from "./router.js";
 import { openSkillRoll, openWeaponPicker, proceduralRoll } from "./roller.js";
 import { Sync, watchCharacter } from "./sync.js";
@@ -67,6 +67,8 @@ export function renderSheet(mount) {
   wrap.append(inventorySection(ch, commit, rerender));
   wrap.append(recoverySection(ch, commit, rerender));
   wrap.append(advancementSection(ch, commit, rerender));
+  wrap.append(rollLogSection(ch, commit, rerender));
+  wrap.append(journalSection(ch, commit));
   wrap.append(identitySection(ch, commit));
   wrap.append(dangerZone(ch, mount));
 
@@ -505,6 +507,46 @@ function baselineTest(ch, commit, rerender) {
       });
       rerender();
     } });
+}
+
+// ---- Roll Log (global store, filtered per character) ----------------------
+let rollLogScope = "char"; // "char" | "all" — persists across sheet re-renders
+function rollLogSection(ch, commit, rerender) {
+  const card = el("div", { class: "card" }, sectionTitle("Roll Log"));
+  card.append(el("div", { class: "chips" },
+    scopeChip("This character", rollLogScope === "char", () => { rollLogScope = "char"; rerender(); }),
+    scopeChip("All rolls", rollLogScope === "all", () => { rollLogScope = "all"; rerender(); })));
+  const all = RollLog.list();
+  const entries = (rollLogScope === "char" ? all.filter((e) => e.charId === ch.id) : all)
+    .slice(0, 30)
+    .map((e) => (rollLogScope === "all" && e.charName ? { ...e, label: `${e.charName} · ${e.label}` } : e));
+  card.append(rollLogCard({
+    entries,
+    onPin: (e) => commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: `[${e.label}] ${e.text}` }); showToast("Pinned to journal."); }),
+    onDelete: (e) => { RollLog.remove(e.id); rerender(); },
+    onClear: async () => { if (await confirmModal("Clear the entire roll log?", { title: "Clear roll log", danger: true })) { RollLog.clear(); rerender(); } },
+  }));
+  return card;
+}
+function scopeChip(label, on, onClick) { return el("button", { class: "chip" + (on ? " chip--on" : ""), onClick }, label); }
+
+// ---- Journal (per character) ----------------------------------------------
+function journalSection(ch, commit) {
+  const card = el("div", { class: "card" }, sectionTitle("Journal"));
+  const entries = ch.journal || [];
+  card.append(el("button", { class: "btn btn--sm", onClick: async () => {
+    const text = await promptModal("Journal entry", { title: "New journal entry", okLabel: "Add" });
+    if (text && text.trim()) commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: text.trim() }); });
+  } }, "＋ Add entry"));
+  if (!entries.length) { card.append(el("p", { class: "muted sheet__note" }, "No journal entries yet. Add your own, or pin a roll from the Roll Log.")); return card; }
+  for (const e of entries) {
+    card.append(el("div", { class: "journal__entry" },
+      el("div", { class: "journal__head" },
+        el("span", { class: "muted journal__ts" }, new Date(e.ts).toLocaleString()),
+        el("button", { class: "btn btn--sm btn--ghost", "aria-label": "delete entry", onClick: () => commit((c) => { c.journal = (c.journal || []).filter((x) => x.id !== e.id); }) }, "✕")),
+      el("div", { class: "journal__text" }, e.text)));
+  }
+  return card;
 }
 
 // ---- helpers --------------------------------------------------------------

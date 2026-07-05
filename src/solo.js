@@ -10,6 +10,7 @@ import * as GM from "../data-gm.js";
 import { el, sectionTitle, segmentNav, resultModal, rollLogCard, showToast, promptModal, confirmModal } from "./ui.js";
 import { rollDie, uid, clear } from "./core.js";
 import { lookupRange } from "./rules.js";
+import { RollLog } from "./store.js";
 
 const SOLO_KEY = "brp:solo";
 const LOG_CAP = 50;
@@ -39,7 +40,9 @@ export function renderSolo(mount, rerender) {
     st.log = st.log || [];
     st.log.unshift({ id: uid(), label, text, pin: pin || `[${label}] ${text}`, ts: Date.now() });
     if (st.log.length > LOG_CAP) st.log.length = LOG_CAP;
-    writeSoloState(st); rerender();
+    writeSoloState(st);
+    try { RollLog.add({ label, text, source: "solo" }); } catch {}
+    rerender();
   };
   // Note-writers mutate the SAME `st` object record() uses, so combined
   // operations (e.g. full-briefing = prependNote + record) never clobber.

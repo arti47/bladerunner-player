@@ -7,7 +7,7 @@
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
-import { Store, Combat } from "./store.js";
+import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
 import { el, sectionTitle, segmentNav, resultModal, rollLogCard, modal, showToast, confirmModal } from "./ui.js";
@@ -45,7 +45,9 @@ export function renderGm(mount, rerender) {
     st.log = st.log || [];
     st.log.unshift({ id: uid(), label, text, pin: pin || `[${label}] ${text}`, ts: Date.now() });
     if (st.log.length > LOG_CAP) st.log.length = LOG_CAP;
-    writeGmState(st); rerender();
+    writeGmState(st);
+    try { RollLog.add({ label, text, source: "gm" }); } catch {}
+    rerender();
   };
   const pinNote = (line) => { st.scratchpad = `• ${line}\n` + (st.scratchpad || ""); writeGmState(st); showToast("Pinned to notes."); rerender(); };
   const show = ({ label, text, pin, title, render }) => { const pinLine = pin || `[${label}] ${text}`; record(label, text, pinLine); resultModal({ title, pinLine, onPin: pinNote, render }); };

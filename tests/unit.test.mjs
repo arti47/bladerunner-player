@@ -174,6 +174,14 @@ test("normalizeCharacter back-fills defaults and never crashes on empty input", 
   assert.ok(c.state.health <= maxHealth(c) && c.state.health >= 0);
 });
 
+test("v3 schema: journal[] back-filled, preserved, and never crashes on legacy data", () => {
+  assert.equal(SCHEMA_VERSION, 3);
+  assert.deepEqual(normalizeCharacter({}).journal, []);            // default
+  assert.deepEqual(normalizeCharacter({ journal: undefined }).journal, []); // legacy (pre-v3)
+  const entry = { id: "j1", ts: 123, text: "found a clue" };
+  assert.deepEqual(normalizeCharacter({ journal: [entry] }).journal, [entry]); // preserved
+});
+
 test("reclampVitals clamps to current maxima", () => {
   const c = normalizeCharacter(mkChar({ state: { health: 99, resolve: 99 } }));
   reclampVitals(c);

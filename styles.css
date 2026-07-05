@@ -307,9 +307,9 @@ textarea.input { resize: vertical; font-family: inherit; }
 
 /* attributes grid */
 .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem; }
-.stat { display: flex; align-items: center; justify-content: space-between; gap: .4rem;
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: .55rem .8rem; }
-.stat__name { font-weight: 600; }
+.stat { display: flex; align-items: center; justify-content: space-between; gap: .4rem; min-width: 0;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: .55rem .6rem; }
+.stat__name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stat__lv { font-weight: 700; font-size: 1.1rem; }
 .stat__die { font-size: .78rem; }
 
@@ -329,6 +329,13 @@ textarea.input { resize: vertical; font-family: inherit; }
 .ability:first-of-type { border-top: none; }
 .ability__name { font-weight: 600; }
 .ability__text { font-size: .84rem; }
+
+/* journal */
+.journal__entry { padding: .5rem 0; border-top: 1px solid var(--line); }
+.journal__entry:first-of-type { border-top: none; }
+.journal__head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.journal__ts { font-size: .72rem; }
+.journal__text { font-size: .88rem; white-space: pre-wrap; word-break: break-word; }
 
 /* inventory */
 .inv { display: flex; flex-direction: column; margin-bottom: .6rem; }

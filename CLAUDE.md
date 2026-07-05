@@ -353,7 +353,7 @@ One module per responsibility; explicit `import`/`export`, nothing smuggled thro
 | `rules.js` | Pure rules lookups over the data libraries (find ability, parse gear, build skills, requirement checks). |
 | `derived.js` | Character-derived calculations (effective maxima, encumbrance, equipped gear, data normalization/migration). |
 | `settings.js` | Feature toggles (solo, GM screen, advanced automation). |
-| `store.js` | Local/cloud character persistence + combat mirroring. |
+| `store.js` | Local/cloud character persistence + combat mirroring + global roll log (`RollLog`). |
 | `sync.js` | Firebase auth, campaigns, join codes, presence + theme. |
 | `wizard.js` | Creation wizard + pregens (if §3.14 present). |
 | `roller.js` | The dice engine: every roll type, push flows, damage applier. |
@@ -395,6 +395,7 @@ characters/{characterId}
   abilities: [ ... ]                                               // specialties/talents/features
   inventory: { items[] (weight/qty/equipped/quality per §3.11), tiny[], money{...} }
   companions:[ ... ]   effects:[ ... ]   notes: ""   advancementLog:[ ... ]
+  journal:   [ { id, ts, text } ]                                  // v3 — timestamped journal entries
 ```
 
 **Critical-injury entry** (`state.criticalInjuries[]`): `{ id, injury, type, roll, lethal,
@@ -404,10 +405,16 @@ stabilized }`. **Local combat** (Phase 4, pre-Firebase) is stored under `brp:com
 npcKey?, name, nature, health, maxHealth, card } ] }`; Phase 5 mirrors this into
 `campaigns/{id}/combat`.
 
+**Global roll log** (local-only, not mirrored) is stored under `brp:rolllog` via `store.js`
+`RollLog`: newest-first, capped 150, entries `{ id, ts, source:"sheet"|"combat"|"solo"|"gm",
+charId?, charName?, label, text, pin? }`. Every dice roll in `roller.js` appends here; Solo/GM
+oracle rolls also mirror in. The sheet filters by `charId` for a per-character view; Home shows
+the whole log. Pinning a log row writes a `journal[]` entry on the active character.
+
 Rules: every rules number the schema references lives in the data files; every schema
 addition ships with a normalization path that back-fills defaults on old characters (never
 crash on old data); every field addition is documented in this section **in the same
-change**. Current `SCHEMA_VERSION = 2`.
+change**. Current `SCHEMA_VERSION = 3`.
 
 ---
 
@@ -640,4 +647,5 @@ Re-verify the finished app against the source:
 | 2026-07-04 | Solo/GM roll-flow overhaul + bug fixes. **Flow:** added a shared **Roll Log** (collapsible card near top, newest-first, capped 50, per-row pin/delete + clear) and a `resultModal` with a **📌 Pin to notes** action, both in `src/ui.js` (`rollLogCard`, `resultModal`). Every Solo/GM oracle/generator roll now logs a labeled one-liner AND shows its modal; pinning prepends `• [Label] result` to the screen's notes. Logs are per-screen (`brp:solo`/`brp:gm`, new `log[]` field). Tidied all roll buttons (inline styles → CSS classes: `.roll-grid/.roll-row/.roll-result/.rolllog*/.party-*`), added `--ok/--warn` theme tokens. **GM bug fixes (root cause):** party panel read wrong state keys (`state.promotion/chinyen/humanity` → `promotionPoints/chinyenPoints/humanityPoints`) and `identity.archetype` → top-level `archetype` (mapped to name via `rules.archetype`), so PP/¥/HUM showed 0 and "Unknown Archetype"; Rewards modal wrote the same wrong keys; Conditions modal listed non-BR conditions (starving/dehydrated/exhausted/freezing) → replaced with real `data.js` CONDITIONS (Prone/In-Cover/Grappled/Aiming); `Store.Combat.get()` was undefined (Combat is a separate export) → import `{ Store, Combat }` and use `Combat.get()/save()` so "Drop into Combat" no longer throws. | User: Solo/GM rolls felt messy (results vanished); + real GM bugs found while there | Headless (Claude Preview): Solo — Scene Check logs `D8→4 · Challenging`, modal has Pin, Cipher logs `Conceal × Technology`, pin-from-row writes `• [Cipher] …` to notes; GM — party panel shows Doxie/PP 2/¥ 1/HUM 3/♥6/7/◈2/3, Theme roll logs, Drop-into-Combat adds NPC (no throw), Rewards +1 writes `promotionPoints` 2→3 (no stray `promotion`), Conditions lists Prone/In-Cover/Grappled/Aiming; no 360px overflow; **zero console errors** | brp-v15 |
 | 2026-07-04 | **Closed the Phase 0b Main NPCs data gap + GM generator.** Extracted the complete **Case Table 3 (Main NPCs)** from the raw Core text into `CASE_MAIN_NPCS` (`data-gm.js`): 8 types (Corporate/Security/Entertainment/Street/Crime/Science/Tech/Other), each a D6 occupation/quirk/first-name/last-name sub-table (all 6-length; kept the printing's duplicate "Mechanic" in the Tech row faithfully, and the mislabeled Science quirk normalized to 6 sequential entries). Added a **Main NPC generator** to the GM `Case` panel (`gm.js` `panelCase`): D8 type + 4× D6 → "Firstname Lastname — Occupation (Type); quirk", shown in a result modal, logged, and pinnable. Updated §9 Phase 0b roadmap line (gap closed). | Finish the known partial-data item before the NPC-name generator (user request) | Headless (Claude Preview, fresh 8787 origin, 375px): page module exposes `CASE_MAIN_NPCS` (8 types, all sub-tables ×6); clicking 🎲 Main NPC → "Nombeko Koslovski — Journalist (Other); quirk: Overly eager", log pin `[NPC] …` written; Solo Scene Check still logs `D8→5 · Challenging`; no 375px overflow; **zero console errors**. (Note: the failure seen mid-build was python http.server heuristic caching serving a stale `data-gm.js` on the old origin — resolved on a fresh origin; the code was always correct.) | brp-v22 |
 | 2026-07-04 | **Committed regression harness (Hardening §10.5).** Added `package.json` (dev-only `playwright-core`, `type:module`, `npm test`) + `tests/unit.test.mjs` (24 Node checks: level/dice mapping, 13 skills, 7 archetypes w/ nature+key rules, Years-on-Force numbers, crit tables 12+12 w/ instant-kill rows, advancement costs, 24 specialties, weapons well-formed, 14 NPCs, GM Main-NPCs 8×6, Solo tables 36/36/20/12, §3.1 successesFor + dice ranges, §3.3 Health/Resolve formulas incl. Replicant±/Tough/Hardened, normalize/reclamp, creation legality: attr/skill budgets + Replicant STR/AGI bonus + key-attr B+/key-skill C+) + `tests/smoke.test.mjs` (headless Chrome via playwright-core, cross-origin/Firebase requests aborted → hermetic: every route renders w/ zero console errors, no 360/390px overflow, a11y basics). `node_modules` gitignored; tests NOT in the SW app shell (no cache bump). Roadmap Hardening item checked. | Process rule §10.5 committed harness | `npm test` → **35 pass / 0 fail** (24 unit + 11 smoke), system Chrome, Firebase blocked | n/a (dev-only, not shipped) |
+| 2026-07-05 | **Global roll log + per-character journal (user request).** New `RollLog` store in `store.js` (`brp:rolllog`, newest-first, cap 150). `roller.js` now logs every roll — skill rolls, procedural rolls (death save/stabilize/first aid/Baseline), attacks, pushes, and in-combat PC/NPC skill/ranged/opposed rolls — with `{label,text,charId,charName,source}`; Solo/GM oracle `record()` mirror into it too (`source:"solo"|"gm"`). Sheet gains a **Roll Log** section (This-character / All-rolls toggle, pin-a-row-to-journal, delete/clear) and a **Journal** section (add/delete timestamped entries); Home shows a collapsed global roll-log card. Schema **v3**: `character.journal[] {id,ts,text}` (normalized/back-filled in `derived.js`). **Root-cause fix (pre-existing):** Attributes `.stat` grid overflowed 360px by ~5px because grid items couldn't shrink below the longest attribute name ("Intelligence") — added `min-width:0` + ellipsis on `.stat__name` and trimmed `.stat` padding .8→.6rem. Added a unit test for the v3 journal back-fill. | User asked to log roll results + add a journal (solo & non-solo) | `npm test` → **36 pass / 0 fail** (25 unit + 11 smoke, headless Chromium). Drove the real UI: rolled Hand-to-Hand on the sheet → logged `Success · 1 succ` with charId/charName/source=sheet; sheet Roll Log shows the row; pinning wrote `[Hand-to-Hand Combat] Success · 1 succ` to the journal; Home global roll-log card present; no 360/390px overflow. | brp-v23 |
 

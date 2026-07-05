@@ -9,7 +9,7 @@ import { el, rollDie, successesFor, titleCase } from "./core.js";
 import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
 import * as R from "./rules.js";
-import { Store, Combat } from "./store.js";
+import { Store, Combat, RollLog } from "./store.js";
 import { modal, showToast } from "./ui.js";
 import { reclampVitals, isBrokenByDamage } from "./derived.js";
 
@@ -30,6 +30,15 @@ function poolFor(attrSize, skillSize, net) {
 function pushPool(dice) { return dice.map((d) => (d.bane || d.succ > 0 ? d : makeDie(d.size))); }
 const sumSucc = (dice) => dice.reduce((n, d) => n + d.succ, 0);
 const sumBane = (dice) => dice.reduce((n, d) => n + (d.bane ? 1 : 0), 0);
+
+// One-line summary for the global roll log.
+function outcomeSummary(succ, banes) {
+  const base = succ >= 1 ? (succ >= 2 ? "Critical success" : "Success") : "Failure";
+  return `${base} · ${succ} succ${succ === 1 ? "" : "es"}${banes ? ` · ${banes} bane${banes === 1 ? "" : "s"}` : ""}`;
+}
+function logRoll({ label, text, charId = null, charName = null, source = "roll" }) {
+  try { RollLog.add({ label, text, charId, charName, source }); } catch { /* storage best-effort */ }
+}
 
 // Auto advantage/disadvantage from the character's current state. [§3.6]
 function autoFor(ch, skillKey) {
@@ -114,6 +123,7 @@ export function openSkillRoll(ch, skillKey, onDone) {
             const n = netOf(a.adv + st.adv + km, a.dis + st.dis);
             st.dice = poolFor(dsize(attrLevel()), dsize(ch.skills[skillKey]), n);
             consumeAiming(ch, skillKey); // spend the aim on this shot
+            logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
             st.phase = "result"; paint();
           } }, "⚄ Roll")));
       };
@@ -129,6 +139,7 @@ export function openSkillRoll(ch, skillKey, onDone) {
           const risk = applyPushRisk(ch, attrKey, nb);
           let msg = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
           if (st.keyMemory && ns < 1) { ch.state.resolve = Math.max(0, ch.state.resolve - 1); reclampVitals(ch); Store.save(ch); msg += " Key memory failed: +1 stress."; }
+          logRoll({ label: `${sk.name} (push)`, text: outcomeSummary(ns, nb), charId: ch.id, charName: ch.name, source: "sheet" });
           st.note = msg; paint();
         } }, "↻ Push the roll"));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
@@ -160,7 +171,7 @@ export function proceduralRoll(ch, { skillKey, title, adv = 0, dis = 0, allowPus
           b.append(netBadge(net));
           b.append(el("div", { class: "modal__actions" },
             el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
-            el("button", { class: "btn btn--primary", onClick: () => { st.dice = poolFor(dsize(attrLv), dsize(ch.skills[skillKey]), net); paint(); } }, "⚄ Roll")));
+            el("button", { class: "btn btn--primary", onClick: () => { st.dice = poolFor(dsize(attrLv), dsize(ch.skills[skillKey]), net); logRoll({ label: title || sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" }); paint(); } }, "⚄ Roll")));
           return;
         }
         b.append(diceRow(st.dice));
@@ -171,6 +182,7 @@ export function proceduralRoll(ch, { skillKey, title, adv = 0, dis = 0, allowPus
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.msg = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
+          logRoll({ label: `${title || sk.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
           paint();
         } }, "↻ Push"));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => { close(); onResult && onResult({ successes: sumSucc(st.dice), banes: sumBane(st.dice), pushed: st.pushed }); } }, "Apply result"));
@@ -288,6 +300,7 @@ export function openAttackRoll(ch, weapon, onDone) {
             const n = netOf(a.adv + st.adv, a.dis + st.dis);
             st.dice = poolFor(dsize(ch.attributes[sk.attr]), dsize(ch.skills[skillKey]), n);
             consumeAiming(ch, skillKey); // spend the aim on this shot
+            logRoll({ label: `Attack — ${weapon.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
             st.phase = "result"; paint();
           } }, "⚄ Attack")));
       };
@@ -302,6 +315,7 @@ export function openAttackRoll(ch, weapon, onDone) {
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.note = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
+          logRoll({ label: `Attack — ${weapon.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
           paint();
         } }, "↻ Push the roll"));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
@@ -466,6 +480,7 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
           el("button", { class: "btn btn--primary", onClick: () => {
             st.dice = poolFor(dsize(attrLv), dsize(skLv), net);
+            logRoll({ label: `${sk.name} — ${c.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Roll")));
       };
@@ -576,6 +591,7 @@ function openRangedAttack(c, rc, w, commit) {
               reclampVitals(rc.pc); Store.save(rc.pc);
             }
             st.dice = poolFor(dsize(attrLv), dsize(skLv), net);
+            logRoll({ label: `Ranged ${w.name} — ${c.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Attack")));
       };
@@ -686,6 +702,7 @@ function runOpposedMeleeModal(c, rc, w, e, rEnemy, commit) {
           el("button", { class: "btn btn--primary", onClick: () => {
             st.attDice = poolFor(dsize(attAttrLv), dsize(attSkLv), netOf(st.attAdv, st.attDis));
             st.defDice = poolFor(dsize(defAttrLv), dsize(defSkLv), netOf(st.defAdv, st.defDis));
+            logRoll({ label: `Opposed: ${c.name} vs ${e.name}`, text: `${sumSucc(st.attDice)}–${sumSucc(st.defDice)} (${w.name})`, charId: rc.pc?.id || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Roll Opposed")));
       };

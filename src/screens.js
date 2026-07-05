@@ -3,9 +3,9 @@
 import { el, clear, titleCase } from "./core.js";
 import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
-import { Store } from "./store.js";
+import { Store, RollLog } from "./store.js";
 import { Settings, TOGGLES, applyTheme } from "./settings.js";
-import { showToast, promptModal, confirmModal } from "./ui.js";
+import { showToast, promptModal, confirmModal, rollLogCard } from "./ui.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
 import { Sync, linkGoogle, createCampaign, joinCampaign, leaveCampaign, accountLabel } from "./sync.js";
@@ -43,6 +43,15 @@ export function renderHome(mount) {
       tile("Settings", "Theme & toggles", () => navigate("settings")),
     ),
   );
+  const rolls = RollLog.list();
+  if (rolls.length) {
+    body.append(rollLogCard({
+      open: false,
+      entries: rolls.slice(0, 20).map((e) => (e.charName ? { ...e, label: `${e.charName} · ${e.label}` } : e)),
+      onDelete: (e) => { RollLog.remove(e.id); renderHome(mount); },
+      onClear: async () => { if (await confirmModal("Clear the entire roll log?", { title: "Clear roll log", danger: true })) { RollLog.clear(); renderHome(mount); } },
+    }));
+  }
   mount.append(body);
 }
 const archLabel = (key) => (key ? (D.ARCHETYPES.find((a) => a.key === key)?.name || titleCase(key)) : "No archetype");
