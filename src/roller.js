@@ -52,6 +52,8 @@ function autoFor(ch, skillKey) {
 const stressBlocksRolls = (ch) => !!ch.state?.criticalStress?.noSkillRolls;
 const stressBlocksPush = (ch) => !!ch.state?.criticalStress?.noPush;
 const netOf = (adv, dis) => Math.sign(adv - dis); // cancel 1:1, cap at one (Ch03)
+// Pushing is a player-character move — NPC rolls are never pushed. [Solo Mode p.010]
+const canPush = (rc) => rc?.kind !== "npc";
 
 // Aiming grants advantage to the NEXT single shot only, then is spent. [Ch08 Careful Aim]
 function consumeAiming(ch, skillKey) {
@@ -697,7 +699,7 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
         b.append(outcomeLine(succ, banes));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && canPush(rc)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.dice = pushPool(st.dice); st.pushed = true;
           const nb = sumBane(st.dice);
           if (rc.kind === "pc" && rc.pc) {
@@ -832,7 +834,7 @@ function openRangedAttack(c, rc, w, commit) {
         }
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && canPush(rc)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.dice = pushPool(st.dice); st.pushed = true; st.armorRes = null; // new damage → re-roll armor
           const nb = sumBane(st.dice);
           if (rc.kind === "pc" && rc.pc) {
@@ -1003,7 +1005,7 @@ function runOpposedMeleeModal(c, rc, w, e, rEnemy, commit) {
 
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && canPush(rc)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.attDice = pushPool(st.attDice); st.pushed = true; st.armorRes = null; // new margin → re-roll armor
           const nb = sumBane(st.attDice);
           if (rc.kind === "pc" && rc.pc) {

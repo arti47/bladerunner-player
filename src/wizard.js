@@ -6,6 +6,8 @@ import * as R from "./rules.js";
 import { maxHealth, maxResolve, normalizeCharacter } from "./derived.js";
 import { Store } from "./store.js";
 import { showToast } from "./ui.js";
+import { Settings } from "./settings.js";
+import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
 import { navigate } from "./router.js";
 
 const d3 = () => Math.ceil(rollDie(6) / 2);
@@ -107,6 +109,12 @@ function stepArchetype(body, rerender) {
     const sub = `Key ${R.attrDisplay(a.keyAttr)} · ${a.keySkills.map(R.skillName).join(", ")} · Chinyen D${a.chinyenDie}`;
     body.append(choice(a.name, sub, draft.archetype === a.key, () => { draft.archetype = a.key; rerender(); }, a.blurb));
   }
+  // Solo option: no archetype at all — free key attribute/skills, D8 Chinyen.
+  if (Settings.solo()) {
+    body.append(choice(SOLO_NO_ARCHETYPE.name, `Free key attribute & skills · Chinyen D${SOLO_NO_ARCHETYPE.chinyenDie}`,
+      draft.archetype === SOLO_NO_ARCHETYPE.key, () => { draft.archetype = SOLO_NO_ARCHETYPE.key; rerender(); },
+      SOLO_NO_ARCHETYPE.advice));
+  }
   body.append(rollBtn("Roll (D12)", () => {
     const r = rollDie(12); const row = R.lookupRange(D.ARCHETYPE_TABLE[draft.nature], r);
     draft.archetype = row.key; showToast(`D12=${r} → ${R.archetype(row.key).name}`); rerender();
@@ -135,7 +143,7 @@ function stepAttributes(body, rerender) {
   const budget = R.attrBudget(draft.years, draft.nature);
   const used = R.attrStepsUsed(draft.attributes);
   const arch = R.archetype(draft.archetype);
-  body.append(el("p", { class: "muted" }, `Start at C. Spend exactly ${budget} increase${budget === 1 ? "" : "s"} (one step each). Lower one attribute to D to gain an extra. Key: ${R.attrDisplay(arch.keyAttr)} must be B+.`));
+  body.append(el("p", { class: "muted" }, `Start at C. Spend exactly ${budget} increase${budget === 1 ? "" : "s"} (one step each). Lower one attribute to D to gain an extra.` + (arch.keyAttr ? ` Key: ${R.attrDisplay(arch.keyAttr)} must be B+.` : " No archetype — choose your own focus.")));
   body.append(el("div", { class: "budget" + (used === budget ? " budget--ok" : "") }, `Increases used: ${used} / ${budget}`));
   for (const a of D.ATTRIBUTES) {
     body.append(stepper(a.name + (a.key === arch.keyAttr ? " ★" : ""), draft.attributes[a.key],
@@ -153,7 +161,7 @@ function stepSkills(body, rerender) {
   const budget = R.skillBudget(draft.years);
   const used = R.skillStepsUsed(draft.skills);
   const arch = R.archetype(draft.archetype);
-  body.append(el("p", { class: "muted" }, `Start at D. Spend exactly ${budget} increases. Key skills (★) must end C+.`));
+  body.append(el("p", { class: "muted" }, `Start at D. Spend exactly ${budget} increases.` + (arch.keySkills.length ? " Key skills (★) must end C+." : " No archetype — spend them where you like.")));
   body.append(el("div", { class: "budget" + (used === budget ? " budget--ok" : "") }, `Increases used: ${used} / ${budget}`));
   for (const s of D.SKILLS) {
     if (s.key === "driving") continue; // Driving uses vehicle Maneuverability; still trainable
@@ -176,8 +184,10 @@ function stepSpecialties(body, rerender) {
   const need = D.YEARS_ON_FORCE.find((y) => y.key === draft.years).specialties;
   const arch = R.archetype(draft.archetype);
   if (need === 0) { body.append(el("div", { class: "notice" }, "Rookies start with no specialties — you'll learn them in play.")); return; }
-  body.append(el("p", { class: "muted" }, `Choose ${need}. Your archetype suggests: ${arch.specialtyOptions.map((k) => R.specialty(k).name).join(", ")} — but you may pick any.`));
-  body.append(rollBtn(`Roll archetype specialty (D3)`, () => {
+  body.append(el("p", { class: "muted" }, arch.specialtyOptions.length
+    ? `Choose ${need}. Your archetype suggests: ${arch.specialtyOptions.map((k) => R.specialty(k).name).join(", ")} — but you may pick any.`
+    : `Choose ${need} from the full list.`));
+  if (arch.specialtyOptions.length) body.append(rollBtn(`Roll archetype specialty (D3)`, () => {
     const r = d3(); const k = arch.specialtyOptions[r - 1];
     if (!draft.specialties.includes(k) && draft.specialties.length < need) draft.specialties.push(k);
     showToast(`D3=${r} → ${R.specialty(k).name}`); rerender();

@@ -388,3 +388,72 @@ test("weapon damage is numeric wherever the engine adds successes to it [§3.7]"
   assert.equal(typeof charge.damage, "string");
   assert.equal(charge.thrown, false, "the non-numeric charge is never offered in the thrown picker");
 });
+
+// ---------------------------------------------------------------------------
+// Solo Mode verified against the printing (Solo Mode PDF, 2026-07-28 pass).
+// ---------------------------------------------------------------------------
+test("Countdown Event: any success FIRES the event; no successes escalates [Solo p.006]", () => {
+  assert.match(SO.COUNTDOWN_TIMER.onTrigger, /success fires the event/i);
+  assert.match(SO.COUNTDOWN_TIMER.onNoTrigger, /No successes = no event/i);
+  assert.match(SO.COUNTDOWN_TIMER.note, /ANY success triggers/i);
+  assert.equal(SO.ESCALATION_STEPS[0], "D6");
+  assert.equal(SO.ESCALATION_STEPS.at(-1), "D12/D12");
+  assert.deepEqual(SO.ESCALATION_STEPS, ["D6", "D8", "D10", "D12", "D12/D6", "D12/D8", "D12/D10", "D12/D12"]);
+});
+
+test("NPC nature table: D10 1 Replicant / 2–9 human / 10 ambiguous [Solo p.019]", () => {
+  assert.equal(SO.NPC_NATURE.length, 3);
+  assert.deepEqual(SO.NPC_NATURE.map((r) => r.range), [[1, 1], [2, 9], [10, 10]]);
+  assert.deepEqual(SO.NPC_NATURE.map((r) => r.result), ["Replicant", "Human", "Ambiguous"]);
+  for (let d = 1; d <= 10; d++) assert.ok(R.lookupRange(SO.NPC_NATURE, d), `D10=${d} resolves`);
+});
+
+test("four official ways to open a case [Solo p.004]", () => {
+  assert.deepEqual(SO.CASE_START_METHODS.map((m) => m.key), ["gut", "thread", "generator", "inspiration"]);
+  for (const m of SO.CASE_START_METHODS) assert.ok(m.name && m.text.length > 20);
+});
+
+test("solo archetype-free creation: free keys, D8 Chinyen [Solo p.002]", () => {
+  assert.equal(SO.SOLO_NO_ARCHETYPE.chinyenDie, 8);
+  const arch = R.archetype(SO.SOLO_NO_ARCHETYPE.key);
+  assert.ok(arch, "resolves through the normal archetype lookup");
+  assert.equal(arch.keyAttr, null);
+  assert.deepEqual(arch.keySkills, []);
+  assert.equal(arch.chinyenDie, 8);
+  // with no key attribute/skills, only the budgets gate the build
+  const draft = { nature: "human", years: "rookie", archetype: SO.SOLO_NO_ARCHETYPE.key,
+    attributes: { STR: "C", AGI: "C", INT: "A", EMP: "A" }, skills: {} };
+  for (const s of D.SKILLS) draft.skills[s.key] = "D";
+  draft.skills.observation = "B"; draft.skills.connections = "B"; draft.skills.insight = "B"; draft.skills.manipulation = "C";
+  assert.equal(R.attrStepsUsed(draft.attributes), 4);
+  assert.equal(R.validateAttributes(draft).ok, true, R.validateAttributes(draft).errors.join("; "));
+  assert.equal(R.skillStepsUsed(draft.skills), 7);
+  assert.equal(R.validateSkills(draft).ok, false, "still enforces the skill budget");
+});
+
+test("solo tables match the printing exactly [Solo Mode PDF]", () => {
+  // spot-checks across every table verified in the 2026-07-28 source pass
+  assert.equal(SO.CIPHER_METHOD[0], "Abandon");
+  assert.equal(SO.CIPHER_METHOD[35], "Threaten");
+  assert.equal(SO.CIPHER_FOCUS[0], "Authority");
+  assert.equal(SO.CIPHER_FOCUS[35], "Violence");
+  assert.equal(SO.LOCATION_ENVIRONMENT[0], "Abandoned");
+  assert.equal(SO.LOCATION_PLACE[35], "Warehouse");
+  assert.deepEqual(SO.CHARACTER_SPHERE.blockRanges, [[1, 3], [4, 6]]);
+  assert.equal(SO.CHARACTER_SPHERE.secondDie, 8);
+  assert.deepEqual(SO.CHARACTER_TRAIT.blockRanges, [[1, 2], [3, 4], [5, 6]]);
+  assert.equal(SO.CHARACTER_TRAIT.secondDie, 12);
+  assert.deepEqual(SO.CLUE_EVIDENCE_DESCRIPTOR.blockRanges, [[1, 3], [4, 6]]);
+  assert.equal(SO.CLUE_EVIDENCE_DESCRIPTOR.secondDie, 10);
+  assert.deepEqual(SO.CLUE_EVIDENCE_TYPE.blockRanges, [[1, 3], [4, 6]]);
+  assert.equal(SO.CLUE_EVIDENCE_TYPE.secondDie, 12);
+  assert.equal(SO.CASE_BRIEFING.assignment.length, 20);
+  assert.equal(SO.CASE_BRIEFING.assignment[0], "Assault");
+  assert.equal(SO.CASE_BRIEFING.assignment[19], "Vigilantism");
+  assert.equal(SO.HUMANITY_CHECKLIST.length, 11);
+  assert.equal(SO.PROMOTION_GAIN.length, 8);
+  assert.equal(SO.PROMOTION_LOSE.length, 9);
+  assert.deepEqual(SO.HYPOTHESIS_CHECK.crit.pp, 5);
+  assert.deepEqual(SO.HYPOTHESIS_CHECK.success.pp, 3);
+  assert.deepEqual(SO.HYPOTHESIS_CHECK.failure.pp, -3);
+});

@@ -76,7 +76,7 @@ function panelSolo(host) {
       ["3. Ask the oracle", "Question Check answers yes/no with critical results. Imagining Clues gives you evidence (meaning + descriptor + type); the Character generator plus NPC Skill Level gives you someone to talk to."],
       ["4. Act", "Roll on your sheet as normal. Push when you need it — the banes are the consequence, and the app applies them."],
       ["5. Track leads", "Solo ▸ <b>Track</b> ▸ add a hypothesis and rate it with a die. Upgrade or downgrade it as evidence lands; the Hypothesis Check cashes it in for Promotion Points."],
-      ["6. Turn up the heat", "The Countdown Event Timer escalates its die each time you advance it. When it triggers, roll the Countdown Event and let it complicate the case."],
+      ["6. Turn up the heat", "Roll the Countdown Event Timer once per Shift as you set off for a new location (never for Downtime). <b>Any success fires an event</b> — roll it, let it complicate the case, and reset the timer. No successes means no event, but the timer escalates and the next check is likelier to bite."],
       ["7. Trouble", "Fights and chases run in the Combat Tracker. Let NPC Tactics and NPC Chase Maneuvers decide what the opposition does — that's the point of solo play."],
       ["8. Close the shift", "Solo ▸ <b>Session</b> ▸ walk the Promotion and Humanity checklists and award yourself honestly. Then take a Downtime Shift on your sheet and spend what you earned."],
     ], [["Open Solo Mode", () => navigate("solo")], ["Combat Tracker", () => navigate("combat")]]),

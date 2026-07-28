@@ -110,6 +110,23 @@ export function renderSolo(mount, rerender) {
     // Assignment is a D6×D10 table: 1–3 → first ten, 4–6 → second ten. [Solo Mode p.16]
     const rollAssignment = () => { const g = rollDie(6) <= 3 ? 0 : 1; const d = rollDie(10); return S.CASE_BRIEFING.assignment[g * 10 + (d - 1)]; };
 
+    // The book gives four ways to open a case (Solo Mode p.004) — all official.
+    const methods = card("How to open a case", "Four official approaches. Mix and match as you like.");
+    for (const m of S.CASE_START_METHODS) {
+      const row = el("div", { class: "solo-method" },
+        el("div", {}, el("strong", {}, m.name), " — ", el("span", { class: "muted" }, m.text)));
+      if (m.key === "gut" || m.key === "thread") {
+        row.append(btn(m.key === "gut" ? "✍ Seed a note" : "✍ Seed from an old case", () => {
+          prependNote(m.key === "gut"
+            ? `=== NEW CASE — ${new Date().toLocaleDateString()} (trust your gut) ===\n• The case as you see it: \n\n`
+            : `=== NEW CASE — ${new Date().toLocaleDateString()} (following a thread) ===\n• Unresolved thread from an earlier case: \n• Why it warrants a new investigation: \n\n`);
+          showToast("Case note added.");
+        }, "sm ghost"));
+      }
+      methods.append(row);
+    }
+    root.append(methods);
+
     // Lead card: the Solo supplement's own Case Briefing generator (Solo Mode pp.16–17).
     const lead = card("Start a Case File",
       "Each investigation opens with a briefing. Generate one below, then ask Question Checks (Scene tab) to fill in the blanks.");
@@ -199,10 +216,17 @@ export function renderSolo(mount, rerender) {
       grid(
         btn("🎲 Sphere", () => { const g = rollGrouped(S.CHARACTER_SPHERE); show({ label: "Sphere", text: g.entry, pin: `[Sphere] ${g.entry}`, title: `Character Sphere — D6=${g.d6}/D8=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
         btn("🎲 Trait", () => { const g = rollGrouped(S.CHARACTER_TRAIT); show({ label: "Trait", text: g.entry, pin: `[Trait] ${g.entry}`, title: `Character Trait — D6=${g.d6}/D12=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
+        // Human or Replicant? D10 Base Die: 1 Replicant, 2–9 human, 10 ambiguous. [p.019]
+        btn("🎲 Human or Replicant (D10)", () => {
+          const r = rollDie(10); const n = lookupRange(S.NPC_NATURE, r);
+          show({ label: "NPC Nature", text: `D10→${r} · ${n.result}`, pin: `[NPC Nature] ${n.result} — ${n.detail}`, title: `Human or Replicant — ${r} (D10)`,
+            render: (b) => b.append(el("h3", { class: "roll-result" }, n.result), el("p", { class: "muted" }, n.detail)) });
+        }),
         btn("⚡ Full NPC", () => {
           const sph = rollGrouped(S.CHARACTER_SPHERE).entry, tr = rollGrouped(S.CHARACTER_TRAIT).entry, sk = lookupRange(S.NPC_SKILL_LEVEL, rollDie(8));
-          show({ label: "NPC", text: `${tr} · ${sph}`, pin: `[NPC] ${tr} character from ${sph}; ${sk.name}`, title: "Generated NPC",
-            render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${tr} · ${sph}`), el("p", {}, `A ${tr.toLowerCase()} character connected to ${sph.toLowerCase()}.`), el("div", { class: "roll-eyebrow" }, "Skill Level"), el("p", { class: "muted" }, `${sk.name} — ${sk.dice}`)) });
+          const nat = lookupRange(S.NPC_NATURE, rollDie(10));
+          show({ label: "NPC", text: `${tr} · ${sph} · ${nat.result}`, pin: `[NPC] ${tr} character from ${sph}; ${sk.name}; ${nat.result}`, title: "Generated NPC",
+            render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${tr} · ${sph}`), el("p", {}, `A ${tr.toLowerCase()} character connected to ${sph.toLowerCase()}.`), el("div", { class: "roll-eyebrow" }, "Skill Level"), el("p", { class: "muted" }, `${sk.name} — ${sk.dice}`), el("div", { class: "roll-eyebrow" }, "Human or Replicant"), el("p", { class: "muted" }, `${nat.result} — ${nat.detail}`)) });
         }, "primary"))));
 
     // Combat & Chase helpers (Solo Mode p.13): roll NPC behavior when it isn't obvious.
@@ -219,16 +243,18 @@ export function renderSolo(mount, rerender) {
     const stepTimer = (dir) => { const i = S.ESCALATION_STEPS.indexOf(st.timerDie) + dir; if (i >= 0 && i < S.ESCALATION_STEPS.length) { st.timerDie = S.ESCALATION_STEPS[i]; writeSoloState(st); rerender(); } };
     timerCard.append(el("div", { class: "btn-row" },
       btn("🎲 Roll Timer Die", () => {
+        // Solo Mode p.006: "If any timer die rolls one or more successes, a
+        // Countdown Event is TRIGGERED." No trigger → the timer escalates.
         const parts = st.timerDie.split("/"); let successes = 0; const rr = [];
         for (const part of parts) { const size = parseInt(part.replace("D", ""), 10) || 6; const r = rollDie(size); rr.push(`D${size}:${r}`); if (r >= 6) successes++; }
         if (successes > 0) {
-          const i = S.ESCALATION_STEPS.indexOf(st.timerDie); if (i !== -1 && i < S.ESCALATION_STEPS.length - 1) st.timerDie = S.ESCALATION_STEPS[i + 1];
-          record("Timer", `${rr.join(", ")} · held → ${st.timerDie}`, `[Timer] Held (${rr.join(", ")}) → ${st.timerDie}`);
-          resultModal({ title: "Countdown Timer — Held", render: (b) => b.append(el("p", { class: "roll-result--ok" }, `Rolled ${rr.join(", ")} (${successes} success${successes > 1 ? "es" : ""}).`), el("p", { class: "muted" }, `Timer did NOT trigger. Upgraded to ${st.timerDie}.`)) });
-        } else {
-          const evRoll = rollDie(12); const ev = S.COUNTDOWN_EVENT[evRoll - 1]; st.timerDie = "D6";
+          const evRoll = rollDie(12); const ev = S.COUNTDOWN_EVENT[evRoll - 1]; st.timerDie = S.ESCALATION_STEPS[0];
           record("Countdown Event", `Triggered · ${ev.name}`, `[Countdown] TRIGGERED — ${ev.name}: ${ev.examples}`);
-          resultModal({ title: "⚠️ Countdown Event Triggered!", pinLine: `[Countdown] TRIGGERED — ${ev.name}: ${ev.examples}`, onPin: pinNote, render: (b) => b.append(el("p", { class: "roll-result--warn" }, `Rolled ${rr.join(", ")} (0 successes). Timer resets to D6.`), el("div", { class: "roll-eyebrow" }, `Event #${evRoll} — ${ev.name}`), el("p", { class: "roll-prose" }, ev.examples)) });
+          resultModal({ title: "⚠️ Countdown Event Triggered!", pinLine: `[Countdown] TRIGGERED — ${ev.name}: ${ev.examples}`, onPin: pinNote, render: (b) => b.append(el("p", { class: "roll-result--warn" }, `Rolled ${rr.join(", ")} (${successes} success${successes > 1 ? "es" : ""}) — the event fires. Timer resets to ${S.ESCALATION_STEPS[0]}.`), el("div", { class: "roll-eyebrow" }, `Event #${evRoll} — ${ev.name}`), el("p", { class: "roll-prose" }, ev.examples)) });
+        } else {
+          const i = S.ESCALATION_STEPS.indexOf(st.timerDie); if (i !== -1 && i < S.ESCALATION_STEPS.length - 1) st.timerDie = S.ESCALATION_STEPS[i + 1];
+          record("Timer", `${rr.join(", ")} · no event → ${st.timerDie}`, `[Timer] No event (${rr.join(", ")}) → ${st.timerDie}`);
+          resultModal({ title: "Countdown Timer — No Event", render: (b) => b.append(el("p", { class: "roll-result--ok" }, `Rolled ${rr.join(", ")} (no successes).`), el("p", { class: "muted" }, `No event this Shift — the pressure builds. Timer upgraded to ${st.timerDie}.`)) });
         }
       }),
       btn("▲ Upgrade", () => stepTimer(1), "sm ghost"),

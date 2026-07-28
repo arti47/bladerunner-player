@@ -537,3 +537,5 @@ textarea.input { resize: vertical; font-family: inherit; }
 .combatant__conds { margin: .35rem 0 .15rem; gap: .25rem; }
 .sheet__secret { margin-top: .6rem; padding-top: .6rem; border-top: 1px dashed var(--line); }
 .card--target-dmg { margin: .5rem 0; }
+.solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
+.solo-method:first-of-type { border-top: 0; }

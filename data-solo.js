@@ -164,9 +164,9 @@ export const NPC_CHASE_MANEUVERS = [
 export const ESCALATION_STEPS = ["D6", "D8", "D10", "D12", "D12/D6", "D12/D8", "D12/D10", "D12/D12"];
 export const COUNTDOWN_TIMER = {
   start: "D6",
-  onNoTrigger: "Upgrade one step (D6→D8→D10→D12, then add a 2nd die D12/D6 … up to D12/D12).",
-  onTrigger: "Reset to D6.",
-  note: "Roll the timer die(s) as Base Dice each check; the event triggers on a failure (no successes) — then roll the Countdown Event Table.",
+  onNoTrigger: "No successes = no event. Upgrade one step (D6→D8→D10→D12, then add a 2nd die D12/D6 … up to D12/D12), making the next check likelier to fire.",
+  onTrigger: "Any success fires the event: roll the Countdown Event Table, then reset the timer to D6.",
+  note: "Roll the timer die(s) as Base Dice once per Shift when you head to a new location (never for Downtime). ANY success triggers the event — roll the Countdown Event Table and reset. No successes = no event, but the timer escalates.",
 };
 export const HYPOTHESIS = {
   newRating: "D6",
@@ -330,3 +330,29 @@ export const SOLO_SEQUENCE = [
   "Advance the Countdown Timer; on a triggered event roll the Countdown Event Table.",
   "Award Promotion & Humanity Points at milestones via the checklists.",
 ];
+
+// Is an NPC human or Replicant?  [Solo Mode p.019] — roll a D10 Base Die.
+export const NPC_NATURE = [
+  { range: [1, 1], result: "Replicant", detail: "A Replicant — whether or not they know it, and whether or not it is on record." },
+  { range: [2, 9], result: "Human", detail: "Human, as far as anyone can tell." },
+  { range: [10, 10], result: "Ambiguous", detail: "Something unusual or unclear — a rogue Nexus-8, a digital companion, or an identity nobody can pin down." },
+];
+
+// Ways to open a case  [Solo Mode p.004]. All four are equally official.
+export const CASE_START_METHODS = [
+  { key: "gut", name: "Trust your gut", text: "Decide the nature of the investigation yourself — whatever is interesting and fits the world." },
+  { key: "thread", name: "Follow a thread", text: "Pick up an unresolved mystery, unanswered question, or consequence left over from an earlier case." },
+  { key: "generator", name: "Use the Case File Generator", text: "Roll the Core Rulebook's Case tables (Theme, Assignment, Main NPCs, Sector) for the broad details." },
+  { key: "inspiration", name: "Seek inspiration", text: "Roll the Solo Case Briefing tables, then flesh the case out with the Character and Location tables." },
+];
+
+// Solo character creation option  [Solo Mode p.002] — a lone Blade Runner may
+// skip the archetype entirely: choose key attributes and skills freely and roll
+// a D8 for starting Chinyen Points.
+export const SOLO_NO_ARCHETYPE = {
+  key: "solo_freeform",
+  name: "No archetype (solo option)",
+  chinyenDie: 8,
+  text: "Skip the archetype: pick your key attribute and key skills freely, and roll D8 for starting Chinyen Points.",
+  advice: "Solo investigators lean on OBSERVATION, CONNECTIONS, MANIPULATION and INSIGHT; specialties that only help other characters (Bodyguard, Counselor) do less for you.",
+};

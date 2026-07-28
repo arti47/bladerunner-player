@@ -492,3 +492,82 @@ test("the creation wizard walks end to end and saves a legal character [§3.5]",
     assert.ok(made.items.includes(std), `standard issue includes ${std}`);
   assert.ok(made.pp >= 0 && made.cy >= 0, "starting points rolled and floored at 0");
 });
+
+test("Countdown Timer fires on a success and escalates on a miss [Solo p.006]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const run = async (forceHigh) => {
+    await page.goto(`${base}/index.html?ct=${forceHigh}#solo`, { waitUntil: "load" });
+    await page.evaluate((hi) => {
+      localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+      localStorage.setItem("brp:solo", JSON.stringify({ timerDie: "D8", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, log: [], panel: "track", scratchpad: "" }));
+      Math.random = () => (hi ? 0.999 : 0);   // max faces (success) vs. all 1s
+    }, forceHigh);
+    await page.evaluate(() => { location.hash = "#__r"; location.hash = "#solo"; });
+    await page.waitForTimeout(150);
+    await page.getByRole("button", { name: "🎲 Roll Timer Die" }).first().click();
+    await page.waitForTimeout(200);
+    const title = await page.$eval(".modal", (m) => m.textContent);
+    const die = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).timerDie);
+    await page.keyboard.press("Escape");
+    return { title, die };
+  };
+  const fired = await run(true);
+  assert.match(fired.title, /Countdown Event Triggered/, "a success fires the event");
+  assert.equal(fired.die, "D6", "the timer resets after firing");
+  const missed = await run(false);
+  assert.match(missed.title, /No Event/, "no successes = no event");
+  assert.equal(missed.die, "D10", "a miss escalates D8 → D10");
+});
+
+test("NPC rolls are never pushed [Solo p.010]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?npcpush#combat`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Combat } = await import("/src/store.js");
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "n1", kind: "npc", npcKey: "street_thug", name: "Street Thug", nature: "human", health: 4, maxHealth: 4, card: 1 },
+      { id: "n2", kind: "npc", npcKey: "street_urchin", name: "Street Urchin", nature: "human", health: 4, maxHealth: 4, card: 2 },
+    ] });
+  });
+  await page.goto(`${base}/index.html?npcpush2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.locator(".combatant").first().getByRole("button", { name: "🎲 Skill" }).click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: /^Stamina/ }).first().click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.waitForTimeout(200);
+  const body = await page.$eval(".modal", (m) => m.textContent);
+  assert.ok(!/Push/.test(body), `no push button for an NPC roll: ${body.slice(0, 160)}`);
+  await page.keyboard.press("Escape");
+});
+
+test("solo start panel lists all four official case-start methods [Solo p.004]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?methods#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "start", log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?methods2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const text = await page.$eval("#screen", (e) => e.textContent);
+  for (const m of ["Trust your gut", "Follow a thread", "Use the Case File Generator", "Seek inspiration"])
+    assert.ok(text.includes(m), `start panel names "${m}"`);
+});
+
+test("the solo NPC generator rolls human/Replicant [Solo p.019]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?npcnat#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "scene", log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?npcnat2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /Human or Replicant/ }).first().click();
+  await page.waitForTimeout(200);
+  const body = await page.$eval(".modal", (m) => m.textContent);
+  assert.ok(/Replicant|Human|Ambiguous/.test(body), body.slice(0, 120));
+  await page.keyboard.press("Escape");
+});
