@@ -51,8 +51,12 @@ tracker across devices, connect your own Firebase project:
 5. Deploy the security rules in [`database.rules.json`](database.rules.json) to your
    Realtime Database (player/GM roles are enforced there).
 
-**Never commit real keys.** The committed `firebase-config.js` stays a placeholder. After
-filling in real keys locally, stop git from tracking your edits:
+**About the committed config.** This repository ships a working `firebase-config.js` with
+`FIREBASE_ENABLED = true` so the deployed site has multiplayer out of the box. Firebase web
+API keys are identifiers, not secrets — access is governed entirely by
+`database.rules.json` plus your Storage rules, so those must stay locked down. If you fork
+this, replace the config with your own project (or set `FIREBASE_ENABLED = false` to run
+purely local). To keep local edits out of git:
 `git update-index --skip-worktree firebase-config.js`.
 
 Once enabled: the app signs in anonymously on launch, you can **create a campaign**
@@ -62,14 +66,14 @@ and the combat tracker sync in real time.
 
 ## Deploy to GitHub Pages
 
-The repository is **private** (it derives from licensed rulebooks), so Pages is published
-via GitHub Actions rather than the branch setting:
+There is no build step, so Pages serves the repository root as-is (`.nojekyll` stops
+Jekyll from touching it):
 
-1. `git init` and push to a private GitHub repo.
-2. Add the official `actions/deploy-pages` workflow, uploading the repo root as the Pages
-   artifact (there is no build step).
-3. Enable Pages → *Source: GitHub Actions*.
-4. Open the live URL, confirm it loads with no console errors, and install the PWA from it.
+1. Push to GitHub.
+2. Settings → Pages → *Source: Deploy from a branch* → `main` / `/ (root)`.
+   (On a **private** repo Pages needs a paid plan or the `actions/deploy-pages` workflow
+   instead — upload the repo root as the artifact and set *Source: GitHub Actions*.)
+3. Open the live URL, confirm it loads with no console errors, and install the PWA from it.
 
 ## Development
 

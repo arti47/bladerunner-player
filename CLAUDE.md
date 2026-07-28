@@ -304,8 +304,13 @@ discovered rules ambiguities — never for permission to continue.
   shell + all data files, versioned `CACHE_VERSION`), an SVG icon, and an in-app
   "Update available — reload" toast when the service worker detects new code.
 - **Storage modes:** `localStorage` **local-only mode** works with zero configuration;
-  dropping real keys into `firebase-config.js` (clearly marked placeholder block +
-  `FIREBASE_ENABLED` flag) switches on cloud sync. Never commit real keys.
+  keys in `firebase-config.js` (+ `FIREBASE_ENABLED` flag) switch on cloud sync.
+  **Deviation from the original plan (owner decision, recorded 2026-07-28):** this repo is
+  public and ships a *live* config (`FIREBASE_ENABLED = true`, project
+  `bladerunner-player`) so the Pages deployment has multiplayer with no local setup.
+  Firebase web keys are identifiers, not secrets — which means **all access control rests
+  on `database.rules.json` + the Storage rules**, and they must stay tight (see §14
+  2026-07-28 audit row).
 - **Firebase:** Realtime Database (bandwidth-priced, low-latency — right for hundreds of
   tiny vitals/condition writes) + Storage for portraits (client-side canvas compression to
   ~400px before upload).
@@ -534,10 +539,15 @@ Build strictly in order:
   conditions, rollable §3.16 reference tables); advanced automation behind one shared
   toggle — only for subsystems the game actually has.
 - [x] **Hardening (always):** committed regression-test harness (`tests/` + `package.json`,
-  dev-only `playwright-core`, `npm test` = 35 checks: 24 Node unit + 11 headless smoke) ✅;
+  dev-only `playwright-core`, `npm test` = **42 checks: 31 Node unit + 11 headless smoke**) ✅;
   a11y basics asserted in the harness ✅; full **rules-accuracy audit** (§11) closed across
   two passes (changelog brp-v20/v21) ✅. (A deeper manual screen-reader pass remains optional.)
-- [ ] **Deploy:** GitHub Pages live (§13); PWA install verified on phone.
+- [x] **Deploy:** GitHub Pages live — repo `arti47/bladerunner-player` is **public** with
+  Pages enabled, served from the branch root (`.nojekyll`); no Actions workflow needed.
+  (PWA phone install: user-verified outside this repo.)
+- [ ] **Security follow-up (open):** RTDB rules hardening — see the §14 2026-07-28 audit row.
+  Live keys are public, so the rules are the only gate; **Storage rules are not tracked in
+  this repo** and portraits upload to `characters/{id}` (`sync.js`).
 
 **Per-feature spec format (mandatory for every roadmap item):**
 - **Rule:** the canonical mechanic with exact numbers (cited to the source).
@@ -607,23 +617,27 @@ Re-verify the finished app against the source:
 - The generated app is a **personal play aid** built from the user's own books. State in
   the README that if the user publishes or distributes it, licensing is their
   responsibility.
-- **GitHub repo must be private** (the app derives from licensed rulebooks the user owns).
-  GitHub Pages on a private repo requires deployment via GitHub Actions (see §13).
+- Repo visibility: the plan called for a **private** repo (the app derives from licensed
+  rulebooks the user owns). The owner chose **public** instead (free Pages from a branch).
+  Mitigation that keeps this defensible: the repo holds **no rulebook prose or art** — only
+  extracted numbers/mechanics with paraphrased effect text (§12 rules above still apply,
+  and are the reason this is acceptable). Revisit if verbatim text is ever added.
 
 ---
 
 ## 13. Deployment — GitHub Pages
 
-1. `git init` in this folder; sensible `.gitignore` (`node_modules/`, scratch/raw-text
-   working files, any real Firebase keys).
-2. Create a **private** GitHub repo (`gh repo create`) — confirm the repo name with the
-   user before creating anything on their account.
-3. Pages from a private repo: deploy via the official `actions/deploy-pages` workflow
-   (upload the repo root as the Pages artifact — there is no build step).
-4. Verify the live URL loads with zero console errors, then install the PWA on the user's
-   phone from that URL.
-5. Firebase (when the user sets it up later): keys go in `firebase-config.js` locally —
-   **never commit real keys**; document the local-override approach in `README.md`.
+**As deployed (2026-07-28):** repo `arti47/bladerunner-player`, **public**, Pages enabled,
+**Source: deploy from branch `main` / root**. `.nojekyll` keeps Jekyll from rewriting the
+static files. No build step and no Actions workflow — `git push` to `main` *is* the deploy.
+
+1. `.gitignore` covers `node_modules/` + scratch/raw-text working files.
+2. Firebase config is committed and live (see §5) — access control therefore lives entirely
+   in `database.rules.json` + Storage rules.
+3. Verify the live URL loads with zero console errors after each deploy; the SW
+   update toast prompts installed clients to reload (bump `CACHE_VERSION`, §10.6).
+4. *(If the repo is ever made private, Pages needs a paid plan or the official
+   `actions/deploy-pages` workflow uploading the repo root as the artifact.)*
 
 ---
 
@@ -658,3 +672,4 @@ Re-verify the finished app against the source:
 | 2026-07-05 | **Roll-log spelling fix (user-reported).** The roll-log summary read "0 succes" / "1 succ": `outcomeSummary` in `roller.js` built the count from the stem `succ` + `es`. Moved the pure helper to `core.js` (`outcomeSummary`, no imports) with the correct `success`/`successes` stem, imported it into `roller.js`, and added a unit test asserting the exact strings (incl. singular "1 success" and a no-"succes" guard). | User screenshot: "Failure · 0 succes · 2 banes" | `npm test` → **41 pass / 0 fail** (30 unit + 11 smoke); outcomeSummary(0,0)="Failure · 0 successes", (1,0)="Success · 1 success". | brp-v26 |
 | 2026-07-05 | **Solo NPC Tactics + NPC Chase Maneuvers (closes a §3.15 gap).** §3.15 already listed "NPC Tactics, NPC Chase Maneuvers" but the tables had never been extracted into `data-solo.js`. Added `NPC_TACTICS` (D8: Reckless 1 / Strategic 2–4 / Careful 5–7 / Cowardly 8, each with behavior) and `NPC_CHASE_MANEUVERS` (D8 pursuer/prey columns: Stand-and-shoot 1, Pursue/Flee 2–5, Cut-off/Block-or-hide 6–7, Stand-and-shoot 8), verbatim from the Solo Mode Combat & Chases section. New Solo **"Combat & Chase"** card in the Scene panel rolls both (logged + pinnable). The "Patch yourself up while Broken" rule was already covered by the sheet's First Aid (MEDICAL AID, advantage with Glue); zone/obstacle guidance reuses the existing Location + Core chase-obstacle tables. Added a unit test covering the full D8 of both tables. | User supplied the verbatim Combat & Chases tables | `npm test` → **42 pass / 0 fail** (31 unit + 11 smoke). Drove the UI: NPC Tactics → "Careful", NPC Chase Maneuver → Pursue/Flee; zero console errors. | brp-v27 |
 
+| 2026-07-28 | **Project study + spec reconciliation (no app-behavior change).** Read the whole tree and re-ran the harness. (a) **Harness portability fix:** `tests/smoke.test.mjs` only knew macOS Chrome paths, so the 11 headless smoke checks **silently skipped on Linux/CI** — `npm test` looked green while running unit-only. Browser discovery now tries `CHROME_PATH` → `PLAYWRIGHT_BROWSERS_PATH` chromium bundles (`chrome-linux/chrome`, then `headless_shell`, newest revision first) → macOS app bundles → `/usr/bin/{google-chrome,chromium,chromium-browser}` → playwright's `channel:"chrome"`, and existence-filters the list. (b) **Spec drift corrected:** §5/§12/§13 said "repo must be private / never commit real keys"; reality is a **public** repo with a **live** `firebase-config.js` (`FIREBASE_ENABLED = true`) and Pages served from the `main` root — documented as an owner decision with its consequence (rules files are now the *only* access control). (c) Roadmap: **Deploy** checked (Pages live); harness count corrected 35→42; new open **Security follow-up** item. README's Firebase + Pages sections rewritten to match. **Findings raised, not yet fixed (await owner go-ahead):** RTDB rules allow (1) any authenticated user to seize any character node via `newData.owner == auth.uid`, (2) a member to write `role:"gm"` onto their own member node (privilege escalation), (3) global `joinCodes` read → enumerate + join any campaign; Storage rules are untracked. | Study request; found the harness was under-running and the spec had drifted from the deployment reality | `npm test` → **42 pass / 0 fail** (31 unit + **11 smoke, no longer skipped**) on Linux with no `CHROME_PATH` set — every route renders, zero console errors, no 360/390px overflow | n/a (dev/docs only — no shipped file changed) |

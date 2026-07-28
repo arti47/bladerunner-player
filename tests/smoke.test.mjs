@@ -13,11 +13,30 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ROUTES = ["home", "characters", "rules", "wizard", "sheet", "combat", "solo", "gm", "settings"];
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
+// Browser discovery, in order: explicit CHROME_PATH → a Playwright browser bundle
+// (PLAYWRIGHT_BROWSERS_PATH, as used by CI images) → the usual macOS/Linux install
+// locations → playwright-core's own `channel: "chrome"` lookup. Without the Linux
+// entries the smoke layer silently skipped everywhere but macOS.
+function playwrightBundles() {
+  const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (!root || !fs.existsSync(root)) return [];
+  return fs.readdirSync(root)
+    .filter((d) => d.startsWith("chromium"))
+    .sort().reverse()   // newest build revision first
+    .flatMap((d) => [
+      path.join(root, d, "chrome-linux", "chrome"),
+      path.join(root, d, "chrome-linux", "headless_shell"),
+    ]);
+}
 const CHROME_PATHS = [
   process.env.CHROME_PATH,
+  ...playwrightBundles(),
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
-].filter(Boolean);
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+].filter(Boolean).filter((p) => p === process.env.CHROME_PATH || fs.existsSync(p));
 
 function startServer() {
   const server = http.createServer((req, res) => {
