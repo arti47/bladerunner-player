@@ -150,7 +150,8 @@ section against the §3 profile.
 skill die. Die by level: **A=D12, B=D10, C=D8, D=D6**. **Success = 6+** (one die); **10+ =
 two successes**. ≥1 success = the action succeeds; extra successes = greater effect / more
 damage. **Advantage** = add a third die (count all successes); **disadvantage** = remove the
-lower Base Die. **Push** = re-roll a FAILED roll; each **1** rolled on a push inflicts 1
+lower Base Die. **Push** = re-roll a FAILED roll only (`PUSH_FAILED_ROLLS_ONLY`; the engine
+hides the push button once a roll has a success, and NPC rolls are never pushable); each **1** rolled on a push inflicts 1
 damage (if STR/AGI roll) or 1 stress (if INT/EMP roll). **Replicants suffer stress instead
 of damage on ALL pushes.** Numerical rolls read face value (ignore successes); D3 = D6÷2
 round up. Opposed rolls: only the attacker/initiator may push.
@@ -169,7 +170,9 @@ increase. **Replicants: +1 increase, must be STR or AGI.** Vehicles have a fifth
 **3.4 Skills (13).** Baseline **D**; increases from Years-on-Force; archetype **key skills
 must be C+**. STR: Hand-to-Hand Combat, Stamina, Force. AGI: Stealth, Mobility, Firearms.
 INT: Observation, Medical Aid, Tech. EMP: Connections, Manipulation, Insight. MANEUVER:
-Driving. Opposed pairs: Stealth↔Observation, Manipulation↔Insight, Interrogation↔Stamina.
+Driving. Opposed pairs: Stealth↔Observation, Manipulation↔Insight, Interrogation↔Stamina —
+run from the sheet's **⚖ Opposed roll** (both sides' Base Dice, tie goes to the side being
+opposed, only the initiator may push); the Voight-Kampff test uses the same surface.
 Insight also = Replicant Baseline Test. Connections acquires gear (LAPD=Promotion Pts,
 black market=Chinyen Pts) and moves between LA locations.
 
@@ -182,22 +185,31 @@ gear). ③ Years on Force (D12): Rookie(1–2, +4 attr/+8 skill/0 spec/Promotion
 roll the archetype's Chinyen die + the Years modifier.** Replicants are always Rookies AND
 −1 Promotion, −1 Chinyen (min 0), plus the +1 STR/AGI attribute increase. ④ attributes ⑤
 Health/Resolve ⑥ skills ⑦ specialties (count by Years; choose or roll archetype table) ⑧ key
-memory (roll 5 tables) ⑨ key relationship (roll tables) ⑩ standard gear (Badge, PK-D Blaster
+memory (roll 5 tables) ⑨ key relationship (roll 3 D12 tables: who / what it's like / what's
+going on) ⑩ standard gear (Badge, PK-D Blaster
 or .357 Subcompact, KIA, Detective Special Spinner) ⑪ signature item ⑫ appearance ⑬ name ⑭
-home (Sector 5 default) ⑮ play. **Secret Replicant** option: on reveal, Health +2, Resolve
-−2, Replicant rules apply.
+home (D12 table, 1–4 = the LAPD Sector 5 apartment) ⑮ play. **Secret Replicant** option (wizard nature step): build and
+play as a human; the sheet carries a *Reveal Replicant identity* action that flips
+`nature`, so the derived formulas apply Health +2 / Resolve −2 and every push costs stress
+from that moment. The book's own **secret D6** (a 6 means the
+apparently-human character is a Replicant) is offered on the nature step.
 
-**3.6 Conditions (auto-apply effects in the engine).** Broken-by-damage (0 Health: no
-actions/skill rolls, further damage → auto crit), Broken-by-stress (stress ≥ Resolve →
-critical-stress effect), Prone, In-cover, Grappled/Restrained (can't defend), Aiming
-(advantage to next single shot), plus **every critical-injury effect** (skill disadvantages,
-crawl-only, immobile) and **every critical-stress effect**. Each must modify the exact rolls
-it names.
+**3.6 Conditions (auto-applied by the engine).** Broken-by-damage (0 Health: no
+actions/skill rolls, can't defend, further damage → auto crit), Broken-by-stress (stress ≥
+Resolve → critical-stress effect), Prone (disadvantage to your own close combat; advantage
+to anyone attacking you in close combat), In-cover (disadvantage to anyone shooting you),
+Grappled/Restrained (rolls no defence dice), Aiming (advantage to next single shot, then
+spent), plus **every critical-injury effect** (skill disadvantages, crawl-only, immobile) and
+**every critical-stress effect**. Each is carried as a machine-readable `effect` key in
+`CONDITIONS` and read by `roller.js`; combatants in the tracker carry their own
+`conditions{}` so an attack knows the target's state.
 
 **3.7 Health, damage & death.** Two tracks (Health/Resolve). Damage = weapon Damage + 1 per
 extra success; push-damage = 1 per 1. **Armor** rating A–D: when hit roll **2 dice** of that
-type, each success −1 damage; if reduced to 0 the armor also negates the critical injury
-(one suit only; wearing armor disadvantages listed skills). Riot/police shield: no rating,
+type (`ARMOR_DICE`), each success −1 damage; if reduced to 0 the armor also negates the
+critical injury (one suit only — the best-rated equipped suit; wearing armor disadvantages
+the skills listed on it). Applied automatically in every combat-tracker attack, for PCs and
+NPCs alike (NPC armor is matched from their gear list). Riot/police shield: no rating,
 disadvantages attackers from the front. **Critical injury** on a crit hit: roll the weapon's
 **Crit Die** on the **Crushing** or **Piercing** d12 table (blunt weapons' Crit Die =
 attacker STR die); extra successes = extra Crit Dice, choose. **Death procedure:** a lethal
@@ -207,10 +219,13 @@ AID roll (takes the crit's interval; success bumps the interval up a category; a
 Shift-crit ends the saves). Self-stabilize (not Broken) = disadvantage; Broken+lethal = two
 MEDICAL AID rolls (heal + save), any order. **Instant-kill crits** (Crushing 12; Piercing 8,
 10, 12): die immediately, no save. Crit tables (with lethal/interval/healing/effect) →
-`data.js`; guided death UI in `sheet.js`.
+`data.js`; guided death UI in `sheet.js`. Crits rolled during an attack can be **applied
+straight to the target** (PC sheet or NPC tracker entry), and damage landing on an already-
+Broken combatant forces a critical injury.
 
 **3.8 Rest & recovery.** Broken recovery: First Aid (MEDICAL AID, heal = successes; Glue =
-advantage) or, alone, +1 Health after 1 Shift. **Downtime:** humans +1, Replicants +2
+advantage) or, alone, +1 Health after 1 Shift (applied automatically when a Broken character
+logs an Investigation Shift). **Downtime:** humans +1, Replicants +2
 Health per Shift (+1 more with medical care/MedChecker); Health & Resolve heal same Shift.
 Cadence: after **3 investigation Shifts** need 1 Downtime Shift or accrue stress (Married to
 the Job specialty → 4). Resolve loss can be permanent over a campaign (max Resolve drops;
@@ -231,14 +246,16 @@ escalating penalty by number failed. App fully automates all of this (per ruling
 **3.11 Inventory & wealth.** **No weight/slots/ammo/encumbrance.** Inventory = plain item
 list + **Promotion Point** and **Chinyen Point** counters. Gear acquired via PP (LAPD) or
 Chinyen (black market/private), each + a Connections roll (double payment = advantage; fail
-= wasted time). Availability tiers Standard/Premium/Rare/Incidental; Cost = # points.
+= wasted time, points kept, one Shift burned) — automated by the sheet's **Acquire gear**
+flow over the whole catalog (`ACQUISITION` in `data.js`). Availability tiers Standard/Premium/Rare/Incidental; Cost = # points.
 Weapon fields: Damage, Crit Die (type or "STR"), Damage Type (Piercing/Crushing), Min Range,
 Max Range, Availability, Cost, full-auto flag. Enumerate ALL weapons/armor/gear/vehicles in
 Phase 0 (7 close-combat + ~8–10 ranged + 5 armor/restraint + vehicles + general gear).
 
 **3.12 Combat.** Zone maps; 5 ranges (Engaged, Short, Medium, Long, Extreme). **Initiative:
 10 cards #1–10**, drawn once at start, act low→high, persists all combat; exchangeable;
-Surprise/Ambush → auto #1; Fast Reflexes → extra card; NPC groups may share a card; hidden-
+Surprise/Ambush → auto #1; **Fast Reflexes / Synaptic Implants → draw an extra card and keep
+the better one (automated in `drawInitiative`)**; NPC groups may share a card; hidden-
 initiative variant re-draws each round. Turn = **1 action + 1 move + free actions**. Move =
 1 zone or Short↔Engaged; Sprint (MOBILITY, +1 move/success) as action; leaving/passing an
 active Engaged enemy → MOBILITY or provoke a **free attack**. Close combat = **opposed** roll
@@ -246,8 +263,9 @@ active Engaged enemy → MOBILITY or provoke a **free attack**. Close combat = *
 opponent. Ranged = straight FIREARMS roll; crit = 2 successes; range/cover/target-size/aim
 modifiers; **full auto** (advantage, +1 stress, spill extra successes to secondary targets);
 called shots; grapple; ambush. **Chases** (foot & vehicle) run mapless with maneuver &
-obstacle tables (vehicles: Maneuverability/Hull/Armor, DRIVING). No ammo tracking. Enumerate
-chase-maneuver/obstacle tables in Phase 0 → `combat.js`.
+obstacle tables (vehicles: Maneuverability/Hull/Armor, DRIVING) — implemented in `chase.js`
+and surfaced on the Combat screen: environment, distance as a Range Category, per-side
+maneuver choice, D12 obstacle roll, and caught/escaped detection. No ammo tracking.
 
 **3.13 Bestiary & NPCs.** No monster bestiary. NPC build: avg human = C all; typical
 Replicant = B in STR/AGL; Replicant NPC = +1 STR/AGL, +2 Health. **14 Typical NPCs**
@@ -259,22 +277,30 @@ the combat tracker (or fold into npcs — keep one canonical list).
 
 **3.14 Pregens — NONE** published → no `data-pregens.js`.
 
-**3.15 Solo Mode — PRESENT** (`data-solo.js` + `solo.js`). Oracle/GM-emulator: Blade Runner
-Origin table (D12); Promotion/Humanity self-award checklists; Countdown Event Timer
-(escalating Base Dice D6→…→D12/D12, reset on trigger); Scene Check + Scene Categories (D12);
+**3.15 Solo Mode — PRESENT** (`data-solo.js` + `solo.js`). **Verified table-by-table against
+the Solo Mode PDF on 2026-07-28 — the data layer matched the printing exactly.** Oracle/
+GM-emulator: Blade Runner Origin table (D12); Promotion/Humanity self-award checklists;
+Countdown Event Timer (once per Shift when you head to a new location, never in Downtime —
+**any success FIRES the event**, then reset to D6; no successes = no event but the timer
+escalates D6→D8→D10→D12→D12/D6→…→D12/D12); Scene Check + Scene Categories (D12);
 **Question Check** yes/no oracle (with Critical Success + interpretation); **Hypothesis
 tracker** (die-rated leads, upgrade/downgrade) + **Hypothesis Check** (roll the rating as
 Base Dice, no push; ≥2 succ = crit +5 PP, 1 = success +3 PP, 0 = fail −3 PP, or adv/dis on a
 MANIPULATION/CONNECTIONS roll when convincing); NPC Skill Level table, NPC Tactics, NPC Chase
 Maneuvers; **Imagining Clues** (Meaning D8, Evidence Descriptor D6→D10, Evidence Type D6→D12);
-**Character/NPC generator** (Sphere D6→D8, Trait D6→D12); **Cipher** (Method/Focus, D6 block →
+**Character/NPC generator** (Sphere D6→D8, Trait D6→D12, plus the D10 human/Replicant check —
+1 Replicant, 2–9 human, 10 ambiguous); **Cipher** (Method/Focus, D6 block →
 D12) and **Location** (Environment/Place, D6 block → D12) — both are **two-tier rolls**, not
-uniform picks; Case Briefing tables; Downtime Event table; Countdown Event table. Every oracle
+uniform picks; the **four official ways to open a case** (trust your gut / follow a thread /
+Core Case File Generator / seek inspiration); the **archetype-free solo character** option
+(free key attribute & skills, D8 Chinyen); **NPC rolls are never pushed**; Case Briefing tables; Downtime Event table; Countdown Event table. Every oracle
 that groups by a D6 rolls the block first, then the scoped D10/D12 within it.
 
-**3.16 GM tables.** Case File Generator (hook/crime, twist, Main NPCs D3+3, victims,
-locations, complications), Disciplinary Action table, random street events. → GM screen
-reference panel; enumerate in Phase 0.
+**3.16 GM tables.** Case File Generator (theme/assignment, sector, twist, **Main NPCs —
+roll D3+3 for the cast, then each NPC's type/occupation/quirk/name**), Disciplinary Action
+table. → GM screen Case panel. **Not extracted (source needed):** the victims table, the
+complications table, and the random street-events table — §14's 2026-07-28 audit row
+records these as the only known data gaps.
 
 ---
 
@@ -345,6 +371,7 @@ discovered rules ambiguities — never for permission to continue.
 | `firebase-config.js` | Placeholder config + `FIREBASE_ENABLED` flag |
 | `database.rules.json` | RTDB security rules (player/GM roles) |
 | `manifest.json`, `service-worker.js`, `icon.svg` | PWA |
+| `src/chase.js` | Chase tracker (foot/ground/aerial) surfaced on the Combat screen |
 | `tests/` + `package.json` | Dev-only headless regression harness (`npm test`); dev-only `playwright-core`; `node_modules` gitignored; not in the SW app shell |
 | `README.md` | Setup incl. Firebase steps, GitHub Pages deploy, and the personal-use licensing note (§12) |
 | `CLAUDE.md` | This document — the project's living canonical spec |
@@ -368,7 +395,8 @@ One module per responsibility; explicit `import`/`export`, nothing smuggled thro
 | `wizard.js` | Creation wizard + pregens (if §3.14 present). |
 | `roller.js` | The dice engine: every roll type, push flows, damage applier. |
 | `sheet.js` | The full character sheet + all in-play tracking UI. |
-| `combat.js` | Shared combat tracker: initiative, turn state, combatant cards. |
+| `combat.js` | Shared combat tracker: initiative, turn state, combatant cards, conditions. |
+| `chase.js` | Foot & vehicle chases: distance, maneuvers, D12 obstacle tables (§3.12). |
 | `solo.js` | Solo assistant — PRESENT (official Solo Mode). |
 | `gm.js` | GM dashboard. |
 | `tutorial.js` | "How to Play" — procedural walkthroughs (setup / solo / table) + a live cheat sheet. |
@@ -397,6 +425,7 @@ campaigns/{campaignId}
 characters/{characterId}
   owner, campaignId
   identity:  { name, <§3.5 option fields>, appearance, <§3.10 identity fields>, portraitUrl }
+  secretReplicant: bool                                            // v4 — built human, Replicant on reveal (§3.5)
   attributes:{ <§3.2 attributes> }
   derived:   { <§3.3 derived stats> }
   state:     { health, resolve, conditions{key:true}, criticalInjuries[], criticalStress{name,text}|null,
@@ -413,8 +442,13 @@ characters/{characterId}
 deathSave: "round"|"shift"|null, instantKill, healing, effect, disadvantage[], flag,
 stabilized }`. **Local combat** (Phase 4, pre-Firebase) is stored under `brp:combat` via
 `store.js` `Combat`: `{ active, round, turnIndex, combatants[{ id, kind:"pc"|"npc", charId?,
-npcKey?, name, nature, health, maxHealth, card } ] }`; Phase 5 mirrors this into
-`campaigns/{id}/combat`.
+npcKey?, name, nature, health, maxHealth, card, conditions{key:true}, criticalInjuries[] } ] }`;
+Phase 5 mirrors this into `campaigns/{id}/combat`. Combatant `conditions` drive the attack
+engine (§3.6) and `criticalInjuries` record crits applied from an attack (§3.7).
+
+**Chase state** (local-only, §3.12) lives under `brp:chase` via `chase.js` `Chase`:
+`{ active, env:"foot"|"ground"|"aerial", round, distIdx, obstacle{roll,text}|null,
+prey, pursuer, log[] }`. `distIdx` indexes `RANGES`; below 0 = caught, past the end = escaped.
 
 **Global roll log** (local-only, not mirrored) is stored under `brp:rolllog` via `store.js`
 `RollLog`: newest-first, capped 150, entries `{ id, ts, source:"sheet"|"combat"|"solo"|"gm",
@@ -425,7 +459,7 @@ the whole log. Pinning a log row writes a `journal[]` entry on the active charac
 Rules: every rules number the schema references lives in the data files; every schema
 addition ships with a normalization path that back-fills defaults on old characters (never
 crash on old data); every field addition is documented in this section **in the same
-change**. Current `SCHEMA_VERSION = 3`.
+change**. Current `SCHEMA_VERSION = 4`.
 
 ---
 
@@ -540,7 +574,7 @@ Build strictly in order:
   conditions, rollable §3.16 reference tables); advanced automation behind one shared
   toggle — only for subsystems the game actually has.
 - [x] **Hardening (always):** committed regression-test harness (`tests/` + `package.json`,
-  dev-only `playwright-core`, `npm test` = **42 checks: 31 Node unit + 11 headless smoke**) ✅;
+  dev-only `playwright-core`, `npm test` = **84 checks: 51 Node unit + 33 headless smoke**) ✅;
   a11y basics asserted in the harness ✅; full **rules-accuracy audit** (§11) closed across
   two passes (changelog brp-v20/v21) ✅. (A deeper manual screen-reader pass remains optional.)
 - [x] **Deploy:** GitHub Pages live — repo `arti47/bladerunner-player` is **public** with
@@ -557,6 +591,11 @@ Build strictly in order:
   from `data.js`** (`LEVEL_DIE`, `SUCCESS_THRESHOLD`/`DOUBLE_THRESHOLD`, `PUSH_BANE_FACE`,
   `RANGES`, `INITIATIVE_CARDS`, `RECOVERY`, `SPECIALTY_LEARN_COST_PP`,
   `SKILL_INCREASE_COST_HP`, `CONDITIONS`) — nothing mechanical is hardcoded (§10.2).
+- [x] **Fidelity audit (2026-07-28):** every §3 mechanic re-checked against the app and the
+  gaps closed — armor procedure, condition effects, crit application, auto-crit while Broken,
+  extra initiative cards, gear acquisition, Secret Replicant, the chase subsystem, D3+3 main
+  NPCs, and a Rules Library that now indexes every extracted table. See the §14 row for the
+  full work-list, including the three items that still need the source book.
 - [ ] **Security follow-up (open):** RTDB rules hardening — see the §14 2026-07-28 audit row.
   Live keys are public, so the rules are the only gate; **Storage rules are not tracked in
   this repo** and portraits upload to `characters/{id}` (`sync.js`).
@@ -686,3 +725,6 @@ static files. No build step and no Actions workflow — `git push` to `main` *is
 
 | 2026-07-28 | **Project study + spec reconciliation (no app-behavior change).** Read the whole tree and re-ran the harness. (a) **Harness portability fix:** `tests/smoke.test.mjs` only knew macOS Chrome paths, so the 11 headless smoke checks **silently skipped on Linux/CI** — `npm test` looked green while running unit-only. Browser discovery now tries `CHROME_PATH` → `PLAYWRIGHT_BROWSERS_PATH` chromium bundles (`chrome-linux/chrome`, then `headless_shell`, newest revision first) → macOS app bundles → `/usr/bin/{google-chrome,chromium,chromium-browser}` → playwright's `channel:"chrome"`, and existence-filters the list. (b) **Spec drift corrected:** §5/§12/§13 said "repo must be private / never commit real keys"; reality is a **public** repo with a **live** `firebase-config.js` (`FIREBASE_ENABLED = true`) and Pages served from the `main` root — documented as an owner decision with its consequence (rules files are now the *only* access control). (c) Roadmap: **Deploy** checked (Pages live); harness count corrected 35→42; new open **Security follow-up** item. README's Firebase + Pages sections rewritten to match. **Findings raised, not yet fixed (await owner go-ahead):** RTDB rules allow (1) any authenticated user to seize any character node via `newData.owner == auth.uid`, (2) a member to write `role:"gm"` onto their own member node (privilege escalation), (3) global `joinCodes` read → enumerate + join any campaign; Storage rules are untracked. | Study request; found the harness was under-running and the spec had drifted from the deployment reality | `npm test` → **42 pass / 0 fail** (31 unit + **11 smoke, no longer skipped**) on Linux with no `CHROME_PATH` set — every route renders, zero console errors, no 360/390px overflow | n/a (dev/docs only — no shipped file changed) |
 | 2026-07-28 | **"How to Play" tutorial (user request).** New `src/tutorial.js` mounted at `#tutorial` via `router.js`; entry points = a Home tile ("How to Play") and a Settings card — deliberately no bottom-nav tab (six tabs already). Four segmented panels (`segmentNav`, last panel persisted in `brp:tutorial`): **Setup** (choose Solo/GM toggles → creation wizard → sheet orientation → optional campaign sync), **Solo** (the 8-step oracle loop: case briefing → scene check → question/clue/NPC oracles → act & push → hypothesis tracker → countdown timer → combat with NPC Tactics → close the shift; plus solo habits), **At the Table** (Game-Runner prep + case generator, in-session play & the live party panel, running a fight in the tracker, between-session Downtime/advancement), **Cheat Sheet** (rolling, vitals, combat, recovery, point costs, conditions). Steps carry deep-link buttons that navigate straight to the relevant route. Panels warn when the mode they describe is toggled off. Per §10.2 the cheat sheet reads every number live from `data.js` — no rules value is hardcoded in the module. Added `.tut__*` styles, `src/tutorial.js` to the SW app shell, and `tutorial` to the smoke-test route sweep. | User asked for a tutorial on running the game solo and non-solo | `npm test` → **43 pass / 0 fail** (31 unit + 12 smoke). Drove the UI headless at 360px: all four panels render (4/2/4/6 cards), no horizontal overflow, panel choice survives reload, "Combat Tracker →" deep-links to `#combat`, Home shows the "How to Play" tile; zero console errors (only the expected aborted Firebase requests from the hermetic proxy). | brp-v28 |
+| 2026-07-28 | **Exhaustive fidelity + button audit — engine gaps closed.** Drove every control on all 10 routes headless (three levels deep: screen → modal → nested modal, state reseeded before each click) and re-checked all of §3 against the code. **Zero JS errors were found in any control**; the fidelity gaps were unimplemented mechanics, now built: **(1) Armor** — `ARMOR_DICE`/`ARMOR_DAMAGE_PER_SUCCESS` in `data.js`, `armorFor`/`rollArmor` in `roller.js`; every tracker attack (ranged, opposed melee, counter-hit) rolls the target's suit, subtracts successes, and suppresses the critical injury when it stops everything; best equipped suit only; NPC armor matched from their gear; a push re-rolls it against the new damage. **(2) Conditions** — Prone / In-Cover / Grappled were display-only; `CONDITIONS.effect` now carries `selfMeleeDisadvantage`/`attackerMeleeAdvantage`/`attackerRangedDisadvantage`/`cannotDefend`, combatants carry their own `conditions{}`, and the engine reads them (target picker on ranged attacks, defender rolling no dice when Grappled/Broken, Prone biting your own close combat on the sheet too). **(3) Criticals** now apply to the target (PC sheet or NPC entry) from the attack modal, and damage landing on an already-Broken combatant forces a critical-injury roll. **(4) Fast Reflexes / Synaptic Implants** draw an extra initiative card and keep the better one. **(5) Gear acquisition** (§3.11) — new `ACQUISITION` table + sheet flow over the whole catalog: pay Promotion or Chinyen, optional double payment for advantage, CONNECTIONS roll, failure keeps the points and burns the Shift. **(6) Secret Replicant** (§3.5) — wizard option + sheet reveal that flips `nature` (schema **v4** `secretReplicant`). **(7) Chases** (§3.12) — new `src/chase.js` on the Combat screen: environment, distance as a Range Category, per-side maneuvers, D12 obstacle rolls off the right table, caught/escaped detection; state in `brp:chase`. **(8) Opposed rolls** (§3.4) — generic sheet surface for Stealth↔Observation, Manipulation↔Insight, Interrogation↔Stamina and the Voight-Kampff test; tie goes to the opposed side, only the initiator may push. **(9)** Broken-and-alone now heals 1 Health per Shift. **(10) GM** rolls D3+3 for the main cast. **(11) Rules Library** now indexes Combat, Chases, Vehicles, Critical Injuries, Stress, Recovery, Years on the Force and Advancement — previously ~8 extracted tables had no UI anywhere. **Bugs fixed:** the key-memory tick didn't update the net-dice badge (roll used it, badge didn't); `partyList()` added a Firebase listener per Settings render and never removed one; portraits were mirrored into RTDB as base64 on every save while `uploadPortrait` sat unused (now uploads to Storage for shared characters); armor read unequipped items; a pre-armor damage figure printed next to the post-armor one; `.switch__input` sat under its own track so pointer automation couldn't reach it. **Harness:** the smoke sweep navigated by hash, so only the first route was ever a cold boot — every route now loads fresh (and the harness's own blocked cross-origin requests no longer masquerade as app errors); `npm test` degrades gracefully when `playwright-core` is missing instead of failing 12 checks. **Still open after the later source passes:** the Case File Generator's victims / complications / street-events tables and ranged range-band modifiers (the supplied Core reference covers Ch01–07 only, so Ch08/Ch09 tables remain unextracted). | User asked for an exhaustive audit of system fidelity, feature coverage and every button | Headless crawl: 10 routes / 180 controls, 3 levels deep — **zero console errors, zero broken handlers** (the only click failures were a collapsed `<details>` and the covered switch input, both harness/CSS artifacts, the latter fixed). `npm test` → **66 pass / 0 fail** (40 unit + 26 smoke), including new guards for armor maths, condition effects, acquisition currency, Secret Replicant ±2, chase tables, D3+3, opposed rolls, Broken-alone healing, tracker conditions/crits, and the key-memory badge. | brp-v29 |
+| 2026-07-28 | **Solo Mode verified against the actual source PDF (user-supplied) — one inverted rule fixed, four gaps closed.** Extracted the Solo Mode book and diffed every table against `data-solo.js`: Cipher (36+36), Location (36+36), Character Sphere/Trait, Clue Meaning/Descriptor/Type, Case Briefing ×4, Origin, Scene/Question/Critical-Success/NPC-Skill, NPC Tactics & Chase Maneuvers, Downtime & Countdown events, and all three checklists — **every entry, block range and second die matched the printing** (only cosmetic spacing differed). The faults were behavioral: **(1) the Countdown Event Check was inverted** — the book says *any* success on the timer FIRES the event (then reset to D6), while a miss means no event but escalates the die; the app did the exact opposite, so events fired only on a failed roll and the timer ran backwards. Fixed in `solo.js` and in the `COUNTDOWN_TIMER` note. **(2) NPCs could push rolls** — Solo Mode p.010 says never push for NPCs; the tracker's three push buttons are now gated to player characters. **(3)** Added the **D10 human/Replicant check** (`NPC_NATURE`, 1 Replicant / 2–9 human / 10 ambiguous) to the solo NPC generator, including in ⚡ Full NPC. **(4)** Restored the book's **four ways to open a case** (`CASE_START_METHODS`) in the Start panel — an earlier pass had removed "trust your gut / follow a thread" as invented; the printing has all four. **(5)** Added the **archetype-free solo character** option (`SOLO_NO_ARCHETYPE`: free key attribute and skills, D8 Chinyen) as a wizard choice gated behind Solo Mode, with a `FREEFORM_ARCHETYPE` record in `rules.js` so every archetype consumer and both validators keep working. Tutorial's countdown step rewritten to the correct rule. | User supplied the Solo Mode PDF — the source the earlier audits could not reach | `npm test` → **76 pass / 0 fail** (45 unit + 31 smoke). New guards: timer fires-on-success and escalates-on-miss (driven through the real UI both ways), NPC push suppressed, NPC nature table, four case-start methods rendered, archetype-free build validating on budgets alone, plus spot-checks pinning the verified table contents. | brp-v30 |
+| 2026-07-28 | **Core rules reference (user-supplied) — push rule corrected, three missing creation tables added.** Diffed the Core reference against the app: archetype D12 tables (both natures), all seven archetypes' key attribute/skills/Chinyen die, Years on the Force, attribute/skill baselines and budgets, Health/Resolve formulas, both D12 critical-injury tables (lethality, death-save interval, healing, effect), stress factors, ranges, combat actions, chase maneuvers and the memory tables **all matched the printing**. Fixes: **(1) pushing is for FAILED rolls only** ("If you fail a Base Dice roll, you can push the roll") — the engine offered a push after any roll, including successes; added `PUSH_FAILED_ROLLS_ONLY` and gated every push button (opposed rolls gate on losing the exchange, so the initiator can still push a lost contest). **(2) Key relationship** was free text — added the book's three D12 tables (who / what it's like / what's going on) and a Roll-all step in the wizard. **(3) Signature item** was free text — added the D12 table, a roll button, and its once-per-session 1-stress recovery on the sheet's once-per-Shift row. **(4) Home** was free text — added the D12 table (1–4 = the LAPD Sector 5 apartment) with a roll button. **(5) Secret Replicant** now also offers the book's own secret D6 (a 6 means the apparently-human character is a Replicant). **(6)** `COMBAT_ACTIONS` unarmed-attack prerequisite corrected to "Unarmed". Rules Library gained a **Creation Tables** section covering all of the above. | User supplied the Core rules reference — the source the earlier audits could not reach | `npm test` → **84 pass / 0 fail** (51 unit + 33 smoke). New guards: push offered only on a failure (driven through the real UI both ways), the three relationship tables, signature-item table + heal, home table coverage across a full D12, secret-D6 constants, and a creation-table sweep pinning archetypes/memory/combat prerequisites to the printing. | brp-v31 |

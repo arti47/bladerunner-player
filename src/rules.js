@@ -1,12 +1,21 @@
 // rules.js — pure rules lookups over the data libraries. No UI, no state.
 import * as D from "../data.js";
+import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
 
 export const dieForLevel = (level) => D.LEVEL_DIE[level];        // "B" -> 10
 export const dieSizeForLevel = (level) => D.LEVEL_DIE[level];    // alias (die size == max face)
 export const skill = (key) => D.SKILLS.find((s) => s.key === key);
 export const skillName = (key) => skill(key)?.name ?? key;
 export const attribute = (key) => D.ATTRIBUTES.find((a) => a.key === key);
-export const archetype = (key) => D.ARCHETYPES.find((a) => a.key === key);
+// The solo option (Solo Mode p.002) is an archetype-shaped record with no key
+// attribute or key skills, so every archetype consumer keeps working.
+export const FREEFORM_ARCHETYPE = {
+  key: SOLO_NO_ARCHETYPE.key, name: SOLO_NO_ARCHETYPE.name, nature: "any",
+  keyAttr: null, keySkills: [], chinyenDie: SOLO_NO_ARCHETYPE.chinyenDie,
+  specialtyOptions: [], blurb: SOLO_NO_ARCHETYPE.text, names: [], appearance: [],
+};
+export const archetype = (key) =>
+  D.ARCHETYPES.find((a) => a.key === key) || (key === FREEFORM_ARCHETYPE.key ? FREEFORM_ARCHETYPE : undefined);
 export const specialty = (key) => D.SPECIALTIES.find((s) => s.key === key);
 export const weapon = (key) => [...D.WEAPONS_MELEE, ...D.WEAPONS_RANGED].find((w) => w.key === key);
 export const armor = (key) => D.ARMOR.find((a) => a.key === key);
@@ -40,6 +49,32 @@ export function lookupRange(table, roll) {
     const max = r.max !== undefined ? r.max : (r.range ? r.range[1] : Infinity);
     return roll >= min && roll <= max;
   });
+}
+
+// ---- Acquiring gear  [Ch08 / §3.11] ---------------------------------------
+// Everything with an Availability tier and a Cost can be requisitioned (LAPD,
+// Promotion Points) or bought (black market, Chinyen Points).
+export function acquirableItems() {
+  const out = [];
+  const add = (cat, list, extra = () => ({})) => {
+    for (const it of list) {
+      if (!it.avail || it.avail === "—") continue;
+      out.push({ key: it.key, name: it.name, cat, avail: it.avail, cost: it.cost, ...extra(it) });
+    }
+  };
+  add("Weapons", [...D.WEAPONS_MELEE, ...D.WEAPONS_RANGED, ...D.EXPLOSIVES]);
+  add("Armor", D.ARMOR);
+  add("Gear", D.GEAR);
+  add("Augmentations", D.AUGMENTATIONS);
+  add("Vehicles", D.VEHICLES);
+  return out;
+}
+// Costs are usually numbers; a few read "4–10" or "Special". Returns the number
+// or null when the table leaves it to the Game Runner.
+export function costOf(cost) {
+  if (typeof cost === "number") return cost;
+  const m = String(cost ?? "").match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
 }
 
 // HP cost to raise a skill from its current level (null if already A).
@@ -76,7 +111,7 @@ export function validateAttributes(draft) {
   const used = attrStepsUsed(draft.attributes);
   if (used !== budget) errors.push(`Use exactly ${budget} attribute increase${budget === 1 ? "" : "s"} (currently ${used}). Lower one to D for an extra.`);
   const arch = archetype(draft.archetype);
-  if (arch && levelValue(draft.attributes[arch.keyAttr]) < levelValue("B"))
+  if (arch?.keyAttr && levelValue(draft.attributes[arch.keyAttr]) < levelValue("B"))
     errors.push(`Key attribute (${attrDisplay(arch.keyAttr)}) must be B or higher.`);
   // You may lower ONE attribute C→D for one extra increase — no more than one. [Ch02]
   const loweredToD = Object.values(draft.attributes).filter((lv) => levelValue(lv) < STR_C).length;

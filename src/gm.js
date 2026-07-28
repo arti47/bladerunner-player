@@ -112,21 +112,37 @@ export function renderGm(mount, rerender) {
     root.append(c);
 
     // Main NPC generator (Case Table 3): D8 type + D6 occupation/quirk/name.
-    const nc = card("Main NPC Generator", "Roll a case NPC — type, occupation, quirk, and name.");
-    nc.append(grid(btn("🎲 Main NPC", () => {
+    const rollNpc = () => {
       const t = GM.CASE_MAIN_NPCS[rollDie(8) - 1];
-      const occ = t.occupation[rollDie(6) - 1], quirk = t.quirk[rollDie(6) - 1];
-      const name = `${t.firstName[rollDie(6) - 1]} ${t.lastName[rollDie(6) - 1]}`;
-      show({
-        label: "Main NPC", text: `${name} · ${occ}`, pin: `[NPC] ${name} — ${occ} (${t.type}); quirk: ${quirk}`,
-        title: "Main NPC",
-        render: (b) => b.append(
-          el("h3", { class: "roll-result" }, name),
-          el("p", {}, `${occ} · ${t.type}`),
-          el("div", { class: "roll-eyebrow" }, "Quirk"),
-          el("p", { class: "muted" }, quirk)),
-      });
-    })));
+      return { type: t.type, occ: t.occupation[rollDie(6) - 1], quirk: t.quirk[rollDie(6) - 1],
+        name: `${t.firstName[rollDie(6) - 1]} ${t.lastName[rollDie(6) - 1]}` };
+    };
+    const nc = card("Main NPC Generator", `Roll a case NPC — type, occupation, quirk, and name. A case carries ${GM.CASE_MAIN_NPC_COUNT.text}.`);
+    nc.append(grid(
+      btn("🎲 Main NPC", () => {
+        const n = rollNpc();
+        show({
+          label: "Main NPC", text: `${n.name} · ${n.occ}`, pin: `[NPC] ${n.name} — ${n.occ} (${n.type}); quirk: ${n.quirk}`,
+          title: "Main NPC",
+          render: (b) => b.append(
+            el("h3", { class: "roll-result" }, n.name),
+            el("p", {}, `${n.occ} · ${n.type}`),
+            el("div", { class: "roll-eyebrow" }, "Quirk"),
+            el("p", { class: "muted" }, n.quirk)),
+        });
+      }),
+      // Case Table 3 opens with a count roll: D3+3 main NPCs per case  [§3.16].
+      btn("⚡ Full cast", () => {
+        const d3 = Math.ceil(rollDie(6) / 2);
+        const count = d3 + GM.CASE_MAIN_NPC_COUNT.bonus;
+        const cast = Array.from({ length: count }, rollNpc);
+        const lines = cast.map((n) => `${n.name} — ${n.occ} (${n.type}); ${n.quirk}`);
+        show({
+          label: "Main NPCs", text: `${count} NPCs`, pin: `[Cast] ${lines.join(" | ")}`,
+          title: `Main cast — D3+${GM.CASE_MAIN_NPC_COUNT.bonus} = ${count}`,
+          render: (b) => { for (const l of lines) b.append(el("p", { class: "roll-prose" }, l)); },
+        });
+      }, "primary")));
     root.append(nc);
   }
 

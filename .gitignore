@@ -17,3 +17,6 @@ node_modules/
 scratchpad/
 *-raw.txt
 *-clean.txt
+
+# Local audit tooling (not shipped)
+.crawl.mjs

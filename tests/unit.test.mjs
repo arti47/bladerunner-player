@@ -226,12 +226,15 @@ test("normalizeCharacter back-fills defaults and never crashes on empty input", 
   assert.ok(c.state.health <= maxHealth(c) && c.state.health >= 0);
 });
 
-test("v3 schema: journal[] back-filled, preserved, and never crashes on legacy data", () => {
-  assert.equal(SCHEMA_VERSION, 3);
+test("v4 schema: journal[] + secretReplicant back-filled, preserved, never crashes on legacy data", () => {
+  assert.equal(SCHEMA_VERSION, 4);
   assert.deepEqual(normalizeCharacter({}).journal, []);            // default
   assert.deepEqual(normalizeCharacter({ journal: undefined }).journal, []); // legacy (pre-v3)
   const entry = { id: "j1", ts: 123, text: "found a clue" };
   assert.deepEqual(normalizeCharacter({ journal: [entry] }).journal, [entry]); // preserved
+  assert.equal(normalizeCharacter({}).secretReplicant, false);      // v4 default
+  assert.equal(normalizeCharacter({ secretReplicant: true }).secretReplicant, true);
+  assert.equal(normalizeCharacter({ nature: "human" }).nature, "human"); // reveal flips this to replicant
 });
 
 test("reclampVitals clamps to current maxima", () => {
@@ -293,4 +296,238 @@ test("skillIncreaseCost + crit lookup", () => {
   assert.equal(R.skillIncreaseCost("A"), null);
   assert.equal(R.critEntry("piercing", 12).instantKill, true);
   assert.equal(R.critEntry("crushing", 1).lethal, false);
+});
+
+// ---------------------------------------------------------------------------
+// Fidelity audit (2026-07-28) — every gap closed in that pass gets a guard here.
+// ---------------------------------------------------------------------------
+test("armor: rating dice + damage reduction constants exist and are sane [§3.7]", () => {
+  assert.equal(D.ARMOR_DICE, 2);
+  assert.equal(D.ARMOR_DAMAGE_PER_SUCCESS, 1);
+  const rated = D.ARMOR.filter((a) => a.rating);
+  assert.ok(rated.length >= 3, "expected rated armor suits");
+  for (const a of rated) assert.ok(D.LEVEL_DIE[a.rating], `${a.key} has a legal rating`);
+  // every rated suit lists the skills it hampers
+  for (const a of rated) assert.ok(Array.isArray(a.disadvantage), `${a.key} lists disadvantaged skills`);
+});
+
+test("conditions carry the machine-readable effects the engine reads [§3.6]", () => {
+  const by = (k) => D.CONDITIONS.find((c) => c.key === k);
+  assert.equal(by("prone").effect.selfMeleeDisadvantage, true);
+  assert.equal(by("prone").effect.attackerMeleeAdvantage, true);
+  assert.equal(by("cover").effect.attackerRangedDisadvantage, true);
+  assert.equal(by("grappled").effect.cannotDefend, true);
+  assert.equal(by("broken_damage").effect.cannotDefend, true);
+  assert.deepEqual(by("aiming").effect.advantage, ["firearms"]);
+});
+
+test("acquisition: sources, currencies and the Connections roll [§3.11]", () => {
+  assert.equal(D.ACQUISITION.skill, "connections");
+  assert.equal(D.ACQUISITION.doublePaymentAdvantage, true);
+  const keys = D.ACQUISITION.sources.map((s) => s.key);
+  assert.deepEqual(keys, ["lapd", "market"]);
+  assert.deepEqual(D.ACQUISITION.sources.map((s) => s.currency), ["promotionPoints", "chinyenPoints"]);
+  const cat = R.acquirableItems();
+  assert.ok(cat.length > 40, `catalog should span the gear tables (got ${cat.length})`);
+  assert.ok(cat.some((i) => i.cat === "Weapons") && cat.some((i) => i.cat === "Armor")
+    && cat.some((i) => i.cat === "Gear") && cat.some((i) => i.cat === "Augmentations")
+    && cat.some((i) => i.cat === "Vehicles"));
+  assert.equal(R.costOf(3), 3);
+  assert.equal(R.costOf("4–10"), 4);      // ranged costs read as their minimum
+  assert.equal(R.costOf("Special"), null); // Game Runner's call
+});
+
+test("secret replicant option is defined and normalizes [§3.5]", () => {
+  assert.ok(D.SECRET_REPLICANT.note.length > 10);
+  const c = normalizeCharacter({ nature: "human", secretReplicant: true });
+  assert.equal(c.nature, "human");
+  assert.equal(c.secretReplicant, true);
+  // on reveal the derived formulas must swing by exactly +2 / −2
+  const before = { health: maxHealth(c), resolve: maxResolve(c) };
+  const revealed = normalizeCharacter({ ...c, nature: "replicant", secretReplicant: false });
+  assert.equal(maxHealth(revealed), before.health + 2);
+  assert.equal(maxResolve(revealed), Math.max(0, before.resolve - 2));
+});
+
+test("chase data is complete: procedure, maneuvers, 3 D12 obstacle tables [§3.12]", () => {
+  assert.ok(D.CHASE.procedure.length >= 4);
+  assert.ok(D.CHASE.distance && D.CHASE.escape && D.CHASE.caught);
+  const names = D.CHASE.maneuvers.map((m) => m.name);
+  for (const n of ["Pursue / Flee", "Hide", "Block", "Cut Off", "Stand and Shoot"]) assert.ok(names.includes(n), `${n} maneuver`);
+  for (const m of D.CHASE.maneuvers) assert.ok(["both", "prey", "pursuer"].includes(m.who), `${m.name} has a side`);
+  for (const env of ["foot", "ground", "aerial"]) {
+    assert.equal(D.CHASE.obstacles[env].length, 12, `${env} obstacle table is a D12`);
+    for (const o of D.CHASE.obstacles[env]) assert.ok(typeof o === "string" && o.length > 10);
+  }
+});
+
+test("extra-initiative-card effects are machine-readable [§3.12]", () => {
+  const fast = D.SPECIALTIES.find((s) => s.key === "fast_reflexes");
+  assert.equal(fast.effect.extraInitiativeCards, 1);
+  const synaptic = D.AUGMENTATIONS.find((a) => a.key === "synaptic_implants");
+  assert.ok(/initiative card/i.test(synaptic.text), "synaptic implants also grant a card");
+});
+
+test("GM case generator: D3+3 main NPCs [§3.16]", () => {
+  assert.equal(GM.CASE_MAIN_NPC_COUNT.die, 3);
+  assert.equal(GM.CASE_MAIN_NPC_COUNT.bonus, 3);
+  assert.equal(GM.CASE_MAIN_NPCS.length, 8);
+});
+
+test("die sizes are sourced from the data layer, not the UI [§10.2]", () => {
+  assert.deepEqual(D.DIE_SIZES, [6, 8, 10, 12]);
+  assert.deepEqual(D.DIE_SIZES, Object.values(D.LEVEL_DIE).sort((a, b) => a - b));
+});
+
+test("weapon damage is numeric wherever the engine adds successes to it [§3.7]", () => {
+  // the attack maths does weapon.damage + extra successes — a string would concatenate
+  for (const w of [...D.WEAPONS_MELEE, ...D.WEAPONS_RANGED])
+    assert.equal(typeof w.damage, "number", `${w.key} damage must be numeric`);
+  // explosives may carry ranged values, so the engine must treat them as special
+  const charge = D.EXPLOSIVES.find((e) => e.key === "explosive");
+  assert.equal(typeof charge.damage, "string");
+  assert.equal(charge.thrown, false, "the non-numeric charge is never offered in the thrown picker");
+});
+
+// ---------------------------------------------------------------------------
+// Solo Mode verified against the printing (Solo Mode PDF, 2026-07-28 pass).
+// ---------------------------------------------------------------------------
+test("Countdown Event: any success FIRES the event; no successes escalates [Solo p.006]", () => {
+  assert.match(SO.COUNTDOWN_TIMER.onTrigger, /success fires the event/i);
+  assert.match(SO.COUNTDOWN_TIMER.onNoTrigger, /No successes = no event/i);
+  assert.match(SO.COUNTDOWN_TIMER.note, /ANY success triggers/i);
+  assert.equal(SO.ESCALATION_STEPS[0], "D6");
+  assert.equal(SO.ESCALATION_STEPS.at(-1), "D12/D12");
+  assert.deepEqual(SO.ESCALATION_STEPS, ["D6", "D8", "D10", "D12", "D12/D6", "D12/D8", "D12/D10", "D12/D12"]);
+});
+
+test("NPC nature table: D10 1 Replicant / 2–9 human / 10 ambiguous [Solo p.019]", () => {
+  assert.equal(SO.NPC_NATURE.length, 3);
+  assert.deepEqual(SO.NPC_NATURE.map((r) => r.range), [[1, 1], [2, 9], [10, 10]]);
+  assert.deepEqual(SO.NPC_NATURE.map((r) => r.result), ["Replicant", "Human", "Ambiguous"]);
+  for (let d = 1; d <= 10; d++) assert.ok(R.lookupRange(SO.NPC_NATURE, d), `D10=${d} resolves`);
+});
+
+test("four official ways to open a case [Solo p.004]", () => {
+  assert.deepEqual(SO.CASE_START_METHODS.map((m) => m.key), ["gut", "thread", "generator", "inspiration"]);
+  for (const m of SO.CASE_START_METHODS) assert.ok(m.name && m.text.length > 20);
+});
+
+test("solo archetype-free creation: free keys, D8 Chinyen [Solo p.002]", () => {
+  assert.equal(SO.SOLO_NO_ARCHETYPE.chinyenDie, 8);
+  const arch = R.archetype(SO.SOLO_NO_ARCHETYPE.key);
+  assert.ok(arch, "resolves through the normal archetype lookup");
+  assert.equal(arch.keyAttr, null);
+  assert.deepEqual(arch.keySkills, []);
+  assert.equal(arch.chinyenDie, 8);
+  // with no key attribute/skills, only the budgets gate the build
+  const draft = { nature: "human", years: "rookie", archetype: SO.SOLO_NO_ARCHETYPE.key,
+    attributes: { STR: "C", AGI: "C", INT: "A", EMP: "A" }, skills: {} };
+  for (const s of D.SKILLS) draft.skills[s.key] = "D";
+  draft.skills.observation = "B"; draft.skills.connections = "B"; draft.skills.insight = "B"; draft.skills.manipulation = "C";
+  assert.equal(R.attrStepsUsed(draft.attributes), 4);
+  assert.equal(R.validateAttributes(draft).ok, true, R.validateAttributes(draft).errors.join("; "));
+  assert.equal(R.skillStepsUsed(draft.skills), 7);
+  assert.equal(R.validateSkills(draft).ok, false, "still enforces the skill budget");
+});
+
+test("solo tables match the printing exactly [Solo Mode PDF]", () => {
+  // spot-checks across every table verified in the 2026-07-28 source pass
+  assert.equal(SO.CIPHER_METHOD[0], "Abandon");
+  assert.equal(SO.CIPHER_METHOD[35], "Threaten");
+  assert.equal(SO.CIPHER_FOCUS[0], "Authority");
+  assert.equal(SO.CIPHER_FOCUS[35], "Violence");
+  assert.equal(SO.LOCATION_ENVIRONMENT[0], "Abandoned");
+  assert.equal(SO.LOCATION_PLACE[35], "Warehouse");
+  assert.deepEqual(SO.CHARACTER_SPHERE.blockRanges, [[1, 3], [4, 6]]);
+  assert.equal(SO.CHARACTER_SPHERE.secondDie, 8);
+  assert.deepEqual(SO.CHARACTER_TRAIT.blockRanges, [[1, 2], [3, 4], [5, 6]]);
+  assert.equal(SO.CHARACTER_TRAIT.secondDie, 12);
+  assert.deepEqual(SO.CLUE_EVIDENCE_DESCRIPTOR.blockRanges, [[1, 3], [4, 6]]);
+  assert.equal(SO.CLUE_EVIDENCE_DESCRIPTOR.secondDie, 10);
+  assert.deepEqual(SO.CLUE_EVIDENCE_TYPE.blockRanges, [[1, 3], [4, 6]]);
+  assert.equal(SO.CLUE_EVIDENCE_TYPE.secondDie, 12);
+  assert.equal(SO.CASE_BRIEFING.assignment.length, 20);
+  assert.equal(SO.CASE_BRIEFING.assignment[0], "Assault");
+  assert.equal(SO.CASE_BRIEFING.assignment[19], "Vigilantism");
+  assert.equal(SO.HUMANITY_CHECKLIST.length, 11);
+  assert.equal(SO.PROMOTION_GAIN.length, 8);
+  assert.equal(SO.PROMOTION_LOSE.length, 9);
+  assert.deepEqual(SO.HYPOTHESIS_CHECK.crit.pp, 5);
+  assert.deepEqual(SO.HYPOTHESIS_CHECK.success.pp, 3);
+  assert.deepEqual(SO.HYPOTHESIS_CHECK.failure.pp, -3);
+});
+
+// ---------------------------------------------------------------------------
+// Core rulebook pass (2026-07-28, user-supplied rules reference).
+// ---------------------------------------------------------------------------
+test("pushing is only ever offered on a FAILED roll [Core Ch01 p016]", () => {
+  assert.equal(D.PUSH_FAILED_ROLLS_ONLY, true);
+  assert.equal(D.PUSH_BANE_FACE, 1);
+});
+
+test("key relationship: three D12 tables [Core Ch02 p032]", () => {
+  for (const t of [D.RELATIONSHIP_WHO, D.RELATIONSHIP_LIKE, D.RELATIONSHIP_GOING_ON]) {
+    assert.equal(t.length, 12);
+    for (const e of t) assert.ok(typeof e === "string" && e.length > 2);
+  }
+  assert.equal(D.RELATIONSHIP_WHO[0], "Parent");
+  assert.equal(D.RELATIONSHIP_WHO[11], "DiJi");
+  assert.equal(D.RELATIONSHIP_LIKE[11], "Only in your head");
+  assert.match(D.RELATIONSHIP_GOING_ON[1], /gone missing/);
+});
+
+test("signature item: D12 table + once-per-session stress heal [Core Ch02 p034]", () => {
+  assert.equal(D.SIGNATURE_ITEMS.length, 12);
+  assert.equal(D.SIGNATURE_ITEMS[0], "A photograph");
+  assert.equal(D.SIGNATURE_ITEMS[11], "A tombstone");
+  assert.equal(D.SIGNATURE_ITEM_HEAL.resolve, 1);
+  assert.equal(D.SIGNATURE_ITEM_HEAL.period, "session");
+});
+
+test("home table covers a full D12, 1–4 being the LAPD apartment [Core Ch02 p034]", () => {
+  const covered = new Set();
+  for (let d = 1; d <= 12; d++) {
+    const row = R.lookupRange(D.HOME_TABLE, d);
+    assert.ok(row, `D12=${d} has a home`);
+    covered.add(row.text);
+  }
+  assert.match(R.lookupRange(D.HOME_TABLE, 1).text, /LAPD housing apartment in Sector 5/);
+  assert.equal(R.lookupRange(D.HOME_TABLE, 4).text, R.lookupRange(D.HOME_TABLE, 1).text);
+  assert.notEqual(R.lookupRange(D.HOME_TABLE, 5).text, R.lookupRange(D.HOME_TABLE, 4).text);
+  assert.equal(covered.size, 9);
+});
+
+test("secret Replicant is a secret D6, a 6 means you are one [Core Ch02 p028]", () => {
+  assert.equal(D.SECRET_REPLICANT.secretRollDie, 6);
+  assert.equal(D.SECRET_REPLICANT.secretRollHit, 6);
+});
+
+test("creation tables verified against the Core reference", () => {
+  // archetype D12 tables, both natures
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 1).key, "analyst");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 3).key, "cityspeaker");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 10).key, "inspector");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 12).key, "skimmer");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 3).key, "analyst");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 6).key, "doxie");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 9).key, "fixer");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 12).key, "inspector");
+  // archetype key attribute / skills / chinyen die
+  const by = (k) => D.ARCHETYPES.find((a) => a.key === k);
+  assert.equal(by("analyst").keyAttr, "INT"); assert.equal(by("analyst").chinyenDie, 8);
+  assert.equal(by("cityspeaker").keyAttr, "EMP"); assert.equal(by("doxie").keyAttr, "AGI");
+  assert.equal(by("enforcer").keyAttr, "STR"); assert.equal(by("enforcer").chinyenDie, 6);
+  assert.equal(by("fixer").chinyenDie, 10); assert.equal(by("inspector").chinyenDie, 6);
+  assert.equal(by("skimmer").chinyenDie, 12);
+  assert.deepEqual(by("doxie").keySkills, ["hand_to_hand", "mobility", "manipulation"]);
+  assert.deepEqual(by("skimmer").keySkills, ["firearms", "connections", "manipulation"]);
+  // memory tables
+  assert.equal(D.MEMORY_WHEN.length, 6);
+  for (const t of [D.MEMORY_WHERE, D.MEMORY_WHO, D.MEMORY_WHAT, D.MEMORY_FEEL]) assert.equal(t.length, 12);
+  assert.equal(D.MEMORY_FEEL[0], "Hopeful");
+  assert.equal(D.MEMORY_WHO[11], "No one but you");
+  // combat actions carry the book's prerequisites
+  assert.equal(D.COMBAT_ACTIONS.find((a) => a.action === "Unarmed attack").prereq, "Unarmed");
+  assert.equal(D.COMBAT_ACTIONS.find((a) => a.action === "Crawl").prereq, "Prone");
 });

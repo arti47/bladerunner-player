@@ -14,6 +14,8 @@ export const SKILL_LEVEL_DESC = { A: "Elite", B: "Experienced", C: "Novice", D: 
 export const SUCCESS_THRESHOLD = 6;   // a die showing >= 6 is one success
 export const DOUBLE_THRESHOLD = 10;   // a die showing >= 10 is two successes
 export const PUSH_BANE_FACE = 1;      // a 1 on a pushed die inflicts damage/stress
+export const PUSH_FAILED_ROLLS_ONLY = true; // "If you fail a Base Dice roll, you can push the roll"
+export const DIE_SIZES = [6, 8, 10, 12]; // every step die used by the system
 
 // ---------------------------------------------------------------------------
 // ATTRIBUTES  [Ch02]
@@ -68,6 +70,13 @@ export const NATURES = {
     startingChinyenMod: -1,         // -1 starting Chinyen Point (min 0)
     pushStressOnly: true,           // Replicants suffer stress on ALL pushes
   },
+};
+// Secret Replicant option  [Ch02] — build and play as an apparent human; when
+// the truth comes out the full Replicant rules apply from that moment.
+export const SECRET_REPLICANT = {
+  secretRollDie: 6,
+  secretRollHit: 6,   // a 6 on the Game Runner's secret D6 = you are a Replicant
+  note: "Play as an apparent human. On reveal: +2 max Health, −2 max Resolve, and every push costs stress instead of damage.",
 };
 // Step 1 of creation: D6 -> nature
 export const NATURE_TABLE = [
@@ -236,14 +245,27 @@ export const BASELINE_TEST = {
 // effect.disadvantage: array of skill keys that get disadvantage while active.
 // effect.flag: special behavioral flags handled by the engine.
 // ---------------------------------------------------------------------------
+// Machine-readable keys consumed by the engine (roller.js/combat.js):
+//   selfMeleeDisadvantage   — the afflicted character's own close-combat roll
+//   attackerMeleeAdvantage  — anyone attacking them in close combat
+//   attackerRangedDisadvantage — anyone shooting at them
+//   cannotDefend            — rolls no defence dice in an opposed close combat
 export const CONDITIONS = [
-  { key: "broken_damage", name: "Broken (Damage)", text: "0 Health. Out of action — may crawl/mumble, no actions or skill rolls. Further damage triggers an automatic critical injury.", effect: { flag: "no_skill_rolls" } },
+  { key: "broken_damage", name: "Broken (Damage)", text: "0 Health. Out of action — may crawl/mumble, no actions or skill rolls. Further damage triggers an automatic critical injury.", effect: { flag: "no_skill_rolls", cannotDefend: true } },
   { key: "broken_stress", name: "Broken (Stress)", text: "Stress ≥ Resolve. Suffer a critical stress effect until you recover ≥1 Resolve.", effect: { flag: "critical_stress" } },
-  { key: "prone", name: "Prone", text: "Disadvantage to close combat vs a standing target; standing target has advantage vs you. Stand up = free action on your turn.", effect: {} },
-  { key: "cover", name: "In Cover", text: "Attackers shooting you suffer disadvantage.", effect: {} },
-  { key: "grappled", name: "Grappled / Restrained", text: "Cannot move or defend; only action is to break free (opposed Hand-to-Hand).", effect: { flag: "cannot_defend" } },
+  { key: "prone", name: "Prone", text: "Disadvantage to close combat vs a standing target; standing target has advantage vs you. Stand up = free action on your turn.", effect: { selfMeleeDisadvantage: true, attackerMeleeAdvantage: true } },
+  { key: "cover", name: "In Cover", text: "Attackers shooting you suffer disadvantage.", effect: { attackerRangedDisadvantage: true } },
+  { key: "grappled", name: "Grappled / Restrained", text: "Cannot move or defend; only action is to break free (opposed Hand-to-Hand).", effect: { flag: "cannot_defend", cannotDefend: true } },
   { key: "aiming", name: "Aiming", text: "Advantage to your next single ranged shot. Lost if you do anything else or are hit.", effect: { advantage: ["firearms"] } },
 ];
+
+// ---------------------------------------------------------------------------
+// ARMOR PROCEDURE  [Ch04] — when you are hit, roll TWO dice of the armor's
+// rating; every success reduces the damage by one. If the damage is reduced to
+// zero the armor also negates the critical injury. Only one suit counts.
+// ---------------------------------------------------------------------------
+export const ARMOR_DICE = 2;              // dice rolled per hit
+export const ARMOR_DAMAGE_PER_SUCCESS = 1; // damage removed per success
 
 // ---------------------------------------------------------------------------
 // CRITICAL INJURY TABLES (d12)  [Ch04 p073]
@@ -338,7 +360,7 @@ export const INITIATIVE_CARDS = 10; // draw from #1..#10, act low -> high
 export const COMBAT_ACTIONS = [
   { action: "Sprint", prereq: "Standing", skill: "mobility" },
   { action: "Crawl", prereq: "Prone", skill: null },
-  { action: "Unarmed attack", prereq: "—", skill: "hand_to_hand" },
+  { action: "Unarmed attack", prereq: "Unarmed", skill: "hand_to_hand" },
   { action: "Melee attack", prereq: "Melee weapon", skill: "hand_to_hand" },
   { action: "Grapple", prereq: "Unarmed", skill: "hand_to_hand" },
   { action: "Break free", prereq: "Grappled", skill: "hand_to_hand" },
@@ -482,6 +504,19 @@ export const ARMOR = [
 ];
 export const AVAILABILITY = ["Standard", "Premium", "Rare", "Incidental"]; // Cost = # of Promotion or Chinyen Points
 
+// Acquiring gear  [Ch08] — pay the Cost in Promotion Points (LAPD requisition) or
+// Chinyen Points (black market / private sale), then roll CONNECTIONS. Paying
+// double gives advantage. A failed roll wastes the time, not the points.
+export const ACQUISITION = {
+  skill: "connections",
+  doublePaymentAdvantage: true,
+  failureNote: "The deal falls through — you keep the points but the Shift is wasted.",
+  sources: [
+    { key: "lapd", name: "LAPD requisition", currency: "promotionPoints", currencyName: "Promotion Points", symbol: "PP" },
+    { key: "market", name: "Black market / private", currency: "chinyenPoints", currencyName: "Chinyen Points", symbol: "¥" },
+  ],
+};
+
 // Standard-issue gear granted at creation  [Ch02]
 export const STANDARD_ISSUE = [
   "Badge", "PK-D Blaster (or .357 Subcompact)", "Knowledge Integration Assistant (KIA)", "Detective Special Spinner",
@@ -563,6 +598,45 @@ export const MEMORY_FEEL = [ // D12
 // TYPICAL NPCS (14)  [Ch09]  -> also see data-npcs.js (canonical combatant list)
 // Kept here as a quick reference count; data-npcs.js holds full stat objects.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// KEY RELATIONSHIP TABLES (roll one on each)  [Ch02 p032]
+// ---------------------------------------------------------------------------
+export const RELATIONSHIP_WHO = [ // D12
+  "Parent", "Sibling", "Child", "Spouse", "Romantic partner", "Old friend",
+  "Colleague", "Superior", "Suspect", "Neighbor", "Doxie", "DiJi",
+];
+export const RELATIONSHIP_LIKE = [ // D12
+  "Friendly", "Loving", "Passionate", "Trusting", "Protective", "Estranged",
+  "Violent", "Deceitful", "One-sided", "Hateful", "Distant", "Only in your head",
+];
+export const RELATIONSHIP_GOING_ON = [ // D12
+  "You're in a fight about something.", "They have gone missing.", "They want something from you.",
+  "They want you to quit your job.", "You think they are hiding something.", "They constantly disappoint you.",
+  "They need help with something.", "Their life is in danger.", "They are suspected of a crime.",
+  "You constantly disappoint them.", "They know your deepest secret.", "They threaten you with something.",
+];
+
+// Signature item  [Ch02 p034] — interacting with it recovers 1 stress, once per session.
+export const SIGNATURE_ITEMS = [ // D12
+  "A photograph", "A book", "A ring", "A necklace", "A musical instrument", "An old coat",
+  "A dog tag", "An origami bird", "A cheap souvenir", "A second-hand animoid pet",
+  "An open stool at your favorite bar", "A tombstone",
+];
+export const SIGNATURE_ITEM_HEAL = { resolve: 1, period: "session" };
+
+// Where you live  [Ch02 p034] — D12; 1–4 is the standard LAPD apartment.
+export const HOME_TABLE = [
+  { range: [1, 4], text: "A sparsely furnished LAPD housing apartment in Sector 5 — small and claustrophobic." },
+  { range: [5, 5], text: "A condo full of old mementos, with a balcony over the neon streets of Little Tokyo." },
+  { range: [6, 6], text: "A cheap run-down hotel room by Hawker's Circle, flickering lights and dripping pipes." },
+  { range: [7, 7], text: "A huge, dilapidated apartment in an abandoned building on Retirement Row — leaking ceilings, debris everywhere." },
+  { range: [8, 8], text: "A dingy flat above a seedy bar off Nightclub Row." },
+  { range: [9, 9], text: "A cluttered warehouse off Animoid Row, hidden from prying eyes." },
+  { range: [10, 10], text: "A serene luxury penthouse hotel suite in the Financial District." },
+  { range: [11, 11], text: "No home at all — you drift, spending every night somewhere different." },
+  { range: [12, 12], text: "With your key relationship. Roll again to see where they live." },
+];
+
 export const TIME_UNITS = { round: "5–10 seconds (combat/chase)", shift: "5–10 hours (investigation); 4 per day" };
 
 export const META = {

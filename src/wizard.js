@@ -6,6 +6,8 @@ import * as R from "./rules.js";
 import { maxHealth, maxResolve, normalizeCharacter } from "./derived.js";
 import { Store } from "./store.js";
 import { showToast } from "./ui.js";
+import { Settings } from "./settings.js";
+import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
 import { navigate } from "./router.js";
 
 const d3 = () => Math.ceil(rollDie(6) / 2);
@@ -17,10 +19,11 @@ function newDraft() {
   const skills = {}; for (const s of D.SKILLS) skills[s.key] = "D";
   return {
     step: 0,
-    nature: null, archetype: null, years: null,
+    nature: null, secretReplicant: false, archetype: null, years: null,
     attributes, skills, specialties: [],
     identity: { name: "", appearance: "", home: "", signatureItem: "", keyMemory: "", keyRelationship: "" },
     memory: { when: null, where: null, who: null, what: null, feel: null },
+    relationship: { who: null, like: null, going: null },
   };
 }
 
@@ -90,9 +93,24 @@ function stepNature(body, rerender) {
   body.append(el("p", { class: "muted" }, "Replicants are stronger and tougher (+2 Health) but less stable (−2 Resolve), all rookies, and start with fewer points. Humans are the baseline."));
   for (const key of ["human", "replicant"]) {
     const n = D.NATURES[key];
-    body.append(choice(n.name, key === "replicant" ? "+2 Health, −2 Resolve · +1 STR/AGI increase · always Rookie" : "Baseline capabilities and standing", draft.nature === key, () => { draft.nature = key; if (key === "replicant") draft.years = "rookie"; rerender(); }));
+    const on = draft.nature === key && !draft.secretReplicant;
+    body.append(choice(n.name, key === "replicant" ? "+2 Health, −2 Resolve · +1 STR/AGI increase · always Rookie" : "Baseline capabilities and standing", on, () => { draft.nature = key; draft.secretReplicant = false; if (key === "replicant") draft.years = "rookie"; rerender(); }));
   }
-  body.append(rollBtn("Roll (D6)", () => { const r = rollDie(6); draft.nature = R.lookupRange(D.NATURE_TABLE, r).nature; if (draft.nature === "replicant") draft.years = "rookie"; showToast(`D6=${r} → ${titleCase(draft.nature)}`); rerender(); }));
+  // Secret Replicant  [§3.5] — built and played as a human until the reveal.
+  body.append(choice("Secret Replicant", "Build as a human; the sheet carries a reveal button that applies the Replicant rules later.",
+    !!draft.secretReplicant, () => { draft.nature = "human"; draft.secretReplicant = true; rerender(); }, D.SECRET_REPLICANT.note));
+  body.append(rollBtn("Roll (D6)", () => { const r = rollDie(6); draft.nature = R.lookupRange(D.NATURE_TABLE, r).nature; draft.secretReplicant = false; if (draft.nature === "replicant") draft.years = "rookie"; showToast(`D6=${r} → ${titleCase(draft.nature)}`); rerender(); }));
+  // The book's own secret roll: a human character rolls D6 in secret — a 6 means
+  // they are a Replicant and don't know it. [Ch02 p028]
+  body.append(rollBtn(`Secret check (D${D.SECRET_REPLICANT.secretRollDie}) — human build`, () => {
+    const r = rollDie(D.SECRET_REPLICANT.secretRollDie);
+    draft.nature = "human";
+    draft.secretReplicant = r === D.SECRET_REPLICANT.secretRollHit;
+    showToast(draft.secretReplicant
+      ? "Rolled in secret — your Blade Runner is a Replicant and doesn't know it."
+      : "Rolled in secret — nothing to see here.", { timeout: 4200 });
+    rerender();
+  }));
 }
 
 // ---- Step 2: Archetype ----------------------------------------------------
@@ -102,6 +120,12 @@ function stepArchetype(body, rerender) {
   for (const a of legal) {
     const sub = `Key ${R.attrDisplay(a.keyAttr)} · ${a.keySkills.map(R.skillName).join(", ")} · Chinyen D${a.chinyenDie}`;
     body.append(choice(a.name, sub, draft.archetype === a.key, () => { draft.archetype = a.key; rerender(); }, a.blurb));
+  }
+  // Solo option: no archetype at all — free key attribute/skills, D8 Chinyen.
+  if (Settings.solo()) {
+    body.append(choice(SOLO_NO_ARCHETYPE.name, `Free key attribute & skills · Chinyen D${SOLO_NO_ARCHETYPE.chinyenDie}`,
+      draft.archetype === SOLO_NO_ARCHETYPE.key, () => { draft.archetype = SOLO_NO_ARCHETYPE.key; rerender(); },
+      SOLO_NO_ARCHETYPE.advice));
   }
   body.append(rollBtn("Roll (D12)", () => {
     const r = rollDie(12); const row = R.lookupRange(D.ARCHETYPE_TABLE[draft.nature], r);
@@ -131,7 +155,7 @@ function stepAttributes(body, rerender) {
   const budget = R.attrBudget(draft.years, draft.nature);
   const used = R.attrStepsUsed(draft.attributes);
   const arch = R.archetype(draft.archetype);
-  body.append(el("p", { class: "muted" }, `Start at C. Spend exactly ${budget} increase${budget === 1 ? "" : "s"} (one step each). Lower one attribute to D to gain an extra. Key: ${R.attrDisplay(arch.keyAttr)} must be B+.`));
+  body.append(el("p", { class: "muted" }, `Start at C. Spend exactly ${budget} increase${budget === 1 ? "" : "s"} (one step each). Lower one attribute to D to gain an extra.` + (arch.keyAttr ? ` Key: ${R.attrDisplay(arch.keyAttr)} must be B+.` : " No archetype — choose your own focus.")));
   body.append(el("div", { class: "budget" + (used === budget ? " budget--ok" : "") }, `Increases used: ${used} / ${budget}`));
   for (const a of D.ATTRIBUTES) {
     body.append(stepper(a.name + (a.key === arch.keyAttr ? " ★" : ""), draft.attributes[a.key],
@@ -149,7 +173,7 @@ function stepSkills(body, rerender) {
   const budget = R.skillBudget(draft.years);
   const used = R.skillStepsUsed(draft.skills);
   const arch = R.archetype(draft.archetype);
-  body.append(el("p", { class: "muted" }, `Start at D. Spend exactly ${budget} increases. Key skills (★) must end C+.`));
+  body.append(el("p", { class: "muted" }, `Start at D. Spend exactly ${budget} increases.` + (arch.keySkills.length ? " Key skills (★) must end C+." : " No archetype — spend them where you like.")));
   body.append(el("div", { class: "budget" + (used === budget ? " budget--ok" : "") }, `Increases used: ${used} / ${budget}`));
   for (const s of D.SKILLS) {
     if (s.key === "driving") continue; // Driving uses vehicle Maneuverability; still trainable
@@ -172,8 +196,10 @@ function stepSpecialties(body, rerender) {
   const need = D.YEARS_ON_FORCE.find((y) => y.key === draft.years).specialties;
   const arch = R.archetype(draft.archetype);
   if (need === 0) { body.append(el("div", { class: "notice" }, "Rookies start with no specialties — you'll learn them in play.")); return; }
-  body.append(el("p", { class: "muted" }, `Choose ${need}. Your archetype suggests: ${arch.specialtyOptions.map((k) => R.specialty(k).name).join(", ")} — but you may pick any.`));
-  body.append(rollBtn(`Roll archetype specialty (D3)`, () => {
+  body.append(el("p", { class: "muted" }, arch.specialtyOptions.length
+    ? `Choose ${need}. Your archetype suggests: ${arch.specialtyOptions.map((k) => R.specialty(k).name).join(", ")} — but you may pick any.`
+    : `Choose ${need} from the full list.`));
+  if (arch.specialtyOptions.length) body.append(rollBtn(`Roll archetype specialty (D3)`, () => {
     const r = d3(); const k = arch.specialtyOptions[r - 1];
     if (!draft.specialties.includes(k) && draft.specialties.length < need) draft.specialties.push(k);
     showToast(`D3=${r} → ${R.specialty(k).name}`); rerender();
@@ -210,9 +236,21 @@ function syncMemory() {
 }
 
 // ---- Step 8: Key Relationship ---------------------------------------------
-function stepRelationship(body) {
-  body.append(el("p", { class: "muted" }, "An NPC who plays a big role in your life (not another PC). Interacting with them earns Humanity Points."));
-  body.append(textArea("Key relationship", draft.identity.keyRelationship, (v) => { draft.identity.keyRelationship = v; }, "e.g. Mara — your handler and the closest thing you have to family."));
+function stepRelationship(body, rerender) {
+  body.append(el("p", { class: "muted" }, "An NPC who plays a big role in your life (not another PC). Interacting with them earns Humanity Points. Roll the three tables or write your own."));
+  const tables = [["who", "Who is it", D.RELATIONSHIP_WHO], ["like", "What it's like", D.RELATIONSHIP_LIKE], ["going", "What's going on", D.RELATIONSHIP_GOING_ON]];
+  for (const [k, label, arr] of tables) {
+    body.append(el("div", { class: "mem__row" },
+      el("button", { class: "btn btn--ghost btn--sm", onClick: () => { const r = rollDie(12); draft.relationship[k] = arr[r - 1]; syncRelationship(); rerender(); } }, `${label} ⚄`),
+      el("span", { class: "mem__val" + (draft.relationship[k] ? "" : " muted") }, draft.relationship[k] || "—")));
+  }
+  body.append(rollBtn("Roll all", () => { for (const [k, , arr] of tables) draft.relationship[k] = arr[rollDie(12) - 1]; syncRelationship(); rerender(); }));
+  body.append(textArea("Key relationship (editable)", draft.identity.keyRelationship, (v) => { draft.identity.keyRelationship = v; }, "e.g. Mara — your handler and the closest thing you have to family."));
+}
+function syncRelationship() {
+  const r = draft.relationship;
+  if (r.who || r.like || r.going)
+    draft.identity.keyRelationship = `${r.who || "Someone"} — ${(r.like || "complicated").toLowerCase()}. ${r.going || ""}`.trim();
 }
 
 // ---- Step 9: Identity -----------------------------------------------------
@@ -222,8 +260,12 @@ function stepIdentity(body, rerender) {
     arch.names.some(Boolean) ? () => { draft.identity.name = pick(arch.names.filter(Boolean)); rerender(); } : null));
   body.append(field("Appearance", draft.identity.appearance, (v) => { draft.identity.appearance = v; },
     arch.appearance.length ? () => { const r = d3(); draft.identity.appearance = arch.appearance[r - 1]; rerender(); } : null, true));
-  body.append(field("Signature item", draft.identity.signatureItem, (v) => { draft.identity.signatureItem = v; }, null));
-  body.append(field("Home", draft.identity.home, (v) => { draft.identity.home = v; }, null, true, "LAPD apartment in Sector 5 by default — describe or relocate it."));
+  body.append(field("Signature item", draft.identity.signatureItem, (v) => { draft.identity.signatureItem = v; },
+    () => { const r = rollDie(12); draft.identity.signatureItem = D.SIGNATURE_ITEMS[r - 1]; rerender(); }));
+  body.append(el("p", { class: "muted sheet__note" }, `Once per session, interacting with your signature item heals ${D.SIGNATURE_ITEM_HEAL.resolve} stress.`));
+  body.append(field("Home", draft.identity.home, (v) => { draft.identity.home = v; },
+    () => { const r = rollDie(12); draft.identity.home = R.lookupRange(D.HOME_TABLE, r).text; rerender(); }, true,
+    "LAPD apartment in Sector 5 by default — describe or relocate it."));
   body.append(el("div", { class: "notice" }, `Standard issue: ${D.STANDARD_ISSUE.join(", ")}.`));
 }
 
@@ -262,7 +304,7 @@ function finish() {
 
   const character = normalizeCharacter({
     name: draft.identity.name || "Unnamed Blade Runner",
-    nature: draft.nature, archetype: draft.archetype, years: draft.years,
+    nature: draft.nature, secretReplicant: !!draft.secretReplicant, archetype: draft.archetype, years: draft.years,
     attributes: draft.attributes, skills: draft.skills, specialties: draft.specialties.slice(),
     identity: { ...draft.identity },
     inventory: { items },
