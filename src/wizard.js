@@ -23,6 +23,7 @@ function newDraft() {
     attributes, skills, specialties: [],
     identity: { name: "", appearance: "", home: "", signatureItem: "", keyMemory: "", keyRelationship: "" },
     memory: { when: null, where: null, who: null, what: null, feel: null },
+    relationship: { who: null, like: null, going: null },
   };
 }
 
@@ -99,6 +100,17 @@ function stepNature(body, rerender) {
   body.append(choice("Secret Replicant", "Build as a human; the sheet carries a reveal button that applies the Replicant rules later.",
     !!draft.secretReplicant, () => { draft.nature = "human"; draft.secretReplicant = true; rerender(); }, D.SECRET_REPLICANT.note));
   body.append(rollBtn("Roll (D6)", () => { const r = rollDie(6); draft.nature = R.lookupRange(D.NATURE_TABLE, r).nature; draft.secretReplicant = false; if (draft.nature === "replicant") draft.years = "rookie"; showToast(`D6=${r} → ${titleCase(draft.nature)}`); rerender(); }));
+  // The book's own secret roll: a human character rolls D6 in secret — a 6 means
+  // they are a Replicant and don't know it. [Ch02 p028]
+  body.append(rollBtn(`Secret check (D${D.SECRET_REPLICANT.secretRollDie}) — human build`, () => {
+    const r = rollDie(D.SECRET_REPLICANT.secretRollDie);
+    draft.nature = "human";
+    draft.secretReplicant = r === D.SECRET_REPLICANT.secretRollHit;
+    showToast(draft.secretReplicant
+      ? "Rolled in secret — your Blade Runner is a Replicant and doesn't know it."
+      : "Rolled in secret — nothing to see here.", { timeout: 4200 });
+    rerender();
+  }));
 }
 
 // ---- Step 2: Archetype ----------------------------------------------------
@@ -224,9 +236,21 @@ function syncMemory() {
 }
 
 // ---- Step 8: Key Relationship ---------------------------------------------
-function stepRelationship(body) {
-  body.append(el("p", { class: "muted" }, "An NPC who plays a big role in your life (not another PC). Interacting with them earns Humanity Points."));
-  body.append(textArea("Key relationship", draft.identity.keyRelationship, (v) => { draft.identity.keyRelationship = v; }, "e.g. Mara — your handler and the closest thing you have to family."));
+function stepRelationship(body, rerender) {
+  body.append(el("p", { class: "muted" }, "An NPC who plays a big role in your life (not another PC). Interacting with them earns Humanity Points. Roll the three tables or write your own."));
+  const tables = [["who", "Who is it", D.RELATIONSHIP_WHO], ["like", "What it's like", D.RELATIONSHIP_LIKE], ["going", "What's going on", D.RELATIONSHIP_GOING_ON]];
+  for (const [k, label, arr] of tables) {
+    body.append(el("div", { class: "mem__row" },
+      el("button", { class: "btn btn--ghost btn--sm", onClick: () => { const r = rollDie(12); draft.relationship[k] = arr[r - 1]; syncRelationship(); rerender(); } }, `${label} ⚄`),
+      el("span", { class: "mem__val" + (draft.relationship[k] ? "" : " muted") }, draft.relationship[k] || "—")));
+  }
+  body.append(rollBtn("Roll all", () => { for (const [k, , arr] of tables) draft.relationship[k] = arr[rollDie(12) - 1]; syncRelationship(); rerender(); }));
+  body.append(textArea("Key relationship (editable)", draft.identity.keyRelationship, (v) => { draft.identity.keyRelationship = v; }, "e.g. Mara — your handler and the closest thing you have to family."));
+}
+function syncRelationship() {
+  const r = draft.relationship;
+  if (r.who || r.like || r.going)
+    draft.identity.keyRelationship = `${r.who || "Someone"} — ${(r.like || "complicated").toLowerCase()}. ${r.going || ""}`.trim();
 }
 
 // ---- Step 9: Identity -----------------------------------------------------
@@ -236,8 +260,12 @@ function stepIdentity(body, rerender) {
     arch.names.some(Boolean) ? () => { draft.identity.name = pick(arch.names.filter(Boolean)); rerender(); } : null));
   body.append(field("Appearance", draft.identity.appearance, (v) => { draft.identity.appearance = v; },
     arch.appearance.length ? () => { const r = d3(); draft.identity.appearance = arch.appearance[r - 1]; rerender(); } : null, true));
-  body.append(field("Signature item", draft.identity.signatureItem, (v) => { draft.identity.signatureItem = v; }, null));
-  body.append(field("Home", draft.identity.home, (v) => { draft.identity.home = v; }, null, true, "LAPD apartment in Sector 5 by default — describe or relocate it."));
+  body.append(field("Signature item", draft.identity.signatureItem, (v) => { draft.identity.signatureItem = v; },
+    () => { const r = rollDie(12); draft.identity.signatureItem = D.SIGNATURE_ITEMS[r - 1]; rerender(); }));
+  body.append(el("p", { class: "muted sheet__note" }, `Once per session, interacting with your signature item heals ${D.SIGNATURE_ITEM_HEAL.resolve} stress.`));
+  body.append(field("Home", draft.identity.home, (v) => { draft.identity.home = v; },
+    () => { const r = rollDie(12); draft.identity.home = R.lookupRange(D.HOME_TABLE, r).text; rerender(); }, true,
+    "LAPD apartment in Sector 5 by default — describe or relocate it."));
   body.append(el("div", { class: "notice" }, `Standard issue: ${D.STANDARD_ISSUE.join(", ")}.`));
 }
 

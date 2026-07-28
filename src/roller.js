@@ -54,6 +54,9 @@ const stressBlocksPush = (ch) => !!ch.state?.criticalStress?.noPush;
 const netOf = (adv, dis) => Math.sign(adv - dis); // cancel 1:1, cap at one (Ch03)
 // Pushing is a player-character move — NPC rolls are never pushed. [Solo Mode p.010]
 const canPush = (rc) => rc?.kind !== "npc";
+// "If you FAIL a Base Dice roll, you can push the roll." [Ch01 p016 / Ch03]
+// A roll that already succeeded is finished — no push, no bane risk.
+const pushable = (dice) => !D.PUSH_FAILED_ROLLS_ONLY || sumSucc(dice) < 1;
 
 // Aiming grants advantage to the NEXT single shot only, then is spent. [Ch08 Careful Aim]
 function consumeAiming(ch, skillKey) {
@@ -193,7 +196,7 @@ export function openSkillRoll(ch, skillKey, onDone) {
         b.append(outcomeLine(succ, banes));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed && !stressBlocksPush(ch)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && pushable(st.dice) && !stressBlocksPush(ch)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.dice = pushPool(st.dice); st.pushed = true;
           const nb = sumBane(st.dice), ns = sumSucc(st.dice);
           const risk = applyPushRisk(ch, attrKey, nb);
@@ -268,7 +271,7 @@ export function openOpposedSkillRoll(ch, onDone) {
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
         // Only the initiator may push an opposed roll. [§3.1]
-        if (!st.pushed && !stressBlocksPush(ch)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && mine <= theirs && !stressBlocksPush(ch)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.mineDice = pushPool(st.mineDice); st.pushed = true;
           const risk = applyPushRisk(ch, R.skill(st.mine).attr, sumBane(st.mineDice));
           st.note = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
@@ -316,7 +319,7 @@ export function proceduralRoll(ch, { skillKey, title, adv = 0, dis = 0, allowPus
         b.append(outcomeLine(sumSucc(st.dice), sumBane(st.dice)));
         if (st.msg) b.append(el("div", { class: "roll-risk" }, st.msg));
         const actions = el("div", { class: "modal__actions" });
-        if (allowPush && !st.pushed) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (allowPush && !st.pushed && pushable(st.dice)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.msg = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
@@ -449,7 +452,7 @@ export function openAttackRoll(ch, weapon, onDone) {
         if (succ >= 1) b.append(damageBlock(ch, weapon, succ));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed && !stressBlocksPush(ch)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && pushable(st.dice) && !stressBlocksPush(ch)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.note = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
@@ -699,7 +702,7 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
         b.append(outcomeLine(succ, banes));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed && canPush(rc)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && canPush(rc) && pushable(st.dice)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.dice = pushPool(st.dice); st.pushed = true;
           const nb = sumBane(st.dice);
           if (rc.kind === "pc" && rc.pc) {
@@ -834,7 +837,7 @@ function openRangedAttack(c, rc, w, commit) {
         }
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed && canPush(rc)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        if (!st.pushed && canPush(rc) && pushable(st.dice)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.dice = pushPool(st.dice); st.pushed = true; st.armorRes = null; // new damage → re-roll armor
           const nb = sumBane(st.dice);
           if (rc.kind === "pc" && rc.pc) {
@@ -1005,7 +1008,9 @@ function runOpposedMeleeModal(c, rc, w, e, rEnemy, commit) {
 
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
-        if (!st.pushed && canPush(rc)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
+        // Only a failed roll may be pushed — in an opposed roll, that means the
+        // attacker did not beat the defender. [Ch01 p016 / §3.12]
+        if (!st.pushed && canPush(rc) && attSucc <= defSucc) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
           st.attDice = pushPool(st.attDice); st.pushed = true; st.armorRes = null; // new margin → re-roll armor
           const nb = sumBane(st.attDice);
           if (rc.kind === "pc" && rc.pc) {

@@ -457,3 +457,77 @@ test("solo tables match the printing exactly [Solo Mode PDF]", () => {
   assert.deepEqual(SO.HYPOTHESIS_CHECK.success.pp, 3);
   assert.deepEqual(SO.HYPOTHESIS_CHECK.failure.pp, -3);
 });
+
+// ---------------------------------------------------------------------------
+// Core rulebook pass (2026-07-28, user-supplied rules reference).
+// ---------------------------------------------------------------------------
+test("pushing is only ever offered on a FAILED roll [Core Ch01 p016]", () => {
+  assert.equal(D.PUSH_FAILED_ROLLS_ONLY, true);
+  assert.equal(D.PUSH_BANE_FACE, 1);
+});
+
+test("key relationship: three D12 tables [Core Ch02 p032]", () => {
+  for (const t of [D.RELATIONSHIP_WHO, D.RELATIONSHIP_LIKE, D.RELATIONSHIP_GOING_ON]) {
+    assert.equal(t.length, 12);
+    for (const e of t) assert.ok(typeof e === "string" && e.length > 2);
+  }
+  assert.equal(D.RELATIONSHIP_WHO[0], "Parent");
+  assert.equal(D.RELATIONSHIP_WHO[11], "DiJi");
+  assert.equal(D.RELATIONSHIP_LIKE[11], "Only in your head");
+  assert.match(D.RELATIONSHIP_GOING_ON[1], /gone missing/);
+});
+
+test("signature item: D12 table + once-per-session stress heal [Core Ch02 p034]", () => {
+  assert.equal(D.SIGNATURE_ITEMS.length, 12);
+  assert.equal(D.SIGNATURE_ITEMS[0], "A photograph");
+  assert.equal(D.SIGNATURE_ITEMS[11], "A tombstone");
+  assert.equal(D.SIGNATURE_ITEM_HEAL.resolve, 1);
+  assert.equal(D.SIGNATURE_ITEM_HEAL.period, "session");
+});
+
+test("home table covers a full D12, 1–4 being the LAPD apartment [Core Ch02 p034]", () => {
+  const covered = new Set();
+  for (let d = 1; d <= 12; d++) {
+    const row = R.lookupRange(D.HOME_TABLE, d);
+    assert.ok(row, `D12=${d} has a home`);
+    covered.add(row.text);
+  }
+  assert.match(R.lookupRange(D.HOME_TABLE, 1).text, /LAPD housing apartment in Sector 5/);
+  assert.equal(R.lookupRange(D.HOME_TABLE, 4).text, R.lookupRange(D.HOME_TABLE, 1).text);
+  assert.notEqual(R.lookupRange(D.HOME_TABLE, 5).text, R.lookupRange(D.HOME_TABLE, 4).text);
+  assert.equal(covered.size, 9);
+});
+
+test("secret Replicant is a secret D6, a 6 means you are one [Core Ch02 p028]", () => {
+  assert.equal(D.SECRET_REPLICANT.secretRollDie, 6);
+  assert.equal(D.SECRET_REPLICANT.secretRollHit, 6);
+});
+
+test("creation tables verified against the Core reference", () => {
+  // archetype D12 tables, both natures
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 1).key, "analyst");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 3).key, "cityspeaker");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 10).key, "inspector");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.human, 12).key, "skimmer");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 3).key, "analyst");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 6).key, "doxie");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 9).key, "fixer");
+  assert.equal(R.lookupRange(D.ARCHETYPE_TABLE.replicant, 12).key, "inspector");
+  // archetype key attribute / skills / chinyen die
+  const by = (k) => D.ARCHETYPES.find((a) => a.key === k);
+  assert.equal(by("analyst").keyAttr, "INT"); assert.equal(by("analyst").chinyenDie, 8);
+  assert.equal(by("cityspeaker").keyAttr, "EMP"); assert.equal(by("doxie").keyAttr, "AGI");
+  assert.equal(by("enforcer").keyAttr, "STR"); assert.equal(by("enforcer").chinyenDie, 6);
+  assert.equal(by("fixer").chinyenDie, 10); assert.equal(by("inspector").chinyenDie, 6);
+  assert.equal(by("skimmer").chinyenDie, 12);
+  assert.deepEqual(by("doxie").keySkills, ["hand_to_hand", "mobility", "manipulation"]);
+  assert.deepEqual(by("skimmer").keySkills, ["firearms", "connections", "manipulation"]);
+  // memory tables
+  assert.equal(D.MEMORY_WHEN.length, 6);
+  for (const t of [D.MEMORY_WHERE, D.MEMORY_WHO, D.MEMORY_WHAT, D.MEMORY_FEEL]) assert.equal(t.length, 12);
+  assert.equal(D.MEMORY_FEEL[0], "Hopeful");
+  assert.equal(D.MEMORY_WHO[11], "No one but you");
+  // combat actions carry the book's prerequisites
+  assert.equal(D.COMBAT_ACTIONS.find((a) => a.action === "Unarmed attack").prereq, "Unarmed");
+  assert.equal(D.COMBAT_ACTIONS.find((a) => a.action === "Crawl").prereq, "Prone");
+});

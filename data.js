@@ -14,6 +14,7 @@ export const SKILL_LEVEL_DESC = { A: "Elite", B: "Experienced", C: "Novice", D: 
 export const SUCCESS_THRESHOLD = 6;   // a die showing >= 6 is one success
 export const DOUBLE_THRESHOLD = 10;   // a die showing >= 10 is two successes
 export const PUSH_BANE_FACE = 1;      // a 1 on a pushed die inflicts damage/stress
+export const PUSH_FAILED_ROLLS_ONLY = true; // "If you fail a Base Dice roll, you can push the roll"
 export const DIE_SIZES = [6, 8, 10, 12]; // every step die used by the system
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,8 @@ export const NATURES = {
 // Secret Replicant option  [Ch02] — build and play as an apparent human; when
 // the truth comes out the full Replicant rules apply from that moment.
 export const SECRET_REPLICANT = {
+  secretRollDie: 6,
+  secretRollHit: 6,   // a 6 on the Game Runner's secret D6 = you are a Replicant
   note: "Play as an apparent human. On reveal: +2 max Health, −2 max Resolve, and every push costs stress instead of damage.",
 };
 // Step 1 of creation: D6 -> nature
@@ -357,7 +360,7 @@ export const INITIATIVE_CARDS = 10; // draw from #1..#10, act low -> high
 export const COMBAT_ACTIONS = [
   { action: "Sprint", prereq: "Standing", skill: "mobility" },
   { action: "Crawl", prereq: "Prone", skill: null },
-  { action: "Unarmed attack", prereq: "—", skill: "hand_to_hand" },
+  { action: "Unarmed attack", prereq: "Unarmed", skill: "hand_to_hand" },
   { action: "Melee attack", prereq: "Melee weapon", skill: "hand_to_hand" },
   { action: "Grapple", prereq: "Unarmed", skill: "hand_to_hand" },
   { action: "Break free", prereq: "Grappled", skill: "hand_to_hand" },
@@ -595,6 +598,45 @@ export const MEMORY_FEEL = [ // D12
 // TYPICAL NPCS (14)  [Ch09]  -> also see data-npcs.js (canonical combatant list)
 // Kept here as a quick reference count; data-npcs.js holds full stat objects.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// KEY RELATIONSHIP TABLES (roll one on each)  [Ch02 p032]
+// ---------------------------------------------------------------------------
+export const RELATIONSHIP_WHO = [ // D12
+  "Parent", "Sibling", "Child", "Spouse", "Romantic partner", "Old friend",
+  "Colleague", "Superior", "Suspect", "Neighbor", "Doxie", "DiJi",
+];
+export const RELATIONSHIP_LIKE = [ // D12
+  "Friendly", "Loving", "Passionate", "Trusting", "Protective", "Estranged",
+  "Violent", "Deceitful", "One-sided", "Hateful", "Distant", "Only in your head",
+];
+export const RELATIONSHIP_GOING_ON = [ // D12
+  "You're in a fight about something.", "They have gone missing.", "They want something from you.",
+  "They want you to quit your job.", "You think they are hiding something.", "They constantly disappoint you.",
+  "They need help with something.", "Their life is in danger.", "They are suspected of a crime.",
+  "You constantly disappoint them.", "They know your deepest secret.", "They threaten you with something.",
+];
+
+// Signature item  [Ch02 p034] — interacting with it recovers 1 stress, once per session.
+export const SIGNATURE_ITEMS = [ // D12
+  "A photograph", "A book", "A ring", "A necklace", "A musical instrument", "An old coat",
+  "A dog tag", "An origami bird", "A cheap souvenir", "A second-hand animoid pet",
+  "An open stool at your favorite bar", "A tombstone",
+];
+export const SIGNATURE_ITEM_HEAL = { resolve: 1, period: "session" };
+
+// Where you live  [Ch02 p034] — D12; 1–4 is the standard LAPD apartment.
+export const HOME_TABLE = [
+  { range: [1, 4], text: "A sparsely furnished LAPD housing apartment in Sector 5 — small and claustrophobic." },
+  { range: [5, 5], text: "A condo full of old mementos, with a balcony over the neon streets of Little Tokyo." },
+  { range: [6, 6], text: "A cheap run-down hotel room by Hawker's Circle, flickering lights and dripping pipes." },
+  { range: [7, 7], text: "A huge, dilapidated apartment in an abandoned building on Retirement Row — leaking ceilings, debris everywhere." },
+  { range: [8, 8], text: "A dingy flat above a seedy bar off Nightclub Row." },
+  { range: [9, 9], text: "A cluttered warehouse off Animoid Row, hidden from prying eyes." },
+  { range: [10, 10], text: "A serene luxury penthouse hotel suite in the Financial District." },
+  { range: [11, 11], text: "No home at all — you drift, spending every night somewhere different." },
+  { range: [12, 12], text: "With your key relationship. Roll again to see where they live." },
+];
+
 export const TIME_UNITS = { round: "5–10 seconds (combat/chase)", shift: "5–10 hours (investigation); 4 per day" };
 
 export const META = {

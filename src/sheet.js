@@ -543,6 +543,9 @@ function onceHeals(ch) {
   const specHeals = { hip_flask: "swig", origami: "fold a figure", smokes: "light up" };
   for (const [key, how] of Object.entries(specHeals))
     if ((ch.specialties || []).some((s) => s === key || s?.key === key)) out.push({ key, label: D.SPECIALTIES.find((x) => x.key === key).name, desc: "heal 1 stress (" + how + ")", resolve: 1 });
+  // Signature item: interacting with it heals 1 stress, once per session [Ch02 p034].
+  if ((ch.identity.signatureItem || "").trim())
+    out.push({ key: "signature_item", label: `Signature item (${ch.identity.signatureItem})`, desc: `heal ${D.SIGNATURE_ITEM_HEAL.resolve} stress`, resolve: D.SIGNATURE_ITEM_HEAL.resolve });
   if (itemsInclude(ch, ["medchecker"])) out.push({ key: "medchecker", label: "MedChecker", desc: "heal 1 Health & 1 Resolve", health: 1, resolve: 1 });
   if (itemsInclude(ch, ["instant fix"])) out.push({ key: "instant_fix", label: "Instant Fix", desc: "heal 1 Health", health: 1 });
   if (itemsInclude(ch, ["soviet happy"])) out.push({ key: "soviet_happy", label: "Soviet Happy", desc: "heal 1 Resolve", resolve: 1 });

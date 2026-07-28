@@ -571,3 +571,73 @@ test("the solo NPC generator rolls human/Replicant [Solo p.019]", async (t) => {
   assert.ok(/Replicant|Human|Ambiguous/.test(body), body.slice(0, 120));
   await page.keyboard.press("Escape");
 });
+
+test("a successful roll offers no push; a failed one does [Core Ch01 p016]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const roll = async (forceHigh) => {
+    await page.goto(`${base}/index.html?push=${forceHigh}#sheet`, { waitUntil: "load" });
+    await page.evaluate(async (hi) => {
+      const { Store } = await import("/src/store.js");
+      const { normalizeCharacter } = await import("/src/derived.js");
+      const ch = normalizeCharacter({ name: "Pusher", attributes: { STR: "B", AGI: "B", INT: "C", EMP: "C" }, skills: { stamina: "C" } });
+      Store.setActiveId(Store.save(ch).id);
+      Math.random = () => (hi ? 0.999 : 0);   // all max faces (success) vs all 1s (failure)
+    }, forceHigh);
+    await page.evaluate(() => { location.hash = "#__r"; location.hash = "#sheet"; });
+    await page.waitForTimeout(150);
+    await page.getByRole("button", { name: /Roll Stamina/ }).first().click();
+    await page.waitForTimeout(120);
+    await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+    await page.waitForTimeout(180);
+    const body = await page.$eval(".modal", (m) => m.textContent);
+    await page.keyboard.press("Escape");
+    return body;
+  };
+  const won = await roll(true);
+  assert.match(won, /Critical success|Success/);
+  assert.ok(!/Push the roll/.test(won), "a successful roll cannot be pushed");
+  const lost = await roll(false);
+  assert.match(lost, /Failure/);
+  assert.ok(/Push the roll/.test(lost), "a failed roll can be pushed");
+});
+
+test("wizard rolls key relationship, signature item and home from the book's tables [Core Ch02]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?tables#wizard`, { waitUntil: "load" });
+  const out = await page.evaluate(async () => {
+    const D = await import("/data.js");
+    const R = await import("/src/rules.js");
+    return {
+      who: D.RELATIONSHIP_WHO.length, like: D.RELATIONSHIP_LIKE.length, going: D.RELATIONSHIP_GOING_ON.length,
+      sig: D.SIGNATURE_ITEMS.length,
+      homes: [1, 4, 5, 12].map((d) => R.lookupRange(D.HOME_TABLE, d).text.slice(0, 20)),
+    };
+  });
+  assert.deepEqual([out.who, out.like, out.going, out.sig], [12, 12, 12, 12]);
+  assert.equal(out.homes[0], out.homes[1], "1–4 share the LAPD apartment");
+  assert.notEqual(out.homes[2], out.homes[3]);
+  // and the step renders its roll buttons
+  await page.goto(`${base}/index.html?tables2#wizard`, { waitUntil: "load" });
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: /^Human/ }).first().click();
+  const next = () => page.getByRole("button", { name: "Next ›" }).first();
+  await next().click();
+  await page.getByRole("button", { name: /^Enforcer/ }).first().click();
+  await next().click();
+  await page.getByRole("button", { name: /^Rookie/ }).first().click();
+  await next().click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Strength ★" }).first().click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Agility" }).first().click();
+  await next().click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Hand-to-Hand Combat ★" }).first().click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Stamina ★" }).first().click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Firearms ★" }).first().click();
+  await next().click();   // specialties
+  await next().click();   // memory
+  await next().click();   // relationship step
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "Roll all" }).first().click();
+  await page.waitForTimeout(150);
+  const rel = await page.$eval(".wiz__body textarea", (e) => e.value);
+  assert.ok(rel.length > 5, `relationship text was generated: ${rel}`);
+});

@@ -135,7 +135,7 @@ function panelReference(host) {
       ["Base Dice", `Attribute die + skill die (${dice}).`],
       ["Success", `A die showing ${D.SUCCESS_THRESHOLD}+ is one success; ${D.DOUBLE_THRESHOLD}+ is two. One success is enough — extras mean more effect or more damage.`],
       ["Advantage", "Adds a third die of the lower type. Disadvantage removes the lower die. They cancel one for one and never stack past one."],
-      ["Push", `Re-roll everything that isn't already a success and isn't showing a ${D.PUSH_BANE_FACE}. Every ${D.PUSH_BANE_FACE} left in the pool costs you 1 damage (Strength/Agility) or 1 stress (Intelligence/Empathy) — Replicants always take stress.`],
+      ["Push", `Only a <b>failed</b> roll can be pushed. Re-roll everything that isn't showing a ${D.PUSH_BANE_FACE}; every ${D.PUSH_BANE_FACE} left in the pool costs you 1 damage (Strength/Agility) or 1 stress (Intelligence/Empathy) — Replicants always take stress. NPCs never push.`],
     ]),
     facts("Vitals", [
       ["Health", "(Strength die + Agility die) ÷ 4, rounded up. Replicants +2."],
