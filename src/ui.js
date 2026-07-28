@@ -150,7 +150,9 @@ export function segmentNav({ segments = [], active, onSelect } = {}) {
   return row;
 }
 
-// Collapsible "Roll Log" card. entries newest-first: { id, label, text, pin, ts }.
+// Collapsible "Roll Log" card. Entries are given newest-first (storage order)
+// and rendered oldest-first so the whole screen reads top to bottom, like the
+// notes below it; the list scrolls to the newest entry after render.
 // Handlers: onPin(entry), onDelete(entry), onClear().
 export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = true, pinLabel = "Pin to notes", title = "Roll Log", head = null } = {}) {
   const card = el("div", { class: "card rolllog" });
@@ -165,7 +167,7 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
   if (!entries.length) {
     list.append(el("p", { class: "muted rolllog__empty" }, "No rolls yet. Results you roll will collect here."));
   } else {
-    for (const e of entries) {
+    for (const e of [...entries].reverse()) {
       const time = new Date(e.ts || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       list.append(el("div", { class: "rolllog__row" },
         el("span", { class: "rolllog__time muted" }, time),
@@ -177,6 +179,8 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
     }
   }
   details.append(list);
+  // newest sits at the bottom — bring it into view
+  requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
   if (entries.length && onClear) {
     details.append(el("div", { class: "rolllog__foot" },
       el("button", { class: "btn btn--sm btn--ghost", onClick: () => onClear() }, "Clear log")));

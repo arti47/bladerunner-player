@@ -947,3 +947,33 @@ test("any roll can be pinned into the case notes; the sheet's pin says it target
   assert.ok(notes.startsWith("SEED"), "existing notes keep their place");
   assert.match(notes, /• \[Runner · Firearms\]/, `the roll is pinned into the case notes:\n${notes}`);
 });
+
+test("roll logs read top to bottom too — newest entry is last", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?log1#home`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    const { RollLog } = await import("/src/store.js");
+    RollLog.clear();
+    RollLog.add({ label: "FIRST", text: "oldest", source: "sheet" });
+    RollLog.add({ label: "SECOND", text: "middle", source: "sheet" });
+    RollLog.add({ label: "THIRD", text: "newest", source: "sheet" });
+  });
+  await page.goto(`${base}/index.html?log2#home`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => document.querySelectorAll("#screen details").forEach((d) => (d.open = true)));
+  const labels = await page.$$eval(".rolllog__row .rolllog__label", (els) => els.map((e) => e.textContent));
+  assert.deepEqual(labels, ["FIRST", "SECOND", "THIRD"], "oldest first, newest last");
+  // and the same in the solo Log & Notes panel under "All rolls"
+  await page.evaluate(() => localStorage.setItem("brp:solo", JSON.stringify({ panel: "notes", logScope: "all",
+    scratchpad: "", log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, timerDie: "D6" })));
+  await page.goto(`${base}/index.html?log3#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const soloLabels = await page.$$eval(".rolllog__row .rolllog__label", (els) => els.map((e) => e.textContent));
+  assert.deepEqual(soloLabels, ["FIRST", "SECOND", "THIRD"]);
+  // pinning the newest row puts it at the end of the notes
+  await page.locator(".rolllog__row").last().getByRole("button", { name: "Pin to case notes" }).click();
+  await page.waitForTimeout(250);
+  const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.match(notes.trim(), /\[THIRD\] newest$/, `newest pin lands at the bottom:\n${notes}`);
+});
