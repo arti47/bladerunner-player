@@ -7,7 +7,7 @@
 
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
-import { el, sectionTitle, segmentNav, resultModal, rollLogCard, showToast, promptModal, confirmModal } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultModal, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
 import { rollDie, successesFor, uid, clear } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { RollLog } from "./store.js";
@@ -63,13 +63,14 @@ export function renderSolo(mount, rerender) {
     rerender();
   };
   // Note-writers mutate the SAME `st` object record() uses, so combined
-  // operations (e.g. full-briefing = prependNote + record) never clobber.
+  // operations (e.g. full-briefing = addNote + record) never clobber.
+  // Notes read top to bottom — the newest entry lands at the bottom.
   const pinNote = (line) => {
-    st.scratchpad = `• ${line}\n` + (st.scratchpad || "");
-    writeSoloState(st); showToast("Pinned to notes."); rerender();
+    st.scratchpad = appendToNotes(st.scratchpad, `• ${line}`);
+    writeSoloState(st); showToast("Pinned to the end of your notes."); rerender();
   };
-  const prependNote = (block) => {
-    st.scratchpad = block + (st.scratchpad || "");
+  const addNote = (block) => {
+    st.scratchpad = appendToNotes(st.scratchpad, block);
     writeSoloState(st); rerender();
   };
   const show = ({ label, text, pin, title, render }) => {
@@ -117,7 +118,7 @@ export function renderSolo(mount, rerender) {
         el("div", {}, el("strong", {}, m.name), " — ", el("span", { class: "muted" }, m.text)));
       if (m.key === "gut" || m.key === "thread") {
         row.append(btn(m.key === "gut" ? "✍ Seed a note" : "✍ Seed from an old case", () => {
-          prependNote(m.key === "gut"
+          addNote(m.key === "gut"
             ? `=== NEW CASE — ${new Date().toLocaleDateString()} (trust your gut) ===\n• The case as you see it: \n\n`
             : `=== NEW CASE — ${new Date().toLocaleDateString()} (following a thread) ===\n• Unresolved thread from an earlier case: \n• Why it warrants a new investigation: \n\n`);
           showToast("Case note added.");
@@ -134,12 +135,12 @@ export function renderSolo(mount, rerender) {
       el("div", { class: "btn-row" },
         btn("⚡ Generate full briefing", () => {
           const a = rollAssignment(), r = pick(S.CASE_BRIEFING.relevance), c = pick(S.CASE_BRIEFING.complication), h = pick(S.CASE_BRIEFING.hook);
-          prependNote(`=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${c}\n• Personal Hook: ${h}\n\n`);
+          addNote(`=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${c}\n• Personal Hook: ${h}\n\n`);
           record("Briefing", `${a} · ${r}`, `[Briefing] ${a} — ${r}`);
           showToast("Full briefing added to Case Notes.");
         }, "primary"),
         btn("✍ Blank case note", () => {
-          prependNote(`=== NEW CASE — ${new Date().toLocaleDateString()} ===\n• Concept / hunch: \n• Unresolved lead from a past case: \n\n`);
+          addNote(`=== NEW CASE — ${new Date().toLocaleDateString()} ===\n• Concept / hunch: \n• Unresolved lead from a past case: \n\n`);
           showToast("Blank case note added.");
         }, "ghost")),
       el("p", { class: "muted small" }, "Case Briefing tables (Solo Mode) — roll one at a time:"),
@@ -307,9 +308,11 @@ export function renderSolo(mount, rerender) {
       onDelete: (e) => { st.log = (st.log || []).filter((x) => x.id !== e.id); writeSoloState(st); rerender(); },
       onClear: async () => { const ok = await confirmModal("Clear the entire roll log?", { title: "Clear Roll Log", danger: true }); if (ok) { st.log = []; writeSoloState(st); rerender(); } },
     }));
-    const c = card("Solo Case Notes", "Persistent scratchpad. Pinned rolls and briefings are prepended here.");
+    const c = card("Solo Case Notes", "Persistent scratchpad, oldest at the top. Pinned rolls and briefings are added at the bottom.");
     const ta = el("textarea", { class: "input notes-area", rows: 10, placeholder: "Record clues, suspects, and timeline events..." });
     ta.value = st.scratchpad || "";
+    // newest entry is at the bottom — show it
+    requestAnimationFrame(() => { ta.scrollTop = ta.scrollHeight; });
     ta.addEventListener("blur", () => { st.scratchpad = ta.value; writeSoloState(st); showToast("Notes saved."); });
     c.append(ta);
     c.append(el("div", { class: "btn-row" },

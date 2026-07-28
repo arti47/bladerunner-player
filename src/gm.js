@@ -10,7 +10,7 @@ import { NPCS } from "../data-npcs.js";
 import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
-import { el, sectionTitle, segmentNav, resultModal, rollLogCard, modal, showToast, confirmModal } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultModal, rollLogCard, modal, showToast, confirmModal, appendToNotes } from "./ui.js";
 import { rollDie, uid, titleCase, clear } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { navigate } from "./router.js";
@@ -49,7 +49,8 @@ export function renderGm(mount, rerender) {
     try { RollLog.add({ label, text, source: "gm" }); } catch {}
     rerender();
   };
-  const pinNote = (line) => { st.scratchpad = `• ${line}\n` + (st.scratchpad || ""); writeGmState(st); showToast("Pinned to notes."); rerender(); };
+  // Notes read top to bottom — the newest entry lands at the bottom.
+  const pinNote = (line) => { st.scratchpad = appendToNotes(st.scratchpad, `• ${line}`); writeGmState(st); showToast("Pinned to the end of your notes."); rerender(); };
   const show = ({ label, text, pin, title, render }) => { const pinLine = pin || `[${label}] ${text}`; record(label, text, pinLine); resultModal({ title, pinLine, onPin: pinNote, render }); };
 
   mount.append(el("div", { class: "card screen-head" },
@@ -104,7 +105,7 @@ export function renderGm(mount, rerender) {
         const ok = await confirmModal("Generate a full case briefing and prepend it to the GM Scratchpad?", { title: "Generate Case Briefing" });
         if (!ok) return;
         const th = pick(GM.CASE_THEME), as = pick(GM.CASE_ASSIGNMENT[th.theme] || ["Unknown"]), se = pick(GM.CASE_SECTOR), tw = pick(GM.CASE_TWIST);
-        st.scratchpad = `=== CASE BRIEFING (${new Date().toLocaleString()}) ===\n• Theme: ${th.theme}\n• Sector: ${se.sector}\n• Assignment: ${as}\n• Twist: ${tw}\n\n` + (st.scratchpad || "");
+        st.scratchpad = appendToNotes(st.scratchpad, `=== CASE BRIEFING (${new Date().toLocaleString()}) ===\n• Theme: ${th.theme}\n• Sector: ${se.sector}\n• Assignment: ${as}\n• Twist: ${tw}`);
         writeGmState(st);
         record("Briefing", `${th.theme} · ${se.sector}`, `[Briefing] ${th.theme} — ${as}`);
         showToast("Case briefing added to scratchpad.");
@@ -231,9 +232,11 @@ export function renderGm(mount, rerender) {
       onDelete: (e) => { st.log = (st.log || []).filter((x) => x.id !== e.id); writeGmState(st); rerender(); },
       onClear: async () => { const ok = await confirmModal("Clear the entire roll log?", { title: "Clear Roll Log", danger: true }); if (ok) { st.log = []; writeGmState(st); rerender(); } },
     }));
-    const c = card("GM Case Scratchpad & Notes", "Persistent notes. Pinned rolls and briefings are prepended here.");
+    const c = card("GM Case Scratchpad & Notes", "Persistent notes, oldest at the top. Pinned rolls and briefings are added at the bottom.");
     const ta = el("textarea", { class: "input notes-area", rows: 12, placeholder: "Record campaign notes, secret twists, and NPC stats..." });
     ta.value = st.scratchpad || "";
+    // newest entry is at the bottom — show it
+    requestAnimationFrame(() => { ta.scrollTop = ta.scrollHeight; });
     ta.addEventListener("blur", () => { st.scratchpad = ta.value; writeGmState(st); showToast("GM notes saved."); });
     c.append(ta); root.append(c);
   }

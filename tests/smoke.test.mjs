@@ -861,3 +861,47 @@ test("the bottom nav stays pinned to the viewport bottom while scrolling", async
   });
   assert.ok(clearance >= 0, `content clears the nav at the end of the page (gap ${clearance}px)`);
 });
+
+test("case notes read top to bottom — new entries land at the end", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  // Solo: an existing note, then a briefing, then a pinned roll
+  await page.goto(`${base}/index.html?flow#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "start", scratchpad: "OLDEST LINE",
+      log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, timerDie: "D6" }));
+  });
+  await page.goto(`${base}/index.html?flow2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "⚡ Generate full briefing" }).first().click();
+  await page.waitForTimeout(250);
+  let notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.ok(notes.startsWith("OLDEST LINE"), `existing notes stay on top:\n${notes}`);
+  assert.ok(notes.indexOf("CASE BRIEFING") > notes.indexOf("OLDEST LINE"), "the briefing is appended below");
+
+  // pinning a roll result adds to the bottom too
+  await page.getByRole("button", { name: "🎲 Relevance" }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "📌 Pin to notes" }).first().click();
+  await page.waitForTimeout(250);
+  notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  const pinIdx = notes.lastIndexOf("• [Relevance]");
+  assert.ok(pinIdx > notes.indexOf("CASE BRIEFING"), `the pin lands after the briefing:\n${notes}`);
+  assert.ok(notes.trimEnd().endsWith(notes.trimEnd().slice(pinIdx).trimEnd()), "and is the last thing in the notes");
+
+  // GM notes behave the same way
+  await page.goto(`${base}/index.html?flow3#gm`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:gm", JSON.stringify({ panel: "case", scratchpad: "OLDEST LINE", log: [],
+      selectedTheme: "Replicant Crimes & Punishments" }));
+  });
+  await page.goto(`${base}/index.html?flow4#gm`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "🎲 Twist (D12)" }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "📌 Pin to notes" }).first().click();
+  await page.waitForTimeout(250);
+  const gmNotes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:gm")).scratchpad);
+  assert.ok(gmNotes.startsWith("OLDEST LINE"), `GM notes keep their order:\n${gmNotes}`);
+  assert.ok(gmNotes.indexOf("• [Twist]") > 0, "the pin is appended at the end");
+});

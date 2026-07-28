@@ -693,3 +693,17 @@ test("the Baseline Test triggers at zero Promotion Points or Broken by stress [C
   assert.equal(D.BASELINE_TEST.triggersWhenBrokenByStress, true);
   assert.equal(D.BASELINE_TEST.skill, "insight");
 });
+
+test("case notes append: newest entry goes to the bottom, blank line between", async () => {
+  const { appendToNotes } = await import("../src/ui.js");
+  assert.equal(appendToNotes("", "• first"), "• first\n");
+  assert.equal(appendToNotes("• first\n", "• second"), "• first\n\n• second\n");
+  // ragged whitespace in the existing notes never compounds
+  assert.equal(appendToNotes("• first\n\n\n", "• second"), "• first\n\n• second\n");
+  assert.equal(appendToNotes("• first", "\n\n• second\n\n"), "• first\n\n• second\n");
+  // a multi-line block keeps its own shape
+  assert.equal(appendToNotes("old", "=== CASE ===\n• Assignment: X"), "old\n\n=== CASE ===\n• Assignment: X\n");
+  // empty additions do not disturb the notes
+  assert.equal(appendToNotes("old", ""), "old\n");
+  assert.equal(appendToNotes("", ""), "");
+});
