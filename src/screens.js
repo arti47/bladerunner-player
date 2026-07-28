@@ -36,6 +36,7 @@ export function renderHome(mount) {
     el("div", { class: "home-grid" },
       tile("Characters", `${chars.length} saved`, () => navigate("characters")),
       tile("New Blade Runner", "Creation wizard", () => navigate("wizard")),
+      tile("How to Play", "Solo & table tutorial", () => navigate("tutorial")),
       tile("Rules Library", "Searchable reference", () => navigate("rules")),
       tile("Combat Tracker", "Initiative & vitals", () => navigate("combat")),
       Settings.solo() ? tile("Solo Mode", "Play on your own", () => navigate("solo")) : null,
@@ -146,6 +147,10 @@ export function renderSettings(mount) {
   mount.append(screen("Settings & About",
     accountSection(),
     rows,
+    el("div", { class: "card" },
+      el("div", { class: "card__title" }, "How to Play"),
+      el("p", { class: "muted" }, "Step-by-step walkthroughs for running a case solo or at a table, plus a cheat sheet."),
+      el("button", { class: "btn btn--ghost", onClick: () => navigate("tutorial") }, "Open the tutorial →")),
     el("div", { class: "about muted" },
       el("p", {}, `${D.META.game} · ${D.META.scope}`),
       el("p", {}, "A personal play aid built from your own rulebooks. Numbers and mechanics are extracted; flavor text is paraphrased. Not affiliated with or endorsed by the publisher or rights-holders."))));

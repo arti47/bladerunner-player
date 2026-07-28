@@ -519,3 +519,14 @@ textarea.input { resize: vertical; font-family: inherit; }
 .panel { display: flex; flex-direction: column; gap: 1rem; }
 .panel .card { gap: .55rem; }
 .small { font-size: .82rem; }
+
+/* ---- Tutorial / How to Play ---------------------------------------------- */
+.tut__steps { list-style: none; margin: .2rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; counter-reset: tut; }
+.tut__step { display: grid; grid-template-columns: 1fr; gap: .15rem; min-width: 0; }
+.tut__label { font-weight: 700; font-size: .9rem; color: var(--cyan); min-width: 0; overflow-wrap: anywhere; }
+.tut__text { font-size: .9rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.tut__text b { color: var(--text); font-weight: 600; }
+.tut__facts { margin: .2rem 0 0; display: grid; grid-template-columns: 1fr; gap: .15rem; }
+.tut__facts dt { font-weight: 700; font-size: .88rem; color: var(--amber); min-width: 0; overflow-wrap: anywhere; }
+.tut__facts dd { margin: 0 0 .5rem; font-size: .88rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.tut__hint { border-color: var(--amber-dim); }

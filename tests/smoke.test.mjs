@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ROUTES = ["home", "characters", "rules", "wizard", "sheet", "combat", "solo", "gm", "settings"];
+const ROUTES = ["home", "characters", "rules", "wizard", "sheet", "combat", "solo", "gm", "tutorial", "settings"];
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
 // Browser discovery, in order: explicit CHROME_PATH → a Playwright browser bundle
 // (PLAYWRIGHT_BROWSERS_PATH, as used by CI images) → the usual macOS/Linux install

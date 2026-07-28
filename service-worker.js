@@ -1,6 +1,6 @@
 // service-worker.js — network-first, caches the app shell + all data files.
 // Bump CACHE_VERSION on ANY shipped-file change (CLAUDE.md §10.6).
-const CACHE_VERSION = "brp-v27";
+const CACHE_VERSION = "brp-v28";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -26,6 +26,7 @@ const APP_SHELL = [
   "./src/combat.js",
   "./src/solo.js",
   "./src/gm.js",
+  "./src/tutorial.js",
   "./src/sync.js",
   "./firebase-config.js",
 ];

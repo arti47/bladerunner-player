@@ -9,6 +9,7 @@ import { renderSheet } from "./sheet.js";
 import { renderCombat } from "./combat.js";
 import { renderSolo } from "./solo.js";
 import { renderGm } from "./gm.js";
+import { renderTutorial } from "./tutorial.js";
 
 const mount = () => $("#screen");
 
@@ -33,6 +34,7 @@ const ROUTES = {
   combat: renderCombat,
   solo: (m) => renderSolo(m, () => render("solo")),
   gm: (m) => renderGm(m, () => render("gm")),
+  tutorial: (m) => renderTutorial(m, () => render("tutorial")),
 };
 
 function placeholder(m, title, sub) {
