@@ -550,3 +550,4 @@ textarea.input { resize: vertical; font-family: inherit; }
 .card--target-dmg { margin: .5rem 0; }
 .solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
 .solo-method:first-of-type { border-top: 0; }
+.rolllog__scope { padding: .1rem .6rem .4rem; }

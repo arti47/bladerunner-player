@@ -228,6 +228,7 @@ export function renderGm(mount, rerender) {
   function panelNotes(root) {
     root.append(rollLogCard({
       entries: st.log || [],
+      pinLabel: "Pin to case notes",
       onPin: (e) => pinNote(e.pin),
       onDelete: (e) => { st.log = (st.log || []).filter((x) => x.id !== e.id); writeGmState(st); rerender(); },
       onClear: async () => { const ok = await confirmModal("Clear the entire roll log?", { title: "Clear Roll Log", danger: true }); if (ok) { st.log = []; writeGmState(st); rerender(); } },

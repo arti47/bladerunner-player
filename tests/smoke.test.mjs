@@ -905,3 +905,45 @@ test("case notes read top to bottom — new entries land at the end", async (t) 
   assert.ok(gmNotes.startsWith("OLDEST LINE"), `GM notes keep their order:\n${gmNotes}`);
   assert.ok(gmNotes.indexOf("• [Twist]") > 0, "the pin is appended at the end");
 });
+
+test("any roll can be pinned into the case notes; the sheet's pin says it targets the journal", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  // A dice roll made on the SHEET must be reachable from the solo case notes.
+  await page.goto(`${base}/index.html?pin1#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    const { Store, RollLog } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    RollLog.clear();
+    const ch = normalizeCharacter({ name: "Runner", attributes: { STR: "B", AGI: "B", INT: "C", EMP: "C" }, skills: { firearms: "C" } });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "notes", scratchpad: "SEED", log: [],
+      hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, timerDie: "D6" }));
+  });
+  await page.goto(`${base}/index.html?pin2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: /Roll Firearms/ }).first().click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "Done" }).first().click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(async () => (await import("/src/store.js")).RollLog.list().length), 1);
+  // the sheet's pin goes to the journal — the label must not promise "notes"
+  assert.match(await page.$eval(".rolllog__row .iconbtn", (e) => e.getAttribute("aria-label")), /journal/i);
+
+  // solo log & notes: switch to every roll, pin one into the case notes
+  await page.goto(`${base}/index.html?pin3#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const chips = await page.$$eval(".rolllog__scope .chip", (els) => els.map((e) => e.textContent));
+  assert.deepEqual(chips, ["Solo oracle", "All rolls"]);
+  await page.getByRole("button", { name: "All rolls" }).first().click();
+  await page.waitForTimeout(250);
+  const rows = await page.$$eval(".rolllog__row .rolllog__label", (els) => els.map((e) => e.textContent));
+  assert.deepEqual(rows, ["Runner · Firearms"], "the sheet roll shows up in the solo log");
+  await page.locator(".rolllog__row").first().getByRole("button", { name: "Pin to case notes" }).click();
+  await page.waitForTimeout(250);
+  const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.ok(notes.startsWith("SEED"), "existing notes keep their place");
+  assert.match(notes, /• \[Runner · Firearms\]/, `the roll is pinned into the case notes:\n${notes}`);
+});

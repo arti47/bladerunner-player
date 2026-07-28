@@ -812,6 +812,7 @@ function rollLogSection(ch, commit, rerender) {
     .map((e) => (rollLogScope === "all" && e.charName ? { ...e, label: `${e.charName} · ${e.label}` } : e));
   card.append(rollLogCard({
     entries,
+    pinLabel: "Pin to this character's journal",
     onPin: (e) => commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: `[${e.label}] ${e.text}` }); showToast("Pinned to journal."); }),
     onDelete: (e) => { RollLog.remove(e.id); rerender(); },
     onClear: async () => { if (await confirmModal("Clear the entire roll log?", { title: "Clear roll log", danger: true })) { RollLog.clear(); rerender(); } },

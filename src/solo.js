@@ -302,11 +302,38 @@ export function renderSolo(mount, rerender) {
   }
 
   function panelNotes(root) {
+    // "Solo" shows the oracle's own log; "All rolls" shows the global roll log —
+    // every skill roll, attack and oracle result from anywhere in the app — so
+    // any of them can be pinned into the case notes.
+    const scope = st.logScope === "all" ? "all" : "solo";
+    const globalRolls = () => RollLog.list().slice(0, 50).map((e) => ({
+      id: e.id, ts: e.ts,
+      label: e.charName ? `${e.charName} · ${e.label}` : e.label,
+      text: e.text,
+      pin: `[${e.charName ? `${e.charName} · ` : ""}${e.label}] ${e.text}`,
+    }));
+    const entries = scope === "all" ? globalRolls() : (st.log || []);
+    const scopeChip = (label, key) => el("button", {
+      class: "chip" + (scope === key ? " chip--on" : ""),
+      onClick: () => { st.logScope = key; writeSoloState(st); rerender(); },
+    }, label);
     root.append(rollLogCard({
-      entries: st.log || [],
-      onPin: (e) => pinNote(e.pin),
-      onDelete: (e) => { st.log = (st.log || []).filter((x) => x.id !== e.id); writeSoloState(st); rerender(); },
-      onClear: async () => { const ok = await confirmModal("Clear the entire roll log?", { title: "Clear Roll Log", danger: true }); if (ok) { st.log = []; writeSoloState(st); rerender(); } },
+      entries,
+      title: scope === "all" ? "Roll Log — every roll" : "Roll Log — solo oracle",
+      pinLabel: "Pin to case notes",
+      head: el("div", { class: "chips rolllog__scope" }, scopeChip("Solo oracle", "solo"), scopeChip("All rolls", "all")),
+      onPin: (e) => pinNote(e.pin || `[${e.label}] ${e.text}`),
+      onDelete: (e) => {
+        if (scope === "all") RollLog.remove(e.id);
+        else st.log = (st.log || []).filter((x) => x.id !== e.id);
+        writeSoloState(st); rerender();
+      },
+      onClear: async () => {
+        const ok = await confirmModal(scope === "all" ? "Clear the global roll log?" : "Clear the solo oracle log?", { title: "Clear Roll Log", danger: true });
+        if (!ok) return;
+        if (scope === "all") RollLog.clear(); else st.log = [];
+        writeSoloState(st); rerender();
+      },
     }));
     const c = card("Solo Case Notes", "Persistent scratchpad, oldest at the top. Pinned rolls and briefings are added at the bottom.");
     const ta = el("textarea", { class: "input notes-area", rows: 10, placeholder: "Record clues, suspects, and timeline events..." });

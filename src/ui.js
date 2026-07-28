@@ -152,14 +152,15 @@ export function segmentNav({ segments = [], active, onSelect } = {}) {
 
 // Collapsible "Roll Log" card. entries newest-first: { id, label, text, pin, ts }.
 // Handlers: onPin(entry), onDelete(entry), onClear().
-export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = true } = {}) {
+export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = true, pinLabel = "Pin to notes", title = "Roll Log", head = null } = {}) {
   const card = el("div", { class: "card rolllog" });
   const details = el("details", { class: "rolllog__details", open: open || null });
   const summary = el("summary", { class: "rolllog__summary" },
-    el("span", {}, `Roll Log`),
+    el("span", {}, title),
     el("span", { class: "rolllog__count muted" }, entries.length ? `${entries.length}` : "empty"));
   details.append(summary);
 
+  if (head) details.append(head);
   const list = el("div", { class: "rolllog__list" });
   if (!entries.length) {
     list.append(el("p", { class: "muted rolllog__empty" }, "No rolls yet. Results you roll will collect here."));
@@ -171,7 +172,7 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
         el("span", { class: "rolllog__label" }, e.label),
         el("span", { class: "rolllog__text" }, e.text),
         el("span", { class: "rolllog__row-actions" },
-          onPin ? el("button", { class: "iconbtn", title: "Pin to notes", "aria-label": "Pin to notes", onClick: () => onPin(e) }, "📌") : null,
+          onPin ? el("button", { class: "iconbtn", title: pinLabel, "aria-label": pinLabel, onClick: () => onPin(e) }, "📌") : null,
           onDelete ? el("button", { class: "iconbtn", title: "Remove entry", "aria-label": "Remove entry", onClick: () => onDelete(e) }, "✕") : null)));
     }
   }
