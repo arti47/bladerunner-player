@@ -144,6 +144,69 @@ export function renderGm(mount, rerender) {
         });
       }, "primary")));
     root.append(nc);
+
+    // Case Tables 4 (locations), 5 (clues), 7 (finale), 8 (mood)  [Ch09]
+    const extra = card("More Case Tables", "Clues, locations, the final confrontation, and mood.");
+    extra.append(grid(
+      btn("🎲 Clue (D8)", () => {
+        const roll = rollDie(8); const row = lookupRange(GM.CASE_CLUES, roll);
+        const detail = row.detailDie ? row.detail[rollDie(row.detailDie) - 1] : null;
+        const text = detail ? `${row.type} — ${detail}` : row.type;
+        show({ label: "Clue", text, pin: `[Clue] ${text}${row.note ? ` (${row.note})` : ""}`, title: `Clue — ${roll} (D8)`,
+          render: (b) => b.append(el("h3", { class: "roll-result" }, row.type),
+            detail ? el("p", {}, detail) : null,
+            row.note ? el("p", { class: "muted" }, row.note) : null) });
+      }),
+      btn("🎲 Location (D6×D6)", () => {
+        const sector = st.selectedSector || pick(GM.CASE_SECTOR).sector;
+        const areas = GM.SECTOR_LOCATIONS[sector] || [];
+        const a = rollDie(6); const area = lookupRange(areas, a) || areas[0];
+        const p2 = rollDie(6); const place = area.places[p2 - 1];
+        show({ label: "Location", text: `${place} · ${area.area}`, pin: `[Location] ${place} — ${area.area}, ${sector}`,
+          title: `${sector} — area ${a}, place ${p2}`,
+          render: (b) => b.append(el("h3", { class: "roll-result" }, place), el("p", { class: "muted" }, `${area.area} · ${sector}`)) });
+      }),
+      btn("🎲 Final Confrontation (D10)", () => {
+        const l = rollDie(10), e = rollDie(10);
+        const text = `${GM.CASE_FINALE_LOCATION[l - 1]} — ${GM.CASE_FINALE_ENVIRONMENT[e - 1]}`;
+        show({ label: "Finale", text, pin: `[Finale] ${text}`, title: `Final Confrontation — ${l}/${e} (D10)`,
+          render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, GM.CASE_FINALE_LOCATION[l - 1]),
+            el("p", { class: "roll-center muted" }, GM.CASE_FINALE_ENVIRONMENT[e - 1])) });
+      }),
+      btn("🎲 Mood (D8×3)", () => {
+        const w = GM.CASE_MOOD.weather[rollDie(8) - 1];
+        const sc = GM.CASE_MOOD.screen[rollDie(8) - 1];
+        const pb = GM.CASE_MOOD.passingBy[rollDie(8) - 1];
+        show({ label: "Mood", text: `${w} · ${sc} · ${pb}`, pin: `[Mood] ${w}; on screen: ${sc}; passing by: ${pb}`,
+          title: "Mood Pieces",
+          render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "Weather"), el("p", {}, w),
+            el("div", { class: "roll-eyebrow" }, "On that screen"), el("p", {}, sc),
+            el("div", { class: "roll-eyebrow" }, "Passing by"), el("p", {}, pb)) });
+      }),
+      btn("🎲 Downtime Event (D8)", () => {
+        const roll = rollDie(8); const ev = lookupRange(GM.DOWNTIME_EVENT_CORE, roll);
+        show({ label: "Downtime Event", text: `D8→${roll}`, pin: `[Downtime] Home: ${ev.home} / Street: ${ev.street}`,
+          title: `Downtime Event — ${roll} (D8)`,
+          render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "At home"), el("p", {}, ev.home),
+            el("div", { class: "roll-eyebrow" }, "On the street"), el("p", {}, ev.street)) });
+      })));
+    const sectorSelect = el("select", { class: "input roll-select" });
+    GM.CASE_SECTOR.forEach((x) => sectorSelect.append(el("option", { value: x.sector, selected: x.sector === st.selectedSector || null }, x.sector)));
+    sectorSelect.addEventListener("change", () => { st.selectedSector = sectorSelect.value; writeGmState(st); });
+    extra.append(el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Sector:"), sectorSelect));
+    root.append(extra);
+
+    // End-of-session awards  [Ch09] — one point per bullet, per character.
+    const awards = card("Session Awards", `Promotion and Humanity checklists. Five or more Promotion Points in one session earns a distinction from Deputy Chief Holden.`);
+    const checklist = (title, items) => {
+      const box = el("details", { class: "rules__group" }, el("summary", {}, `${title} (${items.length})`));
+      for (const line of items) box.append(el("div", { class: "muted sheet__note" }, "• " + line));
+      return box;
+    };
+    awards.append(checklist("Promotion Points — award one each", GM.PROMOTION_AWARDS));
+    awards.append(checklist("Promotion Points — lose one each", GM.PROMOTION_LOSSES));
+    awards.append(checklist("Humanity Points — award one each", GM.HUMANITY_AWARDS));
+    root.append(awards);
   }
 
   function panelCombat(root) {

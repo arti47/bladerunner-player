@@ -241,6 +241,7 @@ function inventorySection(ch, commit, rerender) {
     if (name && name.trim()) commit((c) => { c.inventory.items.push({ name: name.trim(), equipped: false }); });
   } }, "＋ Add item");
   const acquire = el("button", { class: "btn btn--sm", onClick: () => acquireGear(ch, commit, rerender) }, "⚖ Acquire gear");
+  const sell = el("button", { class: "btn btn--sm btn--ghost", onClick: () => sellGear(ch, commit, rerender) }, "¥ Sell an item");
   const attack = el("button", { class: "btn btn--sm btn--roll", onClick: () => openWeaponPicker(ch, rerender) }, "⚔ Roll an attack");
   const armor = equippedArmor(ch);
   const card = el("div", { class: "card" }, sectionTitle("Inventory"), list);
@@ -248,7 +249,7 @@ function inventorySection(ch, commit, rerender) {
     card.append(el("div", { class: "muted sheet__note" },
       `Armor: ${armor.name} (${armor.rating}) — when hit, roll ${D.ARMOR_DICE}× d${D.LEVEL_DIE[armor.rating]}; each success stops 1 damage, and stopping it all negates the critical injury.` +
       (armor.disadvantage?.length ? ` Disadvantage to ${armor.disadvantage.map(R.skillName).join(", ")}.` : "")));
-  card.append(el("div", { class: "inv__actions" }, add, acquire, attack));
+  card.append(el("div", { class: "inv__actions" }, add, acquire, sell, attack));
   return card;
 }
 // The one suit that counts — best-rated equipped armor  [§3.7].
@@ -280,6 +281,51 @@ function acquireGear(ch, commit, rerender) {
     body.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
   } });
 }
+// Selling on the black market  [Ch08 p207] — half the Cost, rounded up; a buyer
+// for Premium or rarer goods needs a CONNECTIONS roll.
+function sellGear(ch, commit, rerender) {
+  const catalog = R.acquirableItems();
+  const owned = (ch.inventory.items || []).map((it, i) => {
+    const entry = catalog.find((c) => c.key === it.key || c.name.toLowerCase() === (it.name || "").toLowerCase());
+    return { i, it, entry, price: entry ? R.sellPrice(entry.cost) : null };
+  });
+  modal({ title: "Sell an item", render(body, close) {
+    body.append(el("p", { class: "muted" }, D.ACQUISITION.selling.note));
+    if (!owned.length) { body.append(el("p", { class: "muted" }, "Nothing in your inventory.")); }
+    const list = el("div", { class: "picker" });
+    for (const row of owned) {
+      const price = row.price;
+      list.append(el("button", { class: "list__row", disabled: price == null || null, onClick: () => {
+        close();
+        const payout = () => commit((c) => {
+          c.inventory.items.splice(row.i, 1);
+          c.state[D.ACQUISITION.selling.currency] = (c.state[D.ACQUISITION.selling.currency] || 0) + price;
+          (c.advancementLog ||= []).push(`Sold ${row.it.name} (+${price} ¥).`);
+        });
+        if (R.needsConnectionsRoll(row.entry.avail)) {
+          proceduralRoll(ch, { skillKey: D.ACQUISITION.skill, title: `Sell ${row.it.name}`,
+            note: `Finding a buyer for ${row.entry.avail} goods takes a Connections roll. Payout ${price} ¥.`,
+            onResult: ({ successes }) => {
+              if (successes >= 1) { payout(); showToast(`Sold ${row.it.name} for ${price} ¥.`); }
+              else { showToast("No buyer this time — the item stays with you.", { kind: "warn" }); }
+              rerender();
+            } });
+        } else {
+          payout();
+          showToast(`Sold ${row.it.name} for ${price} ¥.`);
+          rerender();
+        }
+      } },
+        el("span", { class: "list__main" }, row.it.name),
+        el("span", { class: "list__sub muted" }, price == null
+          ? "No listed Cost — the Game Runner sets the price."
+          : `${row.entry.avail} · sells for ${price} ¥${R.needsConnectionsRoll(row.entry.avail) ? " (needs a buyer)" : ""}`)));
+    }
+    body.append(list);
+    body.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
+  } });
+}
+
 function chooseSource(ch, item, commit, rerender) {
   const st = { source: D.ACQUISITION.sources[0].key, double: false, cost: R.costOf(item.cost) ?? 1 };
   modal({ title: `Acquire — ${item.name}`, render(body, close) {
@@ -301,32 +347,44 @@ function chooseSource(ch, item, commit, rerender) {
       b.append(el("label", { class: "picker__row" },
         (() => { const i = el("input", { type: "checkbox", checked: st.double || null }); i.addEventListener("change", () => { st.double = !st.double; paint(); }); return i; })(),
         el("span", {}, el("strong", {}, "Pay double"), " — ", el("span", { class: "muted" }, "advantage on the roll"))));
+      const tier = R.availabilityTier(item.avail);
+      const needsRoll = R.needsConnectionsRoll(item.avail);
       b.append(el("div", { class: "net-badge" + (have >= pay ? "" : " net-badge--dis") }, `Pays ${pay} ${src.symbol} — you have ${have}`));
-      b.append(el("div", { class: "muted sheet__note" }, D.ACQUISITION.failureNote));
+      if (tier) b.append(el("div", { class: "muted sheet__note" },
+        `${tier.key}: ${tier.time}${tier.cost !== "—" ? `, typical cost ${tier.cost}` : ""}. ` +
+        (needsRoll ? D.ACQUISITION.failureNote : "No Connections roll needed at this availability — it is simply bought.")));
+      const buy = (c) => {
+        c.state[src.currency] = Math.max(0, (c.state[src.currency] || 0) - pay);
+        c.inventory.items.push({ key: item.key, name: item.name, equipped: false });
+        (c.advancementLog ||= []).push(`Acquired ${item.name} (−${pay} ${src.symbol}).`);
+      };
       b.append(el("div", { class: "modal__actions" },
         el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
-        el("button", { class: "btn btn--primary", disabled: have < pay || null, onClick: () => {
-          close();
-          proceduralRoll(ch, {
-            skillKey: D.ACQUISITION.skill, title: `${item.name} — ${src.name}`,
-            adv: st.double && D.ACQUISITION.doublePaymentAdvantage ? 1 : 0,
-            note: `${pay} ${src.symbol} on the table.`,
-            onResult: ({ successes }) => {
-              if (successes >= 1) {
-                commit((c) => {
-                  c.state[src.currency] = Math.max(0, (c.state[src.currency] || 0) - pay);
-                  c.inventory.items.push({ key: item.key, name: item.name, equipped: false });
-                  (c.advancementLog ||= []).push(`Acquired ${item.name} (−${pay} ${src.symbol}).`);
-                });
-                showToast(`Acquired ${item.name} for ${pay} ${src.symbol}.`);
-              } else {
-                commit((c) => { c.state.shiftsSinceDowntime = (c.state.shiftsSinceDowntime || 0) + 1; });
-                showToast(D.ACQUISITION.failureNote, { kind: "warn", timeout: 4000 });
-              }
+        needsRoll
+          ? el("button", { class: "btn btn--primary", disabled: have < pay || null, onClick: () => {
+              close();
+              proceduralRoll(ch, {
+                skillKey: D.ACQUISITION.skill, title: `${item.name} — ${src.name}`,
+                adv: st.double && D.ACQUISITION.doublePaymentAdvantage ? 1 : 0,
+                note: `${pay} ${src.symbol} on the table. ${tier ? tier.time + " to arrive." : ""}`,
+                onResult: ({ successes }) => {
+                  if (successes >= 1) {
+                    commit(buy);
+                    showToast(`Acquired ${item.name} for ${pay} ${src.symbol}.`);
+                  } else {
+                    commit((c) => { c.state.shiftsSinceDowntime = (c.state.shiftsSinceDowntime || 0) + 1; });
+                    showToast(D.ACQUISITION.failureNote, { kind: "warn", timeout: 4000 });
+                  }
+                  rerender();
+                },
+              });
+            } }, "⚄ Roll Connections")
+          : el("button", { class: "btn btn--primary", disabled: have < pay || null, onClick: () => {
+              close();
+              commit(buy);
+              showToast(`Bought ${item.name} for ${pay} ${src.symbol}.`);
               rerender();
-            },
-          });
-        } }, "⚄ Roll Connections")));
+            } }, `Buy for ${pay} ${src.symbol}`)));
     };
     paint();
   } });

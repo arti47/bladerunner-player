@@ -584,3 +584,112 @@ test("every machine-readable specialty effect has a consumer", () => {
   for (const key of ["hip_flask", "origami", "smokes", "counselor", "protected"])
     assert.ok(src.includes(key), `${key} is read by the engine`);
 });
+
+// ---------------------------------------------------------------------------
+// Core Ch08/Ch09 pass (2026-07-28, user-supplied transcription).
+// ---------------------------------------------------------------------------
+test("Purchases table: tiers, times and which need a Connections roll [Ch08 p204]", () => {
+  assert.deepEqual(D.AVAILABILITY, ["Incidental", "Standard", "Premium", "Rare", "Luxury"]);
+  assert.equal(D.AVAILABILITY_TIERS.length, 5);
+  const by = (k) => D.AVAILABILITY_TIERS.find((t) => t.key === k);
+  assert.equal(by("Incidental").time, "Instant");
+  assert.equal(by("Standard").cost, "1–2");
+  assert.equal(by("Premium").time, "A Shift");
+  assert.equal(by("Rare").cost, "3–6");
+  assert.equal(by("Luxury").cost, "7+");
+  // only Premium and rarer need the roll
+  assert.equal(R.needsConnectionsRoll("Incidental"), false);
+  assert.equal(R.needsConnectionsRoll("Standard"), false);
+  assert.equal(R.needsConnectionsRoll("Premium"), true);
+  assert.equal(R.needsConnectionsRoll("Rare"), true);
+  assert.equal(R.needsConnectionsRoll("Luxury"), true);
+  assert.equal(R.needsConnectionsRoll("Standard Issue"), false);
+});
+
+test("selling pays half the Cost, rounded up [Ch08 p207]", () => {
+  assert.equal(D.ACQUISITION.selling.payoutFraction, 0.5);
+  assert.equal(D.ACQUISITION.selling.roundUp, true);
+  assert.equal(D.ACQUISITION.selling.currency, "chinyenPoints");
+  assert.equal(R.sellPrice(1), 1);
+  assert.equal(R.sellPrice(2), 1);
+  assert.equal(R.sellPrice(3), 2);
+  assert.equal(R.sellPrice(6), 3);
+  assert.equal(R.sellPrice(10), 5);
+  assert.equal(R.sellPrice("Special"), null);
+});
+
+test("the LAPD fleet matches the printing [Ch08]", () => {
+  const by = (k) => D.VEHICLES.find((v) => v.key === k);
+  assert.equal(by("spinner").passengers, 2);          // Detective Special seats two
+  assert.equal(by("spinner").hull, 4);
+  assert.equal(by("spinner").armor, "C");
+  assert.equal(by("spinner_dmv").hull, 5);
+  assert.equal(by("spinner_squad").passengers, 20);
+  assert.equal(by("spinner_squad").avail, "Luxury");
+  assert.equal(by("spinner_squad").cost, 10);
+  assert.equal(by("spinner_carrier").passengers, 6);
+  assert.equal(by("spinner_cycle").maneuverability, "A");
+  assert.equal(by("spinner_cycle").armor, null);
+});
+
+test("explosives cover both sonic entries and the gas duration [Ch08]", () => {
+  const by = (k) => D.EXPLOSIVES.find((e) => e.key === k);
+  assert.equal(D.EXPLOSIVES.length, 6);
+  assert.equal(by("sonic_grenade").blastPower, "C");
+  assert.equal(by("sonic_grenade").cost, 2);
+  assert.equal(by("sonic_charge").blastPower, "B");
+  assert.equal(by("sonic_charge").thrown, false);
+  assert.match(by("tear_gas").note, /Lingers D6 Rounds/);
+  assert.match(by("explosive").note, /doubles for each step up/);
+});
+
+test("Case Table 5 — the Clues [Ch09]", () => {
+  assert.equal(GM.CASE_CLUES.length, 7);
+  for (let d = 1; d <= 8; d++) assert.ok(R.lookupRange(GM.CASE_CLUES, d), `D8=${d} resolves`);
+  assert.equal(R.lookupRange(GM.CASE_CLUES, 1).type, "Witness");
+  assert.equal(R.lookupRange(GM.CASE_CLUES, 8).type, "Item");
+  for (const row of GM.CASE_CLUES)
+    if (row.detailDie) assert.equal(row.detail.length, row.detailDie, `${row.type} sub-table is a D${row.detailDie}`);
+});
+
+test("Case Table 7 — the Final Confrontation, and Table 8 — Mood [Ch09]", () => {
+  assert.equal(GM.CASE_FINALE_LOCATION.length, 10);
+  assert.equal(GM.CASE_FINALE_ENVIRONMENT.length, 10);
+  assert.equal(GM.CASE_FINALE_LOCATION[0], "Abandoned apartment complex");
+  assert.equal(GM.CASE_FINALE_ENVIRONMENT[9], "Fog");
+  for (const col of ["weather", "screen", "passingBy"]) assert.equal(GM.CASE_MOOD[col].length, 8, `${col} is a D8`);
+});
+
+test("Case Table 4 — every sector has D6 areas with D6 places [Ch09]", () => {
+  const sectors = GM.CASE_SECTOR.map((s) => s.sector);
+  assert.deepEqual(Object.keys(GM.SECTOR_LOCATIONS).sort(), sectors.slice().sort());
+  for (const [sector, areas] of Object.entries(GM.SECTOR_LOCATIONS)) {
+    for (let d = 1; d <= 6; d++) assert.ok(R.lookupRange(areas, d), `${sector} area D6=${d} resolves`);
+    for (const a of areas) assert.equal(a.places.length, 6, `${sector}/${a.area} has six places`);
+  }
+});
+
+test("the Core Downtime table is a D8 with home and street columns [Ch09]", () => {
+  assert.equal(GM.DOWNTIME_EVENT_CORE.length, 7);
+  for (let d = 1; d <= 8; d++) {
+    const row = R.lookupRange(GM.DOWNTIME_EVENT_CORE, d);
+    assert.ok(row && row.home && row.street, `D8=${d} has both columns`);
+  }
+  assert.match(R.lookupRange(GM.DOWNTIME_EVENT_CORE, 1).home, /Nothing out of the ordinary/);
+  assert.match(R.lookupRange(GM.DOWNTIME_EVENT_CORE, 5).street, /Health 5/);
+  // the Solo book's expanded D12 table is a separate, also-official table
+  assert.equal(SO.DOWNTIME_EVENT.length, 12);
+});
+
+test("session award checklists + the distinction threshold [Ch09]", () => {
+  assert.equal(GM.PROMOTION_AWARDS.length, 8);
+  assert.equal(GM.PROMOTION_LOSSES.length, 9);
+  assert.equal(GM.HUMANITY_AWARDS.length, 11);
+  assert.equal(GM.DISTINCTION_THRESHOLD, 5);
+});
+
+test("the Baseline Test triggers at zero Promotion Points or Broken by stress [Ch08]", () => {
+  assert.equal(D.BASELINE_TEST.triggersAtZeroPromotion, true);
+  assert.equal(D.BASELINE_TEST.triggersWhenBrokenByStress, true);
+  assert.equal(D.BASELINE_TEST.skill, "insight");
+});

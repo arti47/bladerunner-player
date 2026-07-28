@@ -166,7 +166,9 @@ function buildRulesIndex() {
   idx.push({ cat: "Creation Tables", name: "Signature item effect", desc: `Interacting with it heals ${D.SIGNATURE_ITEM_HEAL.resolve} stress, once per ${D.SIGNATURE_ITEM_HEAL.period}.`, text: "signature item stress recover session" });
   idx.push({ cat: "Creation Tables", name: "Secret Replicant", desc: `The Game Runner may roll a D${D.SECRET_REPLICANT.secretRollDie} in secret for an apparently human character; on a ${D.SECRET_REPLICANT.secretRollHit} they are a Replicant who doesn't know it. ${D.SECRET_REPLICANT.note}`, text: "secret replicant reveal nexus" });
   idx.push({ cat: "Advancement", name: "Acquiring gear", desc: `Pay the Cost in Promotion Points (LAPD) or Chinyen Points (black market), then roll ${D.SKILLS.find((s) => s.key === D.ACQUISITION.skill).name}. Paying double gives advantage. ${D.ACQUISITION.failureNote}`, text: "acquire gear connections availability cost requisition" });
-  for (const t of D.AVAILABILITY) idx.push({ cat: "Advancement", name: `Availability: ${t}`, desc: "Cost is paid in Promotion Points or Chinyen Points.", text: `availability ${t}` });
+  for (const t of D.AVAILABILITY_TIERS)
+    idx.push({ cat: "Advancement", name: `Availability: ${t.key}`, desc: `${t.time}${t.cost !== "—" ? ` · typical cost ${t.cost}` : ""} · ${t.skill ? "needs a " + D.SKILLS.find((s) => s.key === t.skill).name + " roll" : "no roll needed"}.`, text: `availability ${t.key} ${t.time} purchase` });
+  idx.push({ cat: "Advancement", name: "Selling on the black market", desc: D.ACQUISITION.selling.note, text: "sell selling black market chinyen payout" });
   return idx;
 }
 const attrName = (k) => (k === "MANEUVER" ? "Maneuverability" : D.ATTRIBUTES.find((a) => a.key === k)?.name || k);
