@@ -531,3 +531,56 @@ test("creation tables verified against the Core reference", () => {
   assert.equal(D.COMBAT_ACTIONS.find((a) => a.action === "Unarmed attack").prereq, "Unarmed");
   assert.equal(D.COMBAT_ACTIONS.find((a) => a.action === "Crawl").prereq, "Prone");
 });
+
+// ---------------------------------------------------------------------------
+// Security rules + specialty-effect wiring (2026-07-28 "fix everything" pass).
+// ---------------------------------------------------------------------------
+import { readFileSync } from "node:fs";
+const RULES = JSON.parse(readFileSync(new URL("../database.rules.json", import.meta.url), "utf8"));
+
+test("RTDB rules: a character cannot be seized by claiming ownership", () => {
+  const w = RULES.rules.characters.$chid[".write"];
+  // creation must set yourself as owner; updates need existing ownership or the campaign GM
+  assert.match(w, /!data\.exists\(\) && newData\.child\('owner'\)\.val\(\) === auth\.uid/);
+  assert.ok(!/\|\| newData\.child\('owner'\)\.val\(\) === auth\.uid/.test(w),
+    "a bare newData.owner check would let anyone overwrite any character");
+  assert.ok(RULES.rules.characters.$chid.owner[".validate"].includes("data.val() === newData.val()"),
+    "owner is immutable except to a GM");
+});
+
+test("RTDB rules: a member cannot promote themselves to GM", () => {
+  const v = RULES.rules.campaigns.$cid.members.$uid.role[".validate"];
+  assert.match(v, /newData\.val\(\) === 'player'/);
+  assert.match(v, /ownerUid/, "only the campaign creator or an existing GM may set the gm role");
+  assert.match(v, /\$uid !== auth\.uid/);
+});
+
+test("RTDB rules: join codes cannot be enumerated", () => {
+  assert.equal(RULES.rules.joinCodes[".read"], undefined, "no readable list of every campaign code");
+  assert.equal(RULES.rules.joinCodes.$code[".read"], "auth != null", "a known code is still resolvable");
+});
+
+test("Storage rules exist, are scoped to portraits, and cap the upload", () => {
+  const rules = readFileSync(new URL("../storage.rules", import.meta.url), "utf8");
+  assert.match(rules, /match \/portraits\/\{characterId\}/);
+  assert.match(rules, /request\.auth != null/);
+  assert.match(rules, /request\.resource\.size < 1 \* 1024 \* 1024/);
+  assert.match(rules, /contentType\.matches\('image\/\.\*'\)/);
+  assert.match(rules, /allow read, write: if false/, "everything outside portraits is denied");
+});
+
+test("every machine-readable specialty effect has a consumer", () => {
+  const withEffect = D.SPECIALTIES.filter((s) => s.effect).map((s) => s.key);
+  assert.deepEqual(withEffect.sort(), ["cashflow", "fast_reflexes", "hardened", "killer",
+    "married_to_the_job", "people_person", "sycophant", "tough"].sort());
+  const src = ["src/sheet.js", "src/roller.js", "src/combat.js", "src/derived.js"]
+    .map((f) => readFileSync(new URL("../" + f, import.meta.url), "utf8")).join("\n");
+  for (const sp of D.SPECIALTIES.filter((x) => x.effect)) {
+    const fields = Object.keys(sp.effect);
+    const wired = src.includes(sp.key) || fields.some((f) => src.includes(f));
+    assert.ok(wired, `${sp.key} (${fields.join(",")}) is read by the engine`);
+  }
+  // the once-per-Shift / once-per-session heals are wired too
+  for (const key of ["hip_flask", "origami", "smokes", "counselor", "protected"])
+    assert.ok(src.includes(key), `${key} is read by the engine`);
+});

@@ -337,6 +337,9 @@ function identitySection(ch, commit) {
   const card = el("div", { class: "card" }, sectionTitle("Identity & Notes"));
   card.append(flavorField("Key memory", ch.identity.keyMemory, (v) => commit((c) => { c.identity.keyMemory = v; })));
   card.append(flavorField("Key relationship", ch.identity.keyRelationship, (v) => commit((c) => { c.identity.keyRelationship = v; })));
+  // People Person grants a second key relationship with the same rules effects.
+  if ((ch.specialties || []).some((s) => s === "people_person" || s?.key === "people_person"))
+    card.append(flavorField("Second key relationship (People Person)", ch.identity.keyRelationship2 || "", (v) => commit((c) => { c.identity.keyRelationship2 = v; })));
   card.append(flavorField("Appearance", ch.identity.appearance, (v) => commit((c) => { c.identity.appearance = v; })));
   card.append(flavorField("Signature item", ch.identity.signatureItem, (v) => commit((c) => { c.identity.signatureItem = v; })));
   card.append(flavorField("Home", ch.identity.home, (v) => commit((c) => { c.identity.home = v; })));
@@ -564,6 +567,7 @@ function advancementSection(ch, commit, rerender) {
   acts.append(el("button", { class: "btn btn--sm", onClick: () => raiseSkill(ch, commit) }, "Raise a skill (Humanity)"));
   if (ch.nature === "replicant") acts.append(el("button", { class: "btn btn--sm btn--roll", onClick: () => baselineTest(ch, commit, rerender) }, "Baseline Test (INSIGHT)"));
   card.append(acts);
+  card.append(milestoneRow(ch, commit, rerender));
   card.append(el("div", { class: "muted sheet__note" }, "Specialties: 5 PP, one Shift at the Training Grounds (Downtime). Skill raises cost Humanity (D→C 5, C→B 10, B→A 15) and only in Downtime."));
   const log = (ch.advancementLog || []).slice(-4).reverse();
   if (log.length) { const l = el("div", { class: "adv-log" }); for (const e of log) l.append(el("div", { class: "muted adv-log__row" }, e)); card.append(l); }
@@ -626,6 +630,115 @@ function baselineTest(ch, commit, rerender) {
       });
       rerender();
     } });
+}
+
+
+// ---- Case / session milestones + Promotion Point losses --------------------
+// Wires the specialty effects that only fire at those beats: Cashflow (+1
+// Chinyen per Case File), Sycophant (+1 Promotion Point per session), and
+// Protected (a CONNECTIONS roll that shaves a Promotion Point loss).
+const hasSpecialty = (ch, key) => (ch.specialties || []).some((s) => s === key || s?.key === key);
+function specialtyEffect(key) { return D.SPECIALTIES.find((s) => s.key === key)?.effect || {}; }
+
+function milestoneRow(ch, commit, rerender) {
+  const row = el("div", { class: "rec-actions" });
+  const cash = specialtyEffect("cashflow").chinyenPerCase;
+  const syco = specialtyEffect("sycophant").promotionPerSession;
+  if (hasSpecialty(ch, "cashflow"))
+    row.append(el("button", { class: "btn btn--sm", onClick: () => commit((c) => {
+      c.state.chinyenPoints = (c.state.chinyenPoints || 0) + cash;
+      (c.advancementLog ||= []).push(`New Case File — Cashflow (+${cash} Chinyen).`);
+      showToast(`Cashflow: +${cash} Chinyen for the new case.`);
+    }) }, `New Case File (+${cash} ¥)`));
+  if (hasSpecialty(ch, "sycophant"))
+    row.append(el("button", { class: "btn btn--sm", onClick: () => commit((c) => {
+      c.state.promotionPoints = (c.state.promotionPoints || 0) + syco;
+      (c.advancementLog ||= []).push(`End of session — Sycophant (+${syco} PP).`);
+      showToast(`Sycophant: +${syco} Promotion Point.`);
+    }) }, `End of session (+${syco} PP)`));
+  row.append(el("button", { class: "btn btn--sm btn--ghost", onClick: () => losePromotion(ch, commit, rerender) }, "− Lose Promotion Points"));
+  if (hasSpecialty(ch, "counselor"))
+    row.append(el("button", { class: "btn btn--sm", disabled: ch.state.shiftUses?.counselor || null,
+      onClick: () => counselAnother(ch, commit, rerender) }, "Counsel another character"));
+  return row;
+}
+
+// Losing Promotion Points for misconduct. With Protected, roll CONNECTIONS —
+// each success reduces the loss by one (minimum zero).  [§3.10]
+function losePromotion(ch, commit, rerender) {
+  const st = { amount: 1 };
+  modal({ title: "Lose Promotion Points", render(body, close) {
+    const paint = () => { body.replaceChildren(); view(body); };
+    const view = (b) => {
+      b.append(el("p", { class: "muted" }, `Misconduct costs Promotion Points (minimum 0). You have ${ch.state.promotionPoints}.`));
+      b.append(el("div", { class: "stepper" },
+        el("span", { class: "stepper__label" }, "Points lost"),
+        el("span", { class: "stepper__ctrl" },
+          el("button", { class: "btn btn--sm", "aria-label": "decrease loss", onClick: () => { st.amount = Math.max(1, st.amount - 1); paint(); } }, "−"),
+          el("span", { class: "stepper__val" }, st.amount),
+          el("button", { class: "btn btn--sm", "aria-label": "increase loss", onClick: () => { st.amount++; paint(); } }, "+"))));
+      const protectedBy = hasSpecialty(ch, "protected");
+      b.append(el("div", { class: "muted sheet__note" }, protectedBy
+        ? D.SPECIALTIES.find((x) => x.key === "protected").text
+        : "A Connections roll or a disciplinary action follows the loss (Game Runner's call)."));
+      b.append(el("div", { class: "modal__actions" },
+        el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
+        protectedBy
+          ? el("button", { class: "btn btn--primary", onClick: () => {
+              close();
+              proceduralRoll(ch, { skillKey: "connections", title: "Protected — CONNECTIONS",
+                note: `Each success reduces the ${st.amount}-point loss by one.`,
+                onResult: ({ successes }) => {
+                  const lost = Math.max(0, st.amount - successes);
+                  commit((c) => {
+                    c.state.promotionPoints = Math.max(0, (c.state.promotionPoints || 0) - lost);
+                    (c.advancementLog ||= []).push(`Misconduct: −${lost} PP (Protected shaved ${st.amount - lost}).`);
+                  });
+                  showToast(`Protected: lost ${lost} of ${st.amount} Promotion Points.`, { kind: "warn" });
+                  rerender();
+                } });
+            } }, "⚄ Roll Connections")
+          : el("button", { class: "btn btn--danger", onClick: () => {
+              close();
+              commit((c) => {
+                c.state.promotionPoints = Math.max(0, (c.state.promotionPoints || 0) - st.amount);
+                (c.advancementLog ||= []).push(`Misconduct: −${st.amount} PP.`);
+              });
+              showToast(`Lost ${st.amount} Promotion Point${st.amount === 1 ? "" : "s"}.`, { kind: "warn" });
+            } }, `Lose ${st.amount}`)));
+    };
+    paint();
+  } });
+}
+
+// Counselor: once per Shift, heal 1 stress on ANOTHER character.  [Ch03]
+function counselAnother(ch, commit, rerender) {
+  const others = Store.list().filter((c) => c.id !== ch.id && !c.state.dead);
+  modal({ title: "Counsel another character", render(body, close) {
+    body.append(el("p", { class: "muted" }, D.SPECIALTIES.find((x) => x.key === "counselor").text));
+    if (!others.length) {
+      body.append(el("p", { class: "muted" }, "No other characters on this device."));
+      body.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Close")));
+      return;
+    }
+    const list = el("div", { class: "picker" });
+    for (const other of others) {
+      list.append(el("button", { class: "list__row", onClick: () => {
+        close();
+        const target = Store.get(other.id);
+        target.state.resolve = Math.min(maxResolve(target), target.state.resolve + 1);
+        if (target.state.resolve >= 1) target.state.criticalStress = null;
+        Store.save(target);
+        commit((c) => { (c.state.shiftUses ||= {}).counselor = true; });
+        showToast(`${other.name} heals 1 stress.`);
+        rerender();
+      } },
+        el("span", { class: "list__main" }, other.name),
+        el("span", { class: "list__sub muted" }, `Resolve ${other.state.resolve}/${maxResolve(other)}`)));
+    }
+    body.append(list);
+    body.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
+  } });
 }
 
 // ---- Roll Log (global store, filtered per character) ----------------------

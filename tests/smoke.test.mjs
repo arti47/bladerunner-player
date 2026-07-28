@@ -354,13 +354,24 @@ test("opposed skill rolls are available and only the initiator may push [§3.1/�
   await page.waitForTimeout(200);
   let body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(/Opposing skill/.test(body) && /Their attribute/.test(body), "configures both sides");
+  await page.evaluate(() => { Math.random = () => 0; });   // both sides fail → initiator may push
   await page.getByRole("button", { name: "⚄ Roll opposed" }).first().click();
   await page.waitForTimeout(200);
   body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(/You win the opposition|They hold/.test(body), "declares a winner");
-  assert.ok(/initiator only/.test(body), "push is restricted to the initiator");
+  assert.ok(/initiator only/.test(body), "a lost/tied opposition is pushable, by the initiator only");
   const diceRows = await page.$$eval(".modal .dice", (els) => els.length);
   assert.equal(diceRows, 2, "both sides show their dice");
+  await page.keyboard.press("Escape");
+  // winning the opposition is a success — nothing left to push
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: "⚖ Opposed roll" }).first().click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "⚄ Roll opposed" }).first().click();
+  await page.waitForTimeout(200);
+  const won = await page.$eval(".modal", (m) => m.textContent);
+  assert.match(won, /You win the opposition/);
+  assert.ok(!/initiator only/.test(won), "a won opposition offers no push");
   await page.keyboard.press("Escape");
 });
 
@@ -640,4 +651,61 @@ test("wizard rolls key relationship, signature item and home from the book's tab
   await page.waitForTimeout(150);
   const rel = await page.$eval(".wiz__body textarea", (e) => e.value);
   assert.ok(rel.length > 5, `relationship text was generated: ${rel}`);
+});
+
+test("specialty milestones and Promotion Point losses are wired to the sheet [§3.10]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?spec#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Operator", nature: "human", archetype: "fixer", years: "veteran",
+      specialties: ["cashflow", "sycophant", "protected", "people_person"],
+      skills: { connections: "A" }, state: { promotionPoints: 4, chinyenPoints: 2 } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?spec2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /New Case File/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: /End of session/ }).first().click();
+  await page.waitForTimeout(200);
+  const after = await page.evaluate(async () => {
+    const s = (await import("/src/store.js")).Store.getActive().state;
+    return { pp: s.promotionPoints, cy: s.chinyenPoints };
+  });
+  assert.equal(after.cy, 3, "Cashflow adds a Chinyen Point per Case File");
+  assert.equal(after.pp, 5, "Sycophant adds a Promotion Point per session");
+  // People Person exposes a second key relationship field
+  const labels = await page.$$eval(".field__label", (els) => els.map((e) => e.textContent));
+  assert.ok(labels.some((l) => /Second key relationship/.test(l)), "People Person grants a second relationship");
+  // Protected turns a Promotion Point loss into a Connections roll
+  await page.getByRole("button", { name: "− Lose Promotion Points" }).first().click();
+  await page.waitForTimeout(200);
+  const body = await page.$eval(".modal", (m) => m.textContent);
+  assert.match(body, /Roll Connections/, "Protected routes the loss through a Connections roll");
+  await page.keyboard.press("Escape");
+});
+
+test("the signature item is a once-per-Shift stress heal [Core Ch02 p034]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?sig#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Keeper", attributes: { STR: "C", AGI: "C", INT: "B", EMP: "B" },
+      identity: { signatureItem: "An origami bird" }, state: { resolve: 1 } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?sig2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const before = await page.evaluate(async () => (await import("/src/store.js")).Store.getActive().state.resolve);
+  await page.getByRole("button", { name: /Signature item/ }).first().click();
+  await page.waitForTimeout(250);
+  const after = await page.evaluate(async () => {
+    const c = (await import("/src/store.js")).Store.getActive();
+    return { resolve: c.state.resolve, used: !!c.state.shiftUses.signature_item };
+  });
+  assert.equal(after.resolve, before + 1);
+  assert.equal(after.used, true, "and it is spent for the Shift");
 });

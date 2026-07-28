@@ -1,0 +1,29 @@
+rules_version = '2';
+
+// Cloud Storage rules for Blade Runner Player.
+// The app writes exactly one kind of object: a downscaled character portrait at
+// portraits/{characterId}.jpg (see src/sync.js uploadPortrait). Everything else
+// is denied. Deploy with:  firebase deploy --only storage
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    match /portraits/{characterId} {
+      // Party members need to see each other's portraits; anonymous auth counts.
+      allow read: if request.auth != null;
+
+      // Only signed-in clients may upload, and only a small image.
+      allow write: if request.auth != null
+                   && request.resource != null
+                   && request.resource.size < 1 * 1024 * 1024          // 1 MB ceiling
+                   && request.resource.contentType.matches('image/.*')
+                   && characterId.size() < 128;
+
+      allow delete: if request.auth != null;
+    }
+
+    // No other path is writable or readable.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
