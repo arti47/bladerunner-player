@@ -52,7 +52,13 @@ body {
   font-family: "Segoe UI", "Helvetica Neue", system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* Column layout so the bottom nav is a real flow item pinned with sticky.
+     position:fixed bottom bars detach from the viewport on iOS while the
+     browser toolbar animates, leaving the bar stranded mid-screen. */
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;   /* dynamic viewport: excludes the collapsing toolbar */
   overflow-x: hidden;
 }
 /* subtle scanline texture */
@@ -77,8 +83,10 @@ body::before {
 
 .screen-host {
   position: relative; z-index: 1;
+  flex: 1 0 auto;                 /* fills the space above the nav */
+  width: 100%;
   max-width: 720px; margin: 0 auto;
-  padding: 1rem 1rem calc(84px + env(safe-area-inset-bottom, 0));
+  padding: 1rem 1rem 1rem;
 }
 .screen { display: flex; flex-direction: column; gap: 1rem; }
 .screen__title { font-size: 1.4rem; margin: .2rem 0 .2rem; letter-spacing: .01em; }
@@ -170,12 +178,15 @@ body::before {
 
 /* ---- Bottom nav ---------------------------------------------------------- */
 .nav {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
+  /* Sticky, not fixed: the bar is laid out at the end of the page and pinned to
+     the bottom edge while scrolling, so a collapsing mobile toolbar can never
+     strand it mid-screen. Opaque background — a backdrop-filter on a pinned bar
+     is the other half of that WebKit bug. */
+  position: sticky; bottom: 0; z-index: 5;
   display: flex; justify-content: space-around; align-items: stretch;
-  background: linear-gradient(0deg, var(--bg-2), rgba(16,21,29,.9));
+  background: var(--bg-2);
   border-top: 1px solid var(--line);
   padding: .3rem .2rem calc(.3rem + env(safe-area-inset-bottom, 0));
-  backdrop-filter: blur(8px);
 }
 .nav__btn {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: .1rem;

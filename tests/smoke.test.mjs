@@ -824,3 +824,40 @@ test("solo case notes can be cleared, and the whole assistant reset", async (t) 
   const firstStep = await page.evaluate(async () => (await import("/data-solo.js")).ESCALATION_STEPS[0]);
   assert.equal(st.timerDie, firstStep, "the Countdown Timer resets to its starting die");
 });
+
+test("the bottom nav stays pinned to the viewport bottom while scrolling", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  // A position:fixed bottom bar detaches from the viewport on iOS while the
+  // browser toolbar animates and gets stranded mid-screen; the nav is a sticky
+  // flow item so it cannot. Check every scroll position, plus a viewport
+  // resize mid-scroll (what a collapsing toolbar looks like to the page).
+  const gap = () => page.evaluate(() =>
+    Math.round(innerHeight - document.querySelector("#nav").getBoundingClientRect().bottom));
+  for (const route of ["rules", "sheet", "home"]) {
+    await page.goto(`${base}/index.html?nav=${route}#${route}`, { waitUntil: "load" });
+    await page.waitForTimeout(200);
+    for (const frac of [0, 0.25, 0.5, 0.9, 1]) {
+      await page.evaluate((f) => window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * f), frac);
+      await page.waitForTimeout(90);
+      assert.equal(await gap(), 0, `#${route} nav is flush with the bottom at ${frac * 100}% scroll`);
+    }
+    await page.evaluate(() => window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * 0.5));
+    await page.setViewportSize({ width: 390, height: 700 });   // toolbar appears
+    await page.waitForTimeout(120);
+    assert.equal(await gap(), 0, `#${route} nav follows a shrinking viewport`);
+    await page.setViewportSize({ width: 390, height: 800 });   // toolbar collapses
+    await page.waitForTimeout(120);
+    assert.equal(await gap(), 0, `#${route} nav follows a growing viewport`);
+    await page.setViewportSize({ width: 390, height: 800 });
+  }
+  // and at the very bottom the nav rests below the content instead of covering it
+  await page.goto(`${base}/index.html?navend#rules`, { waitUntil: "load" });
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForTimeout(150);
+  const clearance = await page.evaluate(() => {
+    const kids = document.querySelectorAll("#screen > * > *");
+    const last = kids[kids.length - 1];
+    return Math.round(document.querySelector("#nav").getBoundingClientRect().top - last.getBoundingClientRect().bottom);
+  });
+  assert.ok(clearance >= 0, `content clears the nav at the end of the page (gap ${clearance}px)`);
+});
