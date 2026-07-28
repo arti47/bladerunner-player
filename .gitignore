@@ -20,3 +20,8 @@ scratchpad/
 
 # Local audit tooling (not shipped)
 .crawl.mjs
+
+# Rulebook text extracts are working files, never committed (CLAUDE.md §12) —
+# this repo holds extracted numbers and paraphrased effect text only.
+*_rpg_rules.md
+*_rpg_solo_mode.md

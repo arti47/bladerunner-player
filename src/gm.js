@@ -1,6 +1,7 @@
 // gm.js — GM Screen, organized by phase of play  [Phase 6]
 // Gated by Settings.gm(); mounted at route #gm. State in brp:gm.
-// Segmented sub-nav (remembers last panel): Party · Case · Combat · Log & Notes.
+// Segmented sub-nav, in the order a session runs (remembers last panel):
+//   Prep (build the case) · Play (party + scene dressing) · Fight · Wrap · Notes.
 // Oracle/generator rolls show a result modal AND record a labeled Roll Log entry;
 // results pin (📌) to the GM Scratchpad.
 
@@ -18,19 +19,29 @@ import { navigate } from "./router.js";
 const GM_KEY = "brp:gm";
 const LOG_CAP = 50;
 const MANUAL_CONDITIONS = D.CONDITIONS.filter((c) => !c.key.startsWith("broken"));
+// Panels follow the arc of a session: prep the case, run it, fight, wrap up.
 const SEGMENTS = [
-  { key: "party", label: "Party" },
-  { key: "case", label: "Case" },
-  { key: "combat", label: "Combat" },
-  { key: "notes", label: "Log & Notes" },
+  { key: "prep", label: "Prep" },
+  { key: "play", label: "Play" },
+  { key: "fight", label: "Fight" },
+  { key: "wrap", label: "Wrap" },
+  { key: "notes", label: "Notes" },
 ];
+// Panel keys renamed when the screen was re-ordered to the session flow.
+const LEGACY_PANELS = { party: "play", case: "prep", combat: "fight" };
 
 function readGmState() {
+  const base = { scratchpad: "", selectedTheme: "Replicant Crimes & Punishments", log: [], panel: "prep" };
   try {
     const raw = localStorage.getItem(GM_KEY);
-    if (raw) return { log: [], panel: "party", ...JSON.parse(raw) };
+    if (raw) {
+      const st = { ...base, ...JSON.parse(raw) };
+      st.panel = LEGACY_PANELS[st.panel] || st.panel;
+      if (!SEGMENTS.some((s) => s.key === st.panel)) st.panel = "prep";
+      return st;
+    }
   } catch (e) {}
-  return { scratchpad: "", selectedTheme: "Replicant Crimes & Punishments", log: [], panel: "party" };
+  return base;
 }
 function writeGmState(st) { try { localStorage.setItem(GM_KEY, JSON.stringify(st)); } catch (e) {} }
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -59,48 +70,21 @@ export function renderGm(mount, rerender) {
   mount.append(segmentNav({ segments: SEGMENTS, active: st.panel, onSelect: (k) => { st.panel = k; writeGmState(st); rerender(); } }));
 
   const panel = el("div", { class: "panel" });
-  ({ party: panelParty, case: panelCase, combat: panelCombat, notes: panelNotes }[st.panel] || panelParty)(panel);
+  ({ prep: panelPrep, play: panelPlay, fight: panelFight, wrap: panelWrap, notes: panelNotes }[st.panel] || panelPrep)(panel);
   mount.append(panel);
 
-  // ---- PANELS -------------------------------------------------------------
-  function panelParty(root) {
-    const c = card("Live Party Panel", "Monitor and adjust PC vitals, conditions, and resources.");
-    if (!chars.length) { c.append(el("p", { class: "muted" }, "No player characters yet. Create characters in the wizard to manage them here.")); root.append(c); return; }
-    const grid = el("div", { class: "party-grid" });
-    chars.forEach((ch) => {
-      const mh = maxHealth(ch), mr = maxResolve(ch), s = ch.state || {};
-      const conds = Object.entries(s.conditions || {}).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " ")).join(", ");
-      const saveClamp = () => { reclampVitals(ch); Store.save(ch); rerender(); };
-      grid.append(el("div", { class: "party-row" },
-        el("div", { class: "party-row__head" },
-          el("div", {}, el("strong", { class: "party-row__name" }, ch.name), el("span", { class: "muted" }, ` ${archName(ch)} (${titleCase(ch.nature || "human")})`)),
-          el("div", { class: "party-row__badges" }, el("span", { class: "pip" }, `PP ${s.promotionPoints || 0}`), el("span", { class: "pip" }, `¥ ${s.chinyenPoints || 0}`), el("span", { class: "pip" }, `HUM ${s.humanityPoints || 0}`))),
-        el("div", { class: "party-row__vitals" },
-          el("span", { class: "pip pip--health" }, `♥ ${s.health}/${mh}`), el("span", { class: "pip pip--resolve" }, `◈ ${s.resolve}/${mr}`),
-          el("span", { class: "muted party-row__conds" }, conds ? `Conditions: ${conds}` : "No conditions")),
-        el("div", { class: "party-row__actions" },
-          btn("−1 HP", () => { ch.state.health = Math.max(0, (s.health ?? mh) - 1); saveClamp(); }, "sm ghost"),
-          btn("＋1 HP", () => { ch.state.health = Math.min(mh, (s.health ?? 0) + 1); saveClamp(); }, "sm ghost"),
-          btn("−1 Res", () => { ch.state.resolve = Math.max(0, (s.resolve ?? mr) - 1); saveClamp(); }, "sm ghost"),
-          btn("＋1 Res", () => { ch.state.resolve = Math.min(mr, (s.resolve ?? 0) + 1); saveClamp(); }, "sm ghost"),
-          btn("Conditions…", () => openConditions(ch, rerender), "sm"),
-          btn("Rewards…", () => openRewards(ch, rerender), "sm"))));
-    });
-    c.append(grid); root.append(c);
-  }
-
-  function panelCase(root) {
+  // ---- PANELS (in the order a session runs) --------------------------------
+  function panelPrep(root) {
     const themeSelect = el("select", { class: "input roll-select" });
     GM.CASE_THEME.forEach((t) => themeSelect.append(el("option", { value: t.theme, selected: t.theme === st.selectedTheme || null }, t.theme)));
     themeSelect.addEventListener("change", () => { st.selectedTheme = themeSelect.value; writeGmState(st); });
-    const c = card("Case File & Disciplinary Generator", "Rollable reference tables for case briefings, twists, and internal-affairs reviews.");
+    const c = stepCard("Before the session", "Build the case", "Roll the case skeleton: theme, assignment, sector, and the twist that turns it.");
     c.append(el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Theme:"), themeSelect));
     c.append(grid(
       btn("🎲 Theme (D10)", () => { const roll = rollDie(10); const res = lookupRange(GM.CASE_THEME, roll); if (!res) return; st.selectedTheme = res.theme; writeGmState(st); show({ label: "Theme", text: res.theme, pin: `[Theme] ${res.theme}`, title: `Case Theme — ${roll} (D10)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res.theme), el("p", { class: "muted" }, `Assignment uses D${res.die}.`)) }); }),
       btn("🎲 Assignment", () => { const theme = st.selectedTheme || "Replicant Crimes & Punishments"; const list = GM.CASE_ASSIGNMENT[theme] || []; if (!list.length) return; const roll = rollDie(list.length); const t = list[roll - 1]; show({ label: "Assignment", text: t, pin: `[Assignment] ${t}`, title: `Assignment — ${roll} (D${list.length})`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, theme), el("p", { class: "roll-prose" }, t)) }); }),
       btn("🎲 Sector (D8)", () => { const roll = rollDie(8); const res = lookupRange(GM.CASE_SECTOR, roll); show({ label: "Sector", text: res?.sector || "?", pin: `[Sector] ${res?.sector || "?"}`, title: `Sector — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res?.sector || "Unknown")) }); }),
       btn("🎲 Twist (D12)", () => { const roll = rollDie(12); const t = GM.CASE_TWIST[roll - 1]; show({ label: "Twist", text: t, pin: `[Twist] ${t}`, title: `Case Twist — ${roll} (D12)`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) }); }),
-      btn("🎲 Disciplinary (D6)", () => { const roll = rollDie(6); const t = GM.DISCIPLINARY_ACTIONS[roll - 1]; show({ label: "Disciplinary", text: t, pin: `[Disciplinary] ${t}`, title: `Disciplinary — ${roll} (D6)`, render: (b) => b.append(el("p", { class: "roll-prose roll-result--warn" }, t)) }); }),
       btn("⚡ Full Case Briefing", async () => {
         const ok = await confirmModal("Generate a full case briefing and prepend it to the GM Scratchpad?", { title: "Generate Case Briefing" });
         if (!ok) return;
@@ -118,7 +102,7 @@ export function renderGm(mount, rerender) {
       return { type: t.type, occ: t.occupation[rollDie(6) - 1], quirk: t.quirk[rollDie(6) - 1],
         name: `${t.firstName[rollDie(6) - 1]} ${t.lastName[rollDie(6) - 1]}` };
     };
-    const nc = card("Main NPC Generator", `Roll a case NPC — type, occupation, quirk, and name. A case carries ${GM.CASE_MAIN_NPC_COUNT.text}.`);
+    const nc = stepCard("Before the session", "Main NPC Generator", `Roll a case NPC — type, occupation, quirk, and name. A case carries ${GM.CASE_MAIN_NPC_COUNT.text}.`);
     nc.append(grid(
       btn("🎲 Main NPC", () => {
         const n = rollNpc();
@@ -146,10 +130,10 @@ export function renderGm(mount, rerender) {
       }, "primary")));
     root.append(nc);
 
-    // Case Tables 4 (locations), 5 (clues), 7 (finale), 8 (mood)  [Ch09]
-    const extra = card("More Case Tables", "Clues, locations, the final confrontation, and mood.");
-    extra.append(grid(
-      btn("🎲 Clue (D8)", () => {
+    // Case Tables 5 (clues) and 7 (the final confrontation) — seeded while you
+    // build the case, not improvised at the table.  [Ch09]
+    const seeds = stepCard("Before the session", "Clues & the finale", "What they can find, and where it ends.");
+    seeds.append(grid(btn("🎲 Clue (D8)", () => {
         const roll = rollDie(8); const row = lookupRange(GM.CASE_CLUES, roll);
         const detail = row.detailDie ? row.detail[rollDie(row.detailDie) - 1] : null;
         const text = detail ? `${row.type} — ${detail}` : row.type;
@@ -158,7 +142,50 @@ export function renderGm(mount, rerender) {
             detail ? el("p", {}, detail) : null,
             row.note ? el("p", { class: "muted" }, row.note) : null) });
       }),
-      btn("🎲 Location (D6×D6)", () => {
+      btn("🎲 Final Confrontation (D10)", () => {
+        const l = rollDie(10), e = rollDie(10);
+        const text = `${GM.CASE_FINALE_LOCATION[l - 1]} — ${GM.CASE_FINALE_ENVIRONMENT[e - 1]}`;
+        show({ label: "Finale", text, pin: `[Finale] ${text}`, title: `Final Confrontation — ${l}/${e} (D10)`,
+          render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, GM.CASE_FINALE_LOCATION[l - 1]),
+            el("p", { class: "roll-center muted" }, GM.CASE_FINALE_ENVIRONMENT[e - 1])) });
+      })));
+    root.append(seeds);
+
+    root.append(el("div", { class: "btn-row" }, btn("Case built \u2014 run the session \u2192", () => { st.panel = "play"; writeGmState(st); rerender(); }, "primary")));
+  }
+
+  function panelPlay(root) {
+    const c = stepCard("During the session", "Live Party Panel", "Monitor and adjust PC vitals, conditions, and resources.");
+    if (!chars.length) c.append(el("p", { class: "muted" }, "No player characters yet. Create characters in the wizard to manage them here."));
+    const rows = el("div", { class: "party-grid" });   // NB: `grid` is the module button-row helper
+    chars.forEach((ch) => {
+      const mh = maxHealth(ch), mr = maxResolve(ch), s = ch.state || {};
+      const conds = Object.entries(s.conditions || {}).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " ")).join(", ");
+      const saveClamp = () => { reclampVitals(ch); Store.save(ch); rerender(); };
+      rows.append(el("div", { class: "party-row" },
+        el("div", { class: "party-row__head" },
+          el("div", {}, el("strong", { class: "party-row__name" }, ch.name), el("span", { class: "muted" }, ` ${archName(ch)} (${titleCase(ch.nature || "human")})`)),
+          el("div", { class: "party-row__badges" }, el("span", { class: "pip" }, `PP ${s.promotionPoints || 0}`), el("span", { class: "pip" }, `¥ ${s.chinyenPoints || 0}`), el("span", { class: "pip" }, `HUM ${s.humanityPoints || 0}`))),
+        el("div", { class: "party-row__vitals" },
+          el("span", { class: "pip pip--health" }, `♥ ${s.health}/${mh}`), el("span", { class: "pip pip--resolve" }, `◈ ${s.resolve}/${mr}`),
+          el("span", { class: "muted party-row__conds" }, conds ? `Conditions: ${conds}` : "No conditions")),
+        el("div", { class: "party-row__actions" },
+          btn("−1 HP", () => { ch.state.health = Math.max(0, (s.health ?? mh) - 1); saveClamp(); }, "sm ghost"),
+          btn("＋1 HP", () => { ch.state.health = Math.min(mh, (s.health ?? 0) + 1); saveClamp(); }, "sm ghost"),
+          btn("−1 Res", () => { ch.state.resolve = Math.max(0, (s.resolve ?? mr) - 1); saveClamp(); }, "sm ghost"),
+          btn("＋1 Res", () => { ch.state.resolve = Math.min(mr, (s.resolve ?? 0) + 1); saveClamp(); }, "sm ghost"),
+          btn("Conditions…", () => openConditions(ch, rerender), "sm"),
+          btn("Rewards…", () => openRewards(ch, rerender), "sm"))));
+    });
+    c.append(rows); root.append(c);
+
+    // Improvised at the table: where this scene happens, and what it feels like.
+    const dressing = stepCard("During the session", "Scene dressing", "Roll a place they head to unplanned, and the mood of it.  [Case Tables 4 & 8]");
+    const sectorSelect = el("select", { class: "input roll-select" });
+    GM.CASE_SECTOR.forEach((x) => sectorSelect.append(el("option", { value: x.sector, selected: x.sector === st.selectedSector || null }, x.sector)));
+    sectorSelect.addEventListener("change", () => { st.selectedSector = sectorSelect.value; writeGmState(st); });
+    dressing.append(el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Sector:"), sectorSelect));
+    dressing.append(grid(btn("🎲 Location (D6×D6)", () => {
         const sector = st.selectedSector || pick(GM.CASE_SECTOR).sector;
         const areas = GM.SECTOR_LOCATIONS[sector] || [];
         const a = rollDie(6); const area = lookupRange(areas, a) || areas[0];
@@ -166,13 +193,6 @@ export function renderGm(mount, rerender) {
         show({ label: "Location", text: `${place} · ${area.area}`, pin: `[Location] ${place} — ${area.area}, ${sector}`,
           title: `${sector} — area ${a}, place ${p2}`,
           render: (b) => b.append(el("h3", { class: "roll-result" }, place), el("p", { class: "muted" }, `${area.area} · ${sector}`)) });
-      }),
-      btn("🎲 Final Confrontation (D10)", () => {
-        const l = rollDie(10), e = rollDie(10);
-        const text = `${GM.CASE_FINALE_LOCATION[l - 1]} — ${GM.CASE_FINALE_ENVIRONMENT[e - 1]}`;
-        show({ label: "Finale", text, pin: `[Finale] ${text}`, title: `Final Confrontation — ${l}/${e} (D10)`,
-          render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, GM.CASE_FINALE_LOCATION[l - 1]),
-            el("p", { class: "roll-center muted" }, GM.CASE_FINALE_ENVIRONMENT[e - 1])) });
       }),
       btn("🎲 Mood (D8×3)", () => {
         const w = GM.CASE_MOOD.weather[rollDie(8) - 1];
@@ -183,37 +203,17 @@ export function renderGm(mount, rerender) {
           render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "Weather"), el("p", {}, w),
             el("div", { class: "roll-eyebrow" }, "On that screen"), el("p", {}, sc),
             el("div", { class: "roll-eyebrow" }, "Passing by"), el("p", {}, pb)) });
-      }),
-      btn("🎲 Downtime Event (D8)", () => {
-        const roll = rollDie(8); const ev = lookupRange(GM.DOWNTIME_EVENT_CORE, roll);
-        show({ label: "Downtime Event", text: `D8→${roll}`, pin: `[Downtime] Home: ${ev.home} / Street: ${ev.street}`,
-          title: `Downtime Event — ${roll} (D8)`,
-          render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "At home"), el("p", {}, ev.home),
-            el("div", { class: "roll-eyebrow" }, "On the street"), el("p", {}, ev.street)) });
       })));
-    const sectorSelect = el("select", { class: "input roll-select" });
-    GM.CASE_SECTOR.forEach((x) => sectorSelect.append(el("option", { value: x.sector, selected: x.sector === st.selectedSector || null }, x.sector)));
-    sectorSelect.addEventListener("change", () => { st.selectedSector = sectorSelect.value; writeGmState(st); });
-    extra.append(el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Sector:"), sectorSelect));
-    root.append(extra);
+    root.append(dressing);
 
-    // End-of-session awards  [Ch09] — one point per bullet, per character.
-    const awards = card("Session Awards", `Promotion and Humanity checklists. Five or more Promotion Points in one session earns a distinction from Deputy Chief Holden.`);
-    const checklist = (title, items) => {
-      const box = el("details", { class: "rules__group" }, el("summary", {}, `${title} (${items.length})`));
-      for (const line of items) box.append(el("div", { class: "muted sheet__note" }, "• " + line));
-      return box;
-    };
-    awards.append(checklist("Promotion Points — award one each", GM.PROMOTION_AWARDS));
-    awards.append(checklist("Promotion Points — lose one each", GM.PROMOTION_LOSSES));
-    awards.append(checklist("Humanity Points — award one each", GM.HUMANITY_AWARDS));
-    root.append(awards);
+    root.append(el("div", { class: "btn-row" }, btn("Shots fired \u2014 open the fight tools \u2192", () => { st.panel = "fight"; writeGmState(st); rerender(); }, "primary")));
   }
 
-  function panelCombat(root) {
+  function panelFight(root) {
+
     const npcSelect = el("select", { class: "input roll-select" });
     NPCS.forEach((n) => npcSelect.append(el("option", { value: n.key }, `${n.name} (${n.nature}, HP ${n.health})`)));
-    const c = card("Drop-in Combatant Generator", "Inject a Core Rulebook adversary into the active Combat Tracker.");
+    const c = stepCard("When it turns violent", "Drop-in Combatant Generator", "Inject a Core Rulebook adversary into the active Combat Tracker.");
     c.append(el("div", { class: "roll-row" }, npcSelect,
       btn("⚔ Drop into Combat", () => {
         const npc = NPCS.find((n) => n.key === npcSelect.value); if (!npc) return;
@@ -223,6 +223,35 @@ export function renderGm(mount, rerender) {
       })));
     c.append(el("div", { class: "btn-row" }, btn("Open Combat Tracker →", () => navigate("combat"), "ghost")));
     root.append(c);
+
+    root.append(el("div", { class: "btn-row" }, btn("Fight over \u2014 wrap the session \u2192", () => { st.panel = "wrap"; writeGmState(st); rerender(); }, "primary")));
+  }
+
+  function panelWrap(root) {
+    // End-of-session awards  [Ch09] — one point per bullet, per character.
+    const awards = stepCard("After the session", "Session Awards", `Promotion and Humanity checklists. Five or more Promotion Points in one session earns a distinction from Deputy Chief Holden.`);
+    const checklist = (title, items) => {
+      const box = el("details", { class: "rules__group" }, el("summary", {}, `${title} (${items.length})`));
+      for (const line of items) box.append(el("div", { class: "muted sheet__note" }, "• " + line));
+      return box;
+    };
+    awards.append(checklist("Promotion Points — award one each", GM.PROMOTION_AWARDS));
+    awards.append(checklist("Promotion Points — lose one each", GM.PROMOTION_LOSSES));
+    awards.append(checklist("Humanity Points — award one each", GM.HUMANITY_AWARDS));
+    root.append(awards);
+
+    const after = stepCard("After the session", "Consequences & downtime", "Misconduct catches up, and the crew gets a few hours off.");
+    after.append(grid(btn("🎲 Disciplinary (D6)", () => { const roll = rollDie(6); const t = GM.DISCIPLINARY_ACTIONS[roll - 1]; show({ label: "Disciplinary", text: t, pin: `[Disciplinary] ${t}`, title: `Disciplinary — ${roll} (D6)`, render: (b) => b.append(el("p", { class: "roll-prose roll-result--warn" }, t)) }); }),
+      btn("🎲 Downtime Event (D8)", () => {
+        const roll = rollDie(8); const ev = lookupRange(GM.DOWNTIME_EVENT_CORE, roll);
+        show({ label: "Downtime Event", text: `D8→${roll}`, pin: `[Downtime] Home: ${ev.home} / Street: ${ev.street}`,
+          title: `Downtime Event — ${roll} (D8)`,
+          render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "At home"), el("p", {}, ev.home),
+            el("div", { class: "roll-eyebrow" }, "On the street"), el("p", {}, ev.street)) });
+      })));
+    root.append(after);
+
+    root.append(el("div", { class: "btn-row" }, btn("Prep the next case \u2192", () => { st.panel = "prep"; writeGmState(st); rerender(); }, "primary")));
   }
 
   function panelNotes(root) {
@@ -273,6 +302,12 @@ function card(title, sub, ...children) {
   const c = el("div", { class: "card" }, sectionTitle(title));
   if (sub) c.append(el("p", { class: "muted" }, sub));
   for (const ch of children) if (ch) c.append(ch);
+  return c;
+}
+// A card headed with where it falls in the session.
+function stepCard(step, title, sub, ...children) {
+  const c = card(title, sub, ...children);
+  c.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, step));
   return c;
 }
 function grid(...children) { return el("div", { class: "roll-grid" }, ...children.filter(Boolean)); }

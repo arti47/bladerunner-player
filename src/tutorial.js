@@ -96,12 +96,12 @@ function panelTable(host) {
     steps("Before the session (Game Runner)", null, [
       ["1. Turn on the GM Screen", "Settings → GM Screen. Players leave it off."],
       ["2. Create the campaign", "Settings → create a campaign, then hand out the three-word join code. Everyone joins and shares a character."],
-      ["3. Build the case", "GM ▸ <b>Case</b> ▸ the Case File Generator rolls theme, assignment, sector, and a twist. The Main NPC generator gives you named people with occupations and quirks on demand."],
+      ["3. Build the case", "GM ▸ <b>Prep</b> ▸ the Case File Generator rolls theme, assignment, sector, and a twist. The Main NPC generator gives you named people with occupations and quirks on demand."],
     ], [["Open GM Screen", () => navigate("gm")]]),
 
     steps("During the session", "Players drive their own sheets; the Game Runner watches and applies consequences.", [
       ["Players roll", "Tap the skill on your sheet. Announce what you want, roll, then decide whether to push."],
-      ["The GM watches", "GM ▸ <b>Party</b> shows every character's Health, Resolve, and points live, with one-click damage, stress, and conditions."],
+      ["The GM watches", "GM ▸ <b>Play</b> shows every character's Health, Resolve, and points live, with one-click damage, stress, and conditions."],
       ["Rewards", "Promotion Points come from the Game Runner for doing the job. Humanity Points land at session end for acts of compassion — always at least one for touching a key memory, a key relationship, or failing a Baseline Test."],
       ["Reference", "The Rules Library is searchable — weapons, gear, conditions, and crit tables are all in there mid-scene."],
     ], [["Rules Library", () => navigate("rules")]]),

@@ -754,17 +754,20 @@ test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
   await page.goto(`${base}/index.html?gm9#gm`, { waitUntil: "load" });
   await page.evaluate(() => {
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
-    localStorage.setItem("brp:gm", JSON.stringify({ panel: "case", log: [], scratchpad: "", selectedTheme: "Replicant Crimes & Punishments" }));
+    localStorage.setItem("brp:gm", JSON.stringify({ panel: "prep", log: [], scratchpad: "", selectedTheme: "Replicant Crimes & Punishments" }));
   });
   await page.goto(`${base}/index.html?gm9b#gm`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  for (const [label, check] of [
-    [/🎲 Clue \(D8\)/, /Witness|Forensic Evidence|Recording|Documents|Rumors|Anonymous Tip|Item/],
-    [/🎲 Location \(D6×D6\)/, /Sector|Downtown/],
-    [/🎲 Final Confrontation/, /rain|Thunder|heat|cold|colors|Overgrown|wind|outage|dust|Fog/],
-    [/🎲 Mood/, /Weather/],
-    [/🎲 Downtime Event \(D8\)/, /At home/],
+  // Each table now sits on the panel of the session where you'd reach for it.
+  for (const [pill, label, check] of [
+    ["Prep", /\u{1F3B2} Clue \(D8\)/u, /Witness|Forensic Evidence|Recording|Documents|Rumors|Anonymous Tip|Item/],
+    ["Prep", /\u{1F3B2} Final Confrontation/u, /rain|Thunder|heat|cold|colors|Overgrown|wind|outage|dust|Fog/],
+    ["Play", /\u{1F3B2} Location \(D6×D6\)/u, /Sector|Downtown/],
+    ["Play", /\u{1F3B2} Mood/u, /Weather/],
+    ["Wrap", /\u{1F3B2} Downtime Event \(D8\)/u, /At home/],
   ]) {
+    await page.click(`.segnav__pill:text-is("${pill}")`);
+    await page.waitForTimeout(120);
     await page.getByRole("button", { name: label }).first().click();
     await page.waitForTimeout(200);
     const body = await page.$eval(".modal", (m) => m.textContent);
@@ -772,8 +775,10 @@ test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
     await page.keyboard.press("Escape");
     await page.waitForTimeout(120);
   }
+  await page.click('.segnav__pill:text-is("Wrap")');
+  await page.waitForTimeout(120);
   const text = await page.$eval("#screen", (e) => e.textContent);
-  assert.match(text, /Session Awards/, "the award checklists are on the Case panel");
+  assert.match(text, /Session Awards/, "the award checklists are on the Wrap panel");
 });
 
 test("solo case notes can be cleared, and the whole assistant reset", async (t) => {
@@ -1006,4 +1011,48 @@ test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.
   const titles = await page.$$eval(".panel .sheet__section", (els) => els.map((e) => e.textContent.trim()));
   assert.ok(titles.indexOf("Proceed to a location") < titles.indexOf("Countdown Event Check"),
     "the location comes before the Countdown check");
+});
+
+// The GM screen is laid out in the order a session runs. This pins the pill
+// order, the legacy-key migration, and that case prep, table play, the fight
+// tools, and the aftermath each stay on their own panel.
+test("GM panels follow the arc of a session", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?gmseq#gm`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:gm", JSON.stringify({ panel: "party" }));   // legacy key
+  });
+  await page.evaluate(() => { location.hash = "#__r"; location.hash = "#gm"; });
+  await page.waitForTimeout(200);
+
+  const pills = await page.$$eval(".segnav__pill", (els) => els.map((e) => e.textContent.trim()));
+  assert.deepEqual(pills, ["Prep", "Play", "Fight", "Wrap", "Notes"]);
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Play",
+    "legacy 'party' panel maps to Play");
+
+  const cardsOn = async (pill) => {
+    await page.click(`.segnav__pill:text-is("${pill}")`);
+    await page.waitForTimeout(120);
+    return page.$$eval(".panel .sheet__section", (els) => els.map((e) => e.textContent.trim()));
+  };
+  assert.deepEqual(await cardsOn("Prep"), ["Build the case", "Main NPC Generator", "Clues & the finale"]);
+  assert.deepEqual(await cardsOn("Play"), ["Live Party Panel", "Scene dressing"]);
+  assert.deepEqual(await cardsOn("Fight"), ["Drop-in Combatant Generator"]);
+  assert.deepEqual(await cardsOn("Wrap"), ["Session Awards", "Consequences & downtime"]);
+});
+
+// The tutorial's step buttons deep-link by route name. A renamed or removed
+// route would leave a dead button, so assert every target really routes.
+test("every tutorial deep-link points at a real route", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const source = fs.readFileSync(path.join(ROOT, "src", "tutorial.js"), "utf8");
+  const targets = [...source.matchAll(/navigate\("([a-z]+)"\)/g)].map((m) => m[1]);
+  assert.ok(targets.length >= 5, "expected the tutorial to carry deep links");
+  for (const route of [...new Set(targets)]) {
+    await page.goto(`${base}/index.html?tut=${route}#${route}`, { waitUntil: "load" });
+    await page.waitForTimeout(150);
+    const rendered = await page.$eval("#screen", (el) => el.children.length);
+    assert.ok(rendered > 0, `tutorial links to #${route}, which renders nothing`);
+  }
 });
