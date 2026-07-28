@@ -48,8 +48,19 @@ tracker across devices, connect your own Firebase project:
      projectId: "…", storageBucket: "…", appId: "…",
    };
    ```
-5. Deploy the security rules in [`database.rules.json`](database.rules.json) to your
-   Realtime Database (player/GM roles are enforced there).
+5. Deploy **both** rule files — the database and Storage rules are the only access
+   control, since the web config is public:
+
+   ```sh
+   firebase deploy --only database,storage
+   ```
+
+   [`database.rules.json`](database.rules.json) enforces player/GM roles, character
+   ownership (a character can only be created by its owner and updated by that owner or
+   the campaign's GM), self-promotion to `gm` is blocked, and join codes resolve only when
+   you already know them — they cannot be listed. [`storage.rules`](storage.rules) allows
+   nothing but signed-in reads/writes of `portraits/{characterId}`, capped at 1 MB and
+   restricted to image content types.
 
 **About the committed config.** This repository ships a working `firebase-config.js` with
 `FIREBASE_ENABLED = true` so the deployed site has multiplayer out of the box. Firebase web

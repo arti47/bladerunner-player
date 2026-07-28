@@ -3,9 +3,21 @@
     "campaigns": {
       "$cid": {
         ".read": "auth != null && data.child('members').child(auth.uid).exists()",
-        "meta": { ".write": "auth != null && (!data.exists() || data.parent().child('members').child(auth.uid).child('role').val() == 'gm')" },
+        "meta": {
+          ".write": "auth != null && (!data.exists() || data.parent().child('members').child(auth.uid).child('role').val() == 'gm')",
+          "ownerUid": { ".validate": "!data.exists() || data.val() === newData.val()" },
+          "joinCode": { ".validate": "newData.isString() && newData.val().length <= 64" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 120" }
+        },
         "members": {
-          "$uid": { ".write": "auth != null && ($uid === auth.uid || data.parent().child(auth.uid).child('role').val() == 'gm')" }
+          "$uid": {
+            ".write": "auth != null && ($uid === auth.uid || data.parent().child(auth.uid).child('role').val() == 'gm')",
+            "role": {
+              ".validate": "newData.isString() && (newData.val() === 'player' || newData.val() === 'gm') && (newData.val() === 'player' || $uid !== auth.uid || root.child('campaigns').child($cid).child('meta').child('ownerUid').val() === auth.uid || data.parent().parent().child(auth.uid).child('role').val() == 'gm')"
+            },
+            "displayName": { ".validate": "newData.isString() && newData.val().length <= 120" },
+            "$other": { ".validate": true }
+          }
         },
         "combat": { ".write": "auth != null && root.child('campaigns').child($cid).child('members').child(auth.uid).exists()" },
         "broadcast": { ".write": "auth != null && root.child('campaigns').child($cid).child('members').child(auth.uid).child('role').val() == 'gm'" }
@@ -14,13 +26,19 @@
     "characters": {
       "$chid": {
         ".read": "auth != null && (data.child('owner').val() === auth.uid || root.child('campaigns').child(data.child('campaignId').val()).child('members').child(auth.uid).exists())",
-        ".write": "auth != null && (!data.exists() || data.child('owner').val() === auth.uid || newData.child('owner').val() === auth.uid || root.child('campaigns').child(data.child('campaignId').val()).child('members').child(auth.uid).child('role').val() == 'gm')"
+        ".write": "auth != null && ((!data.exists() && newData.child('owner').val() === auth.uid) || data.child('owner').val() === auth.uid || root.child('campaigns').child(data.child('campaignId').val()).child('members').child(auth.uid).child('role').val() == 'gm')",
+        "owner": { ".validate": "newData.isString() && (!data.exists() || data.val() === newData.val() || root.child('campaigns').child(newData.parent().child('campaignId').val()).child('members').child(auth.uid).child('role').val() == 'gm')" },
+        "campaignId": { ".validate": "!newData.exists() || (newData.isString() && root.child('campaigns').child(newData.val()).child('members').child(auth.uid).exists())" },
+        "identity": {
+          "portraitUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" }
+        }
       }
     },
     "joinCodes": {
-      ".read": "auth != null",
       "$code": {
-        ".write": "auth != null && (!data.exists() || root.child('campaigns').child(data.val()).child('members').child(auth.uid).child('role').val() == 'gm')"
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || root.child('campaigns').child(data.val()).child('members').child(auth.uid).child('role').val() == 'gm')",
+        ".validate": "newData.isString() && newData.val().length <= 64"
       }
     }
   }

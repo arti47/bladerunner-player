@@ -165,7 +165,8 @@ function panelReference(host) {
     facts("Spending points", [
       ["Specialty", `${D.SPECIALTY_LEARN_COST_PP} Promotion Points, one Shift at the Training Grounds.`],
       ["Skill", Object.entries(D.SKILL_INCREASE_COST_HP).map(([lv, c]) => `${lv} → next: ${c} Humanity`).join(" · ") + ". Downtime only."],
-      ["Gear", `Promotion Points requisition from the LAPD, Chinyen Points buy on the street — each needs a ${D.SKILLS.find((x) => x.key === D.ACQUISITION.skill).name} roll, and paying double gives advantage. ${D.ACQUISITION.failureNote}`],
+      ["Gear", `Promotion Points requisition from the LAPD, Chinyen Points buy on the street. ${D.AVAILABILITY_TIERS.filter((t) => t.skill).map((t) => t.key).join(", ")} goods need a ${D.SKILLS.find((x) => x.key === D.ACQUISITION.skill).name} roll (paying double gives advantage); ${D.AVAILABILITY_TIERS.filter((t) => !t.skill).map((t) => t.key).join(" and ")} goods are simply bought. ${D.ACQUISITION.failureNote}`],
+      ["Selling", D.ACQUISITION.selling.note],
     ]),
     facts("Conditions", D.CONDITIONS.map((c) => [c.name, c.text])),
   );

@@ -69,6 +69,22 @@ export function acquirableItems() {
   add("Vehicles", D.VEHICLES);
   return out;
 }
+// The Purchases table row for an availability tier  [Ch08 p204].
+export const availabilityTier = (avail) =>
+  D.AVAILABILITY_TIERS.find((t) => t.key === String(avail || "").replace(/ .*/, "")) || null;
+// Premium and rarer goods need a CONNECTIONS roll; Incidental/Standard do not.
+export function needsConnectionsRoll(avail) {
+  const tier = availabilityTier(avail);
+  return !!tier?.skill;
+}
+// Black-market payout: half the Cost, rounded up  [Ch08 p207].
+export function sellPrice(cost) {
+  const n = costOf(cost);
+  if (n == null) return null;
+  const { payoutFraction, roundUp } = D.ACQUISITION.selling;
+  const raw = n * payoutFraction;
+  return roundUp ? Math.ceil(raw) : Math.floor(raw);
+}
 // Costs are usually numbers; a few read "4–10" or "Special". Returns the number
 // or null when the table leaves it to the Game Runner.
 export function costOf(cost) {

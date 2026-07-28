@@ -45,7 +45,7 @@ export function normalizeCharacter(c = {}) {
     skills,
     specialties: Array.isArray(c.specialties) ? c.specialties : [],
     identity: {
-      keyMemory: "", keyRelationship: "", appearance: "", home: "", signatureItem: "",
+      keyMemory: "", keyRelationship: "", keyRelationship2: "", appearance: "", home: "", signatureItem: "",
       portraitUrl: "", ...(c.identity || {}),
     },
     state: {

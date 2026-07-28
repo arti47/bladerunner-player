@@ -168,7 +168,13 @@ function watchParty() {
 export function mirrorCharacter(ch) {
   if (!S.ready || !S.campaignId || !ch?.id || ch.campaignId !== S.campaignId) return;
   echoGuard = Date.now();
-  try { S.fn.db.set(dref(`characters/${ch.id}`), { ...ch, owner: ch.owner || S.uid, campaignId: S.campaignId }); } catch {}
+  const payload = { ...ch, owner: ch.owner || S.uid, campaignId: S.campaignId };
+  // Never push a base64 portrait into the database — those belong in Storage
+  // (uploadPortrait). A data: URL would be re-sent on every single save.
+  if (typeof payload.identity?.portraitUrl === "string" && payload.identity.portraitUrl.startsWith("data:")) {
+    payload.identity = { ...payload.identity, portraitUrl: "" };
+  }
+  try { S.fn.db.set(dref(`characters/${ch.id}`), payload); } catch {}
 }
 // Watch a specific character for remote edits (the sheet subscribes to its own).
 export function watchCharacter(id, cb) {

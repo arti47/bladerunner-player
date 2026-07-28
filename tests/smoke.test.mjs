@@ -279,7 +279,19 @@ test("gear catalog rows open the pay/roll step [§3.11]", async (t) => {
   assert.ok(/LAPD requisition/.test(body), "offers the LAPD source");
   assert.ok(/Black market/.test(body), "offers the black market");
   assert.ok(/Pay double/.test(body), "offers the double-payment advantage");
-  assert.ok(/Roll Connections/.test(body), "ends in a Connections roll");
+  // Standard availability is simply bought — no Connections roll [Ch08 p204]
+  assert.ok(/No Connections roll needed/.test(body), "Standard goods need no roll");
+  assert.ok(!/Roll Connections/.test(body));
+  await page.keyboard.press("Escape");
+  // …but Premium and rarer goods do
+  await page.getByRole("button", { name: "⚖ Acquire gear" }).first().click();
+  await page.waitForTimeout(150);
+  await page.evaluate(() => document.querySelectorAll(".modal details").forEach((d) => (d.open = true)));
+  await page.getByRole("button", { name: /Police Heavy Duty Street Gear/ }).first().click();
+  await page.waitForTimeout(200);
+  const premium = await page.$eval(".modal", (m) => m.textContent);
+  assert.ok(/Roll Connections/.test(premium), "Premium goods end in a Connections roll");
+  assert.ok(/A Shift/.test(premium), "and quote the tier's lead time");
   await page.keyboard.press("Escape");
 });
 
@@ -354,13 +366,24 @@ test("opposed skill rolls are available and only the initiator may push [§3.1/�
   await page.waitForTimeout(200);
   let body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(/Opposing skill/.test(body) && /Their attribute/.test(body), "configures both sides");
+  await page.evaluate(() => { Math.random = () => 0; });   // both sides fail → initiator may push
   await page.getByRole("button", { name: "⚄ Roll opposed" }).first().click();
   await page.waitForTimeout(200);
   body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(/You win the opposition|They hold/.test(body), "declares a winner");
-  assert.ok(/initiator only/.test(body), "push is restricted to the initiator");
+  assert.ok(/initiator only/.test(body), "a lost/tied opposition is pushable, by the initiator only");
   const diceRows = await page.$$eval(".modal .dice", (els) => els.length);
   assert.equal(diceRows, 2, "both sides show their dice");
+  await page.keyboard.press("Escape");
+  // winning the opposition is a success — nothing left to push
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: "⚖ Opposed roll" }).first().click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "⚄ Roll opposed" }).first().click();
+  await page.waitForTimeout(200);
+  const won = await page.$eval(".modal", (m) => m.textContent);
+  assert.match(won, /You win the opposition/);
+  assert.ok(!/initiator only/.test(won), "a won opposition offers no push");
   await page.keyboard.press("Escape");
 });
 
@@ -640,4 +663,115 @@ test("wizard rolls key relationship, signature item and home from the book's tab
   await page.waitForTimeout(150);
   const rel = await page.$eval(".wiz__body textarea", (e) => e.value);
   assert.ok(rel.length > 5, `relationship text was generated: ${rel}`);
+});
+
+test("specialty milestones and Promotion Point losses are wired to the sheet [§3.10]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?spec#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Operator", nature: "human", archetype: "fixer", years: "veteran",
+      specialties: ["cashflow", "sycophant", "protected", "people_person"],
+      skills: { connections: "A" }, state: { promotionPoints: 4, chinyenPoints: 2 } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?spec2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /New Case File/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: /End of session/ }).first().click();
+  await page.waitForTimeout(200);
+  const after = await page.evaluate(async () => {
+    const s = (await import("/src/store.js")).Store.getActive().state;
+    return { pp: s.promotionPoints, cy: s.chinyenPoints };
+  });
+  assert.equal(after.cy, 3, "Cashflow adds a Chinyen Point per Case File");
+  assert.equal(after.pp, 5, "Sycophant adds a Promotion Point per session");
+  // People Person exposes a second key relationship field
+  const labels = await page.$$eval(".field__label", (els) => els.map((e) => e.textContent));
+  assert.ok(labels.some((l) => /Second key relationship/.test(l)), "People Person grants a second relationship");
+  // Protected turns a Promotion Point loss into a Connections roll
+  await page.getByRole("button", { name: "− Lose Promotion Points" }).first().click();
+  await page.waitForTimeout(200);
+  const body = await page.$eval(".modal", (m) => m.textContent);
+  assert.match(body, /Roll Connections/, "Protected routes the loss through a Connections roll");
+  await page.keyboard.press("Escape");
+});
+
+test("the signature item is a once-per-Shift stress heal [Core Ch02 p034]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?sig#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Keeper", attributes: { STR: "C", AGI: "C", INT: "B", EMP: "B" },
+      identity: { signatureItem: "An origami bird" }, state: { resolve: 1 } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?sig2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const before = await page.evaluate(async () => (await import("/src/store.js")).Store.getActive().state.resolve);
+  await page.getByRole("button", { name: /Signature item/ }).first().click();
+  await page.waitForTimeout(250);
+  const after = await page.evaluate(async () => {
+    const c = (await import("/src/store.js")).Store.getActive();
+    return { resolve: c.state.resolve, used: !!c.state.shiftUses.signature_item };
+  });
+  assert.equal(after.resolve, before + 1);
+  assert.equal(after.used, true, "and it is spent for the Shift");
+});
+
+test("selling an item pays half its Cost into Chinyen [Ch08 p207]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?sell#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Trader", nature: "human", archetype: "fixer", years: "veteran",
+      inventory: { items: [{ key: "police_truncheon", name: "Police Truncheon", equipped: false }] },
+      state: { chinyenPoints: 0 } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?sell2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "¥ Sell an item" }).first().click();
+  await page.waitForTimeout(200);
+  const body = await page.$eval(".modal", (m) => m.textContent);
+  assert.match(body, /sells for 1 ¥/, "Standard cost 1 pays 1 (half, rounded up)");
+  await page.locator(".modal").getByRole("button", { name: /Police Truncheon/ }).first().click();
+  await page.waitForTimeout(250);
+  const after = await page.evaluate(async () => {
+    const c = (await import("/src/store.js")).Store.getActive();
+    return { cy: c.state.chinyenPoints, items: c.inventory.items.length };
+  });
+  assert.equal(after.cy, 1, "Standard goods sell without a roll");
+  assert.equal(after.items, 0, "and leave the inventory");
+});
+
+test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?gm9#gm`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:gm", JSON.stringify({ panel: "case", log: [], scratchpad: "", selectedTheme: "Replicant Crimes & Punishments" }));
+  });
+  await page.goto(`${base}/index.html?gm9b#gm`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  for (const [label, check] of [
+    [/🎲 Clue \(D8\)/, /Witness|Forensic Evidence|Recording|Documents|Rumors|Anonymous Tip|Item/],
+    [/🎲 Location \(D6×D6\)/, /Sector|Downtown/],
+    [/🎲 Final Confrontation/, /rain|Thunder|heat|cold|colors|Overgrown|wind|outage|dust|Fog/],
+    [/🎲 Mood/, /Weather/],
+    [/🎲 Downtime Event \(D8\)/, /At home/],
+  ]) {
+    await page.getByRole("button", { name: label }).first().click();
+    await page.waitForTimeout(200);
+    const body = await page.$eval(".modal", (m) => m.textContent);
+    assert.match(body, check, `${label} produced a result`);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(120);
+  }
+  const text = await page.$eval("#screen", (e) => e.textContent);
+  assert.match(text, /Session Awards/, "the award checklists are on the Case panel");
 });

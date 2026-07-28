@@ -834,6 +834,8 @@ function openRangedAttack(c, rc, w, commit) {
               blocked: !!st.armorRes?.negatesCrit,
               onApplyCrit: target ? (entry, type, face) => applyCritToCombatant(target, entry, type, face, commit) : null }));
           if (target) b.append(applyDamageRow(target, final, commit, st));
+          // Full auto spills extra successes onto secondary targets (§3.12).
+          if (st.fullAuto && succ > 1) b.append(spillRow(c, target, succ - 1, commit));
         }
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
@@ -858,6 +860,36 @@ function openRangedAttack(c, rc, w, commit) {
       paint();
     }
   });
+}
+
+
+// Full auto: successes beyond the first may be spilled onto other targets in the
+// line of fire (§3.12). The book leaves the split to the table, so this is a
+// house aid — it applies one damage per success you assign, and is labelled as
+// such in the UI.
+function spillRow(attacker, primary, extra, commit) {
+  const box = el("div", { class: "card card--target-dmg" });
+  box.append(el("div", { class: "card__eyebrow" }, `Full auto — spill ${extra} extra success${extra === 1 ? "" : "es"}`));
+  const others = Combat.get().combatants.filter((x) => x.id !== attacker.id && x.id !== primary?.id && x.health > 0);
+  if (!others.length) { box.append(el("p", { class: "muted" }, "No other targets in the line of fire.")); return box; }
+  const st = { left: extra };
+  const list = el("div", { class: "rec-actions" });
+  const note = el("div", { class: "muted sheet__note" }, `House aid: 1 damage per success assigned. ${st.left} left.`);
+  for (const o of others) {
+    list.append(el("button", { class: "btn btn--sm btn--danger", onClick: () => {
+      if (st.left <= 0) return;
+      st.left--;
+      commit((s) => { const t = s.combatants.find((x) => x.id === o.id); if (t) t.health = Math.max(0, t.health - 1); });
+      if (o.kind === "pc" && o.charId) {
+        const pc = Store.get(o.charId);
+        if (pc) { pc.state.health = Math.max(0, pc.state.health - 1); reclampVitals(pc); Store.save(pc); }
+      }
+      note.textContent = `House aid: 1 damage per success assigned. ${st.left} left.`;
+      showToast(`Spill: 1 damage to ${o.name}.`);
+    } }, `1 dmg → ${o.name}`));
+  }
+  box.append(list, note);
+  return box;
 }
 
 function targetPicker(st, enemies, paint) {

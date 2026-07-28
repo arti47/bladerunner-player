@@ -235,6 +235,7 @@ export const HUMANITY_ALWAYS_TRIGGERS = [
 export const BASELINE_TEST = {
   skill: "insight",
   triggersAtZeroPromotion: true,
+  triggersWhenBrokenByStress: true,   // [Ch08] zero Promotion Points OR Broken by stress
   onSuccess: "+1 Promotion Point.",
   onFail: "+1 Humanity Point, plus escalating penalties by number of tests failed.",
   note: "Takes 1 Shift at the LAPD; does not count as Downtime.",
@@ -442,7 +443,10 @@ export const CHASE = {
 
 // Vehicles  [Ch08] — stat: Maneuverability (A-D), Hull, Armor, passengers.
 export const VEHICLES = [
-  { key: "spinner", name: "Police Spinner", maneuverability: "B", hull: 4, armor: "C", passengers: 4, avail: "Rare", cost: 5, note: "LAPD aerodyne flying car." },
+  { key: "spinner", name: "LAPD Spinner — Detective Special 294-02", maneuverability: "B", hull: 4, armor: "C", passengers: 2, avail: "Rare", cost: 5, note: "The Blade Runner's unmarked aerodyne cruiser; optional twin .50 machineguns." },
+  { key: "spinner_dmv", name: "LAPD Spinner — DMV 137", maneuverability: "C", hull: 5, armor: "C", passengers: 2, avail: "Rare", cost: 5, note: "The marked blue-and-white patrol cruiser." },
+  { key: "spinner_squad", name: "Spinner Squad Transport", maneuverability: "D", hull: 8, armor: "C", passengers: 20, avail: "Luxury", cost: 10, note: "Task-force transport; twin .50 machineguns standard." },
+  { key: "spinner_carrier", name: "Spinner Carrier", maneuverability: "B", hull: 6, armor: "C", passengers: 6, avail: "Rare", cost: 6, note: "Troop carrier; optional tactical missile launcher." },
   { key: "spinner_cycle", name: "LAPD Spinner Cycle (Detective Special 08-3)", maneuverability: "A", hull: 2, armor: null, passengers: 1, avail: "Rare", cost: 5, note: "Fast stealth recon craft; no armaments." },
   { key: "ground_car", name: "Civilian Ground Car", maneuverability: "C", hull: 4, armor: "D", passengers: 4, avail: "Premium", cost: 3 },
   { key: "ground_truck", name: "Civilian Ground Truck", maneuverability: "D", hull: 8, armor: "D", passengers: 3, avail: "Rare", cost: 4 },
@@ -487,9 +491,9 @@ export const WEAPONS = [...WEAPONS_MELEE, ...WEAPONS_RANGED];
 // Explosives & grenades  [Ch08]. Blast damage scales with Blast Power (see BLAST_POWER).
 export const EXPLOSIVES = [
   { key: "grenade", name: "Grenade", damage: 2, critDie: 8, type: "piercing", blastPower: "C", maxRange: "medium", thrown: true, avail: "Premium", cost: 1 },
-  { key: "explosive", name: "Explosive Charge", damage: "2–4", critDie: "8–12", type: "piercing", blastPower: "A–C", thrown: false, avail: "Premium", cost: "1–4", note: "Placed, not thrown. Damage/Crit/cost scale with Blast Power (C=2/D8/1, doubling per step to A)." },
-  { key: "tear_gas", name: "Tear Gas Grenade", damage: null, critDie: null, type: "gas", maxRange: "medium", thrown: true, avail: "Standard", cost: 1, note: "Victims roll Stamina or lose their action." },
-  { key: "flash_bang", name: "Flash-Bang Grenade", damage: null, critDie: null, type: "flash", maxRange: "medium", thrown: true, avail: "Standard", cost: 2, note: "Victims roll Observation or lose their next turn." },
+  { key: "explosive", name: "Explosive Charge", damage: "2–4", critDie: "8–12", type: "piercing", blastPower: "A–C", thrown: false, avail: "Premium", cost: "1–4", note: "Placed, not thrown. Cost is 1 at Blast Power C and doubles for each step up (B=2, A=4)." },
+  { key: "tear_gas", name: "Tear Gas Grenade", damage: null, critDie: null, type: "gas", maxRange: "medium", thrown: true, avail: "Standard", cost: 1, note: "Everyone in the zone rolls Stamina (no action) on their turn or loses their action. Lingers D6 Rounds." },
+  { key: "flash_bang", name: "Flash-Bang Grenade", damage: null, critDie: null, type: "flash", maxRange: "medium", thrown: true, avail: "Standard", cost: 2, note: "Everyone in the zone rolls Observation (no action) or loses their next turn." },
   { key: "sonic_grenade", name: "Sonic Grenade", damage: 2, critDie: 8, type: "crushing", blastPower: "C", maxRange: "medium", thrown: true, avail: "Premium", cost: 2 },
   { key: "sonic_charge", name: "Sonic Charge", damage: 3, critDie: 10, type: "crushing", blastPower: "B", thrown: false, avail: "Premium", cost: 4, note: "Placed, not thrown." },
 ];
@@ -502,11 +506,23 @@ export const ARMOR = [
   { key: "police_shield", name: "Police Shield", rating: null, avail: "Standard", cost: 2, disadvantage: ["mobility", "stealth", "connections", "manipulation"], note: "Disadvantage to attacks against you from the front (close and ranged)." },
   { key: "zip_ties", name: "Zip Ties", rating: null, avail: "Incidental", cost: 0, note: "Restraint. One action to apply; Force roll to break free." },
 ];
-export const AVAILABILITY = ["Standard", "Premium", "Rare", "Incidental"]; // Cost = # of Promotion or Chinyen Points
+export const AVAILABILITY = ["Incidental", "Standard", "Premium", "Rare", "Luxury"]; // Cost = # of Promotion or Chinyen Points
 
-// Acquiring gear  [Ch08] — pay the Cost in Promotion Points (LAPD requisition) or
-// Chinyen Points (black market / private sale), then roll CONNECTIONS. Paying
-// double gives advantage. A failed roll wastes the time, not the points.
+// The Purchases table  [Ch08 p204] — availability sets the time, the cost band,
+// and whether the deal needs a CONNECTIONS roll at all. Incidental and Standard
+// goods are simply bought; Premium and up take time and a roll.
+export const AVAILABILITY_TIERS = [
+  { key: "Incidental", time: "Instant", cost: "—", skill: null },
+  { key: "Standard", time: "Instant", cost: "1–2", skill: null },
+  { key: "Premium", time: "A Shift", cost: "2–3", skill: "connections" },
+  { key: "Rare", time: "A day or more", cost: "3–6", skill: "connections" },
+  { key: "Luxury", time: "Several days", cost: "7+", skill: "connections" },
+];
+
+// Acquiring gear  [Ch08 p204] — pay the Cost in Promotion Points (LAPD
+// requisition) or Chinyen Points (black market / private sale). Premium and
+// rarer goods also need a CONNECTIONS roll; paying double gives advantage, and a
+// failed roll wastes the time, not the points.
 export const ACQUISITION = {
   skill: "connections",
   doublePaymentAdvantage: true,
@@ -515,6 +531,14 @@ export const ACQUISITION = {
     { key: "lapd", name: "LAPD requisition", currency: "promotionPoints", currencyName: "Promotion Points", symbol: "PP" },
     { key: "market", name: "Black market / private", currency: "chinyenPoints", currencyName: "Chinyen Points", symbol: "¥" },
   ],
+  // Selling on the black market  [Ch08 p207].
+  selling: {
+    payoutFraction: 0.5,     // half the listed Cost…
+    roundUp: true,           // …rounded up
+    currency: "chinyenPoints",
+    rollFromAvailability: "Premium",  // finding a buyer at Premium or higher needs a roll
+    note: "Selling takes as long as buying. You are paid half the item's Cost, rounded up; finding a buyer for Premium or rarer goods needs a CONNECTIONS roll.",
+  },
 };
 
 // Standard-issue gear granted at creation  [Ch02]
@@ -535,6 +559,10 @@ export const GEAR = [
   { key: "zllsh", name: "ZLLSH (Hard Narcotic)", cat: "Medical", avail: "Standard", cost: 1, text: "No skill rolls for a full Shift after use." },
   { key: "med_regular", name: "Regular Medical Procedure", cat: "Medical", avail: "Premium", cost: 3, text: "Leveled Medical Aid roll to stabilize a lethal critical injury." },
   { key: "med_emergency", name: "Emergency Medical Procedure", cat: "Medical", avail: "Rare", cost: 6, text: "Higher-level Medical Aid roll to stabilize a lethal critical injury." },
+  { key: "ko_kuma", name: "Ko-Kuma", cat: "Consumable", avail: "Incidental", cost: 0, text: "Energy drink." },
+  { key: "beer", name: "Beer", cat: "Consumable", avail: "Incidental", cost: 0, text: "A drink." },
+  { key: "hard_alcohol", name: "Hard Alcohol", cat: "Consumable", avail: "Incidental", cost: 0, text: "A stiff drink." },
+  { key: "experience", name: "Experience", cat: "Consumable", avail: "Incidental", cost: 0, text: "Light narcotic." },
   { key: "handcuffs", name: "Standard Handcuffs", cat: "Restraint", avail: "Standard", cost: 1, text: "One action to apply; subject rolls Force at disadvantage to break free." },
   { key: "surveillance_drone", name: "Surveillance Drone", cat: "Utility", avail: "Standard", cost: 1, text: "Remote data capture and surveillance. Requisition for a Shift + a Connections roll." },
 ];
