@@ -89,3 +89,41 @@ export function reclampVitals(ch) {
 
 export const isBrokenByDamage = (ch) => ch.state.health <= 0;
 export const isBrokenByStress = (ch) => ch.state.resolve <= 0;
+
+// ---- Shift transitions (§3.8) ---------------------------------------------
+// One implementation, used by the sheet's Rest & Recovery card AND by the Solo
+// assistant's end-of-Shift step. Both mutate `ch` in place and return what
+// happened so the caller can report it; neither saves — the caller does.
+
+// Investigation Shifts you may work before Downtime is required. [Ch09]
+export function downtimeLimitFor(ch) {
+  const married = (ch.specialties || []).some((s) => s === "married_to_the_job" || s?.key === "married_to_the_job");
+  return married ? D.SPECIALTIES.find((x) => x.key === "married_to_the_job").effect.downtimeGrace : D.RECOVERY.downtimeShiftsBeforeStress;
+}
+
+// A Shift spent working the case. Past the limit you take 1 stress; left alone,
+// a Broken character comes round on their own after a Shift.
+export function applyInvestigationShift(ch) {
+  const wasBroken = isBrokenByDamage(ch);
+  ch.state.shiftsSinceDowntime = (ch.state.shiftsSinceDowntime || 0) + 1;
+  ch.state.shiftUses = {};
+  const overLimit = ch.state.shiftsSinceDowntime > downtimeLimitFor(ch);
+  if (overLimit) ch.state.resolve = Math.max(0, ch.state.resolve - 1);
+  let brokenHeal = 0;
+  if (wasBroken) {
+    brokenHeal = D.RECOVERY.brokenAloneHealPerShift;
+    ch.state.health = Math.min(maxHealth(ch), ch.state.health + brokenHeal);
+  }
+  return { overLimit, brokenHeal, shifts: ch.state.shiftsSinceDowntime, limit: downtimeLimitFor(ch) };
+}
+
+// A Shift of Downtime: heal, clear the stress effect, reset the Shift counter.
+export function applyDowntimeShift(ch, care = false) {
+  const health = D.RECOVERY.downtimeHealthPerShift[ch.nature] + (care ? D.RECOVERY.medicalCareBonusHealth : 0);
+  ch.state.health = Math.min(maxHealth(ch), ch.state.health + health);
+  ch.state.resolve = Math.min(maxResolve(ch), ch.state.resolve + 1); // +1 Resolve/Shift, all natures
+  ch.state.shiftsSinceDowntime = 0;
+  ch.state.shiftUses = {};
+  if (ch.state.resolve >= 1) ch.state.criticalStress = null;
+  return { health, resolve: 1 };
+}

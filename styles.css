@@ -551,3 +551,7 @@ textarea.input { resize: vertical; font-family: inherit; }
 .solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
 .solo-method:first-of-type { border-top: 0; }
 .rolllog__scope { padding: .1rem .6rem .4rem; }
+
+/* ---- Solo: procedure-ordered panels --------------------------------------- */
+.step-eyebrow { margin-top: 0; color: var(--cyan); font-weight: 700; }
+.chip--done { border-color: var(--ok, var(--cyan)); color: var(--ok, var(--cyan)); cursor: default; font-size: .78rem; }

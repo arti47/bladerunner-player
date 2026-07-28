@@ -5,7 +5,7 @@
 import { el, clear, titleCase, rollDie, uid } from "./core.js";
 import * as D from "../data.js";
 import * as R from "./rules.js";
-import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress } from "./derived.js";
+import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress, downtimeLimitFor, applyInvestigationShift, applyDowntimeShift } from "./derived.js";
 import { Store, RollLog } from "./store.js";
 import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard } from "./ui.js";
 import { navigate } from "./router.js";
@@ -564,30 +564,17 @@ function recoverySection(ch, commit, rerender) {
   }
   return card;
 }
-function downtimeLimit(ch) { return (ch.specialties || []).some((s) => s === "married_to_the_job" || s?.key === "married_to_the_job") ? D.SPECIALTIES.find((x) => x.key === "married_to_the_job").effect.downtimeGrace : D.RECOVERY.downtimeShiftsBeforeStress; }
+const downtimeLimit = (ch) => downtimeLimitFor(ch);   // §3.8 transitions live in derived.js
 function downtimeShift(ch, commit, care) {
-  commit((c) => {
-    const hp = D.RECOVERY.downtimeHealthPerShift[c.nature] + (care ? D.RECOVERY.medicalCareBonusHealth : 0);
-    c.state.health = Math.min(maxHealth(c), c.state.health + hp);
-    c.state.resolve = Math.min(maxResolve(c), c.state.resolve + 1); // +1 Resolve/Shift, all natures
-    c.state.shiftsSinceDowntime = 0;
-    c.state.shiftUses = {};
-    if (c.state.resolve >= 1) c.state.criticalStress = null;
-  });
-  showToast(`Downtime Shift: +${D.RECOVERY.downtimeHealthPerShift[ch.nature] + (care ? 1 : 0)} Health, +1 Resolve.`);
+  let r;
+  commit((c) => { r = applyDowntimeShift(c, care); });
+  showToast(`Downtime Shift: +${r.health} Health, +${r.resolve} Resolve.`);
 }
 function investigationShift(ch, commit) {
-  const wasBroken = isBrokenByDamage(ch);
-  commit((c) => {
-    c.state.shiftsSinceDowntime = (c.state.shiftsSinceDowntime || 0) + 1;
-    c.state.shiftUses = {};
-    if (c.state.shiftsSinceDowntime > downtimeLimit(c)) { c.state.resolve = Math.max(0, c.state.resolve - 1); }
-    // Left alone, a Broken character comes round on their own after a Shift. [§3.8]
-    if (wasBroken) c.state.health = Math.min(maxHealth(c), c.state.health + D.RECOVERY.brokenAloneHealPerShift);
-  });
-  const over = (ch.state.shiftsSinceDowntime || 0) + 1 > downtimeLimit(ch);
-  showToast([over ? "Investigation Shift — over the limit: +1 stress." : "Investigation Shift logged.",
-    wasBroken ? `Broken and alone: +${D.RECOVERY.brokenAloneHealPerShift} Health.` : ""].filter(Boolean).join(" "));
+  let r;
+  commit((c) => { r = applyInvestigationShift(c); });
+  showToast([r.overLimit ? "Investigation Shift — over the limit: +1 stress." : "Investigation Shift logged.",
+    r.brokenHeal ? `Broken and alone: +${r.brokenHeal} Health.` : ""].filter(Boolean).join(" "));
 }
 function firstAid(ch, commit, rerender) {
   const advGlue = itemsInclude(ch, ["glue"]) ? 1 : 0;

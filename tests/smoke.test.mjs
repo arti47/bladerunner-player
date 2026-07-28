@@ -522,12 +522,12 @@ test("Countdown Timer fires on a success and escalates on a miss [Solo p.006]", 
     await page.goto(`${base}/index.html?ct=${forceHigh}#solo`, { waitUntil: "load" });
     await page.evaluate((hi) => {
       localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
-      localStorage.setItem("brp:solo", JSON.stringify({ timerDie: "D8", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, log: [], panel: "track", scratchpad: "" }));
+      localStorage.setItem("brp:solo", JSON.stringify({ timerDie: "D8", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, log: [], panel: "shift", scratchpad: "" }));
       Math.random = () => (hi ? 0.999 : 0);   // max faces (success) vs. all 1s
     }, forceHigh);
     await page.evaluate(() => { location.hash = "#__r"; location.hash = "#solo"; });
     await page.waitForTimeout(150);
-    await page.getByRole("button", { name: "🎲 Roll Timer Die" }).first().click();
+    await page.getByRole("button", { name: "🎲 Roll the timer" }).first().click();
     await page.waitForTimeout(200);
     const title = await page.$eval(".modal", (m) => m.textContent);
     const die = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).timerDie);
@@ -976,4 +976,34 @@ test("roll logs read top to bottom too — newest entry is last", async (t) => {
   await page.waitForTimeout(250);
   const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
   assert.match(notes.trim(), /\[THIRD\] newest$/, `newest pin lands at the bottom:\n${notes}`);
+});
+
+// The Solo assistant is laid out in the book's Investigation Procedure order
+// (Solo Mode p.005). This pins the sequence: the panels run Case -> Shift ->
+// Scene -> Leads -> Wrap -> Notes, and the two things that OPEN a Shift
+// (proceed to a location, then the Countdown Event Check) sit together on the
+// Shift panel, in that order.
+test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.005]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?soloseq#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "track" }));  // legacy key
+  });
+  await page.evaluate(() => { location.hash = "#__r"; location.hash = "#solo"; });
+  await page.waitForTimeout(200);
+
+  const pills = await page.$$eval(".segnav__pill", (els) => els.map((e) => e.textContent.trim()));
+  assert.deepEqual(pills, ["Case", "Shift", "Scene", "Leads", "Wrap", "Notes"]);
+  // a legacy panel key migrates instead of falling back to the first panel
+  const active = await page.$eval(".segnav__pill--on", (e) => e.textContent.trim());
+  assert.equal(active, "Leads", "legacy 'track' panel maps to Leads");
+
+  await page.click('.segnav__pill:text-is("Shift")');
+  await page.waitForTimeout(150);
+  const steps = await page.$$eval(".panel .step-eyebrow", (els) => els.map((e) => e.textContent.trim()));
+  assert.deepEqual(steps, ["Step 1", "Step 2"], "Shift panel runs location then countdown");
+  const titles = await page.$$eval(".panel .sheet__section", (els) => els.map((e) => e.textContent.trim()));
+  assert.ok(titles.indexOf("Proceed to a location") < titles.indexOf("Countdown Event Check"),
+    "the location comes before the Countdown check");
 });

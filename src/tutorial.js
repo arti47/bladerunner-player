@@ -71,14 +71,14 @@ function panelSolo(host) {
   if (!Settings.solo()) host.append(hint("Solo Mode is currently off — turn it on in Settings to get the Solo tab.", () => navigate("settings")));
   host.append(
     steps("The solo loop", "Solo play replaces the Game Runner with dice. You ask, the oracle answers, you narrate.", [
-      ["1. Open a case", "Solo ▸ <b>Start</b> ▸ ⚡ full briefing rolls Assignment, Relevance, Complication, and a Personal Hook straight into your case notes. The Core Case File Generator is there too if you want a longer hook."],
-      ["2. Frame a scene", "Solo ▸ <b>Scene</b> ▸ Scene Check gives you the scene's category and pressure. Use the Location generator for where you are, and Cipher when you want an abstract prompt to interpret."],
+      ["1. Open a case", "Solo ▸ <b>Case</b> ▸ ⚡ full briefing rolls Assignment, Relevance, Complication, and a Personal Hook straight into your case notes. The Core Case File Generator is there too if you want a longer hook."],
+      ["2. Open the Shift", "Solo ▸ <b>Shift</b> ▸ roll a Location, then make the Countdown Event Check — those two open every Shift. Then Solo ▸ <b>Scene</b> ▸ Scene Check sets how hard the situation is."],
       ["3. Ask the oracle", "Question Check answers yes/no with critical results. Imagining Clues gives you evidence (meaning + descriptor + type); the Character generator plus NPC Skill Level gives you someone to talk to."],
       ["4. Act", "Roll on your sheet as normal. Push when you need it — the banes are the consequence, and the app applies them."],
-      ["5. Track leads", "Solo ▸ <b>Track</b> ▸ add a hypothesis and rate it with a die. Upgrade or downgrade it as evidence lands; the Hypothesis Check cashes it in for Promotion Points."],
-      ["6. Turn up the heat", "Roll the Countdown Event Timer once per Shift as you set off for a new location (never for Downtime). <b>Any success fires an event</b> — roll it, let it complicate the case, and reset the timer. No successes means no event, but the timer escalates and the next check is likelier to bite."],
+      ["5. Track leads", "Solo ▸ <b>Leads</b> ▸ add a hypothesis and rate it with a die. Upgrade or downgrade it as evidence lands; the Hypothesis Check cashes it in for Promotion Points."],
+      ["6. Turn up the heat", "The Countdown Event Check on the Shift tab is once per Shift, as you set off for a new location (never for Downtime). <b>Any success fires an event</b> — roll it, let it complicate the case, and reset the timer. No successes means no event, but the timer escalates and the next check is likelier to bite."],
       ["7. Trouble", "Fights and chases run in the Combat Tracker. Let NPC Tactics and NPC Chase Maneuvers decide what the opposition does — that's the point of solo play."],
-      ["8. Close the shift", "Solo ▸ <b>Session</b> ▸ walk the Promotion and Humanity checklists and award yourself honestly. Then take a Downtime Shift on your sheet and spend what you earned."],
+      ["8. Close the shift", "Solo ▸ <b>Wrap</b> ▸ End the Shift (it advances the Shift counter on your sheet and enforces the Downtime cadence), roll a Downtime scene if you took one, then walk the Promotion and Humanity checklists."],
     ], [["Open Solo Mode", () => navigate("solo")], ["Combat Tracker", () => navigate("combat")]]),
 
     steps("Solo habits worth keeping", null, [
