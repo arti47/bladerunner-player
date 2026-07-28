@@ -311,7 +311,32 @@ export function renderSolo(mount, rerender) {
     const ta = el("textarea", { class: "input notes-area", rows: 10, placeholder: "Record clues, suspects, and timeline events..." });
     ta.value = st.scratchpad || "";
     ta.addEventListener("blur", () => { st.scratchpad = ta.value; writeSoloState(st); showToast("Notes saved."); });
-    c.append(ta); root.append(c);
+    c.append(ta);
+    c.append(el("div", { class: "btn-row" },
+      btn("✕ Clear notes", async () => {
+        if (!(st.scratchpad || "").trim()) { showToast("The notes are already empty."); return; }
+        const ok = await confirmModal("Erase everything in the Solo Case Notes? The roll log, hypotheses, and timer are left alone.",
+          { title: "Clear case notes", okLabel: "Clear notes", danger: true });
+        if (!ok) return;
+        st.scratchpad = "";
+        writeSoloState(st);
+        showToast("Case notes cleared.");
+        rerender();
+      }, "sm ghost"),
+      btn("⟲ Start a fresh case", async () => {
+        const ok = await confirmModal("Wipe the whole solo assistant — case notes, roll log, hypotheses, milestone checklists, and the Countdown Timer — and start a new case from scratch?",
+          { title: "Start a fresh case", okLabel: "Wipe everything", danger: true });
+        if (!ok) return;
+        st.scratchpad = "";
+        st.log = [];
+        st.hypotheses = [];
+        st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
+        st.timerDie = S.ESCALATION_STEPS[0];
+        writeSoloState(st);
+        showToast("Solo assistant reset — new case, clean slate.");
+        rerender();
+      }, "sm ghost")));
+    root.append(c);
   }
 }
 

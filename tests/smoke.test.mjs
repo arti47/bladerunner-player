@@ -775,3 +775,52 @@ test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
   const text = await page.$eval("#screen", (e) => e.textContent);
   assert.match(text, /Session Awards/, "the award checklists are on the Case panel");
 });
+
+test("solo case notes can be cleared, and the whole assistant reset", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const seed = async () => {
+    await page.evaluate(() => {
+      localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+      localStorage.setItem("brp:solo", JSON.stringify({
+        panel: "notes", scratchpad: "• [Clue] a bloody origami bird\n",
+        log: [{ id: "l1", label: "Seed", text: "x", pin: "[Seed] x", ts: Date.now() }],
+        hypotheses: [{ id: "h1", text: "The doll knows", die: "D10" }],
+        humanityChecks: { 0: true }, promoGainChecks: {}, promoLoseChecks: {}, timerDie: "D12",
+      }));
+    });
+  };
+  const state = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+
+  // 1 — "Clear notes" empties the scratchpad and leaves everything else alone
+  await page.goto(`${base}/index.html?notes#solo`, { waitUntil: "load" });
+  await seed();
+  await page.goto(`${base}/index.html?notes2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "✕ Clear notes" }).first().click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "Clear notes" }).last().click();
+  await page.waitForTimeout(250);
+  let st = await state();
+  assert.equal(st.scratchpad, "", "notes are emptied");
+  assert.equal(st.log.length, 1, "the roll log survives");
+  assert.equal(st.hypotheses.length, 1, "hypotheses survive");
+  assert.equal(st.timerDie, "D12", "the timer survives");
+  assert.equal(await page.$eval(".notes-area", (e) => e.value), "", "and the textarea is empty");
+
+  // 2 — "Start a fresh case" wipes the lot
+  await page.goto(`${base}/index.html?notes3#solo`, { waitUntil: "load" });
+  await seed();
+  await page.goto(`${base}/index.html?notes4#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "⟲ Start a fresh case" }).first().click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "Wipe everything" }).last().click();
+  await page.waitForTimeout(250);
+  st = await state();
+  assert.equal(st.scratchpad, "");
+  assert.deepEqual(st.log, []);
+  assert.deepEqual(st.hypotheses, []);
+  assert.deepEqual(st.humanityChecks, {});
+  const firstStep = await page.evaluate(async () => (await import("/data-solo.js")).ESCALATION_STEPS[0]);
+  assert.equal(st.timerDie, firstStep, "the Countdown Timer resets to its starting die");
+});
