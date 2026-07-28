@@ -226,12 +226,15 @@ test("normalizeCharacter back-fills defaults and never crashes on empty input", 
   assert.ok(c.state.health <= maxHealth(c) && c.state.health >= 0);
 });
 
-test("v3 schema: journal[] back-filled, preserved, and never crashes on legacy data", () => {
-  assert.equal(SCHEMA_VERSION, 3);
+test("v4 schema: journal[] + secretReplicant back-filled, preserved, never crashes on legacy data", () => {
+  assert.equal(SCHEMA_VERSION, 4);
   assert.deepEqual(normalizeCharacter({}).journal, []);            // default
   assert.deepEqual(normalizeCharacter({ journal: undefined }).journal, []); // legacy (pre-v3)
   const entry = { id: "j1", ts: 123, text: "found a clue" };
   assert.deepEqual(normalizeCharacter({ journal: [entry] }).journal, [entry]); // preserved
+  assert.equal(normalizeCharacter({}).secretReplicant, false);      // v4 default
+  assert.equal(normalizeCharacter({ secretReplicant: true }).secretReplicant, true);
+  assert.equal(normalizeCharacter({ nature: "human" }).nature, "human"); // reveal flips this to replicant
 });
 
 test("reclampVitals clamps to current maxima", () => {
@@ -293,4 +296,95 @@ test("skillIncreaseCost + crit lookup", () => {
   assert.equal(R.skillIncreaseCost("A"), null);
   assert.equal(R.critEntry("piercing", 12).instantKill, true);
   assert.equal(R.critEntry("crushing", 1).lethal, false);
+});
+
+// ---------------------------------------------------------------------------
+// Fidelity audit (2026-07-28) — every gap closed in that pass gets a guard here.
+// ---------------------------------------------------------------------------
+test("armor: rating dice + damage reduction constants exist and are sane [§3.7]", () => {
+  assert.equal(D.ARMOR_DICE, 2);
+  assert.equal(D.ARMOR_DAMAGE_PER_SUCCESS, 1);
+  const rated = D.ARMOR.filter((a) => a.rating);
+  assert.ok(rated.length >= 3, "expected rated armor suits");
+  for (const a of rated) assert.ok(D.LEVEL_DIE[a.rating], `${a.key} has a legal rating`);
+  // every rated suit lists the skills it hampers
+  for (const a of rated) assert.ok(Array.isArray(a.disadvantage), `${a.key} lists disadvantaged skills`);
+});
+
+test("conditions carry the machine-readable effects the engine reads [§3.6]", () => {
+  const by = (k) => D.CONDITIONS.find((c) => c.key === k);
+  assert.equal(by("prone").effect.selfMeleeDisadvantage, true);
+  assert.equal(by("prone").effect.attackerMeleeAdvantage, true);
+  assert.equal(by("cover").effect.attackerRangedDisadvantage, true);
+  assert.equal(by("grappled").effect.cannotDefend, true);
+  assert.equal(by("broken_damage").effect.cannotDefend, true);
+  assert.deepEqual(by("aiming").effect.advantage, ["firearms"]);
+});
+
+test("acquisition: sources, currencies and the Connections roll [§3.11]", () => {
+  assert.equal(D.ACQUISITION.skill, "connections");
+  assert.equal(D.ACQUISITION.doublePaymentAdvantage, true);
+  const keys = D.ACQUISITION.sources.map((s) => s.key);
+  assert.deepEqual(keys, ["lapd", "market"]);
+  assert.deepEqual(D.ACQUISITION.sources.map((s) => s.currency), ["promotionPoints", "chinyenPoints"]);
+  const cat = R.acquirableItems();
+  assert.ok(cat.length > 40, `catalog should span the gear tables (got ${cat.length})`);
+  assert.ok(cat.some((i) => i.cat === "Weapons") && cat.some((i) => i.cat === "Armor")
+    && cat.some((i) => i.cat === "Gear") && cat.some((i) => i.cat === "Augmentations")
+    && cat.some((i) => i.cat === "Vehicles"));
+  assert.equal(R.costOf(3), 3);
+  assert.equal(R.costOf("4–10"), 4);      // ranged costs read as their minimum
+  assert.equal(R.costOf("Special"), null); // Game Runner's call
+});
+
+test("secret replicant option is defined and normalizes [§3.5]", () => {
+  assert.ok(D.SECRET_REPLICANT.note.length > 10);
+  const c = normalizeCharacter({ nature: "human", secretReplicant: true });
+  assert.equal(c.nature, "human");
+  assert.equal(c.secretReplicant, true);
+  // on reveal the derived formulas must swing by exactly +2 / −2
+  const before = { health: maxHealth(c), resolve: maxResolve(c) };
+  const revealed = normalizeCharacter({ ...c, nature: "replicant", secretReplicant: false });
+  assert.equal(maxHealth(revealed), before.health + 2);
+  assert.equal(maxResolve(revealed), Math.max(0, before.resolve - 2));
+});
+
+test("chase data is complete: procedure, maneuvers, 3 D12 obstacle tables [§3.12]", () => {
+  assert.ok(D.CHASE.procedure.length >= 4);
+  assert.ok(D.CHASE.distance && D.CHASE.escape && D.CHASE.caught);
+  const names = D.CHASE.maneuvers.map((m) => m.name);
+  for (const n of ["Pursue / Flee", "Hide", "Block", "Cut Off", "Stand and Shoot"]) assert.ok(names.includes(n), `${n} maneuver`);
+  for (const m of D.CHASE.maneuvers) assert.ok(["both", "prey", "pursuer"].includes(m.who), `${m.name} has a side`);
+  for (const env of ["foot", "ground", "aerial"]) {
+    assert.equal(D.CHASE.obstacles[env].length, 12, `${env} obstacle table is a D12`);
+    for (const o of D.CHASE.obstacles[env]) assert.ok(typeof o === "string" && o.length > 10);
+  }
+});
+
+test("extra-initiative-card effects are machine-readable [§3.12]", () => {
+  const fast = D.SPECIALTIES.find((s) => s.key === "fast_reflexes");
+  assert.equal(fast.effect.extraInitiativeCards, 1);
+  const synaptic = D.AUGMENTATIONS.find((a) => a.key === "synaptic_implants");
+  assert.ok(/initiative card/i.test(synaptic.text), "synaptic implants also grant a card");
+});
+
+test("GM case generator: D3+3 main NPCs [§3.16]", () => {
+  assert.equal(GM.CASE_MAIN_NPC_COUNT.die, 3);
+  assert.equal(GM.CASE_MAIN_NPC_COUNT.bonus, 3);
+  assert.equal(GM.CASE_MAIN_NPCS.length, 8);
+});
+
+test("die sizes are sourced from the data layer, not the UI [§10.2]", () => {
+  assert.deepEqual(D.DIE_SIZES, [6, 8, 10, 12]);
+  assert.deepEqual(D.DIE_SIZES, Object.values(D.LEVEL_DIE).sort((a, b) => a - b));
+});
+
+test("weapon damage is numeric wherever the engine adds successes to it [§3.7]", () => {
+  // the attack maths does weapon.damage + extra successes — a string would concatenate
+  for (const w of [...D.WEAPONS_MELEE, ...D.WEAPONS_RANGED])
+    assert.equal(typeof w.damage, "number", `${w.key} damage must be numeric`);
+  // explosives may carry ranged values, so the engine must treat them as special
+  const charge = D.EXPLOSIVES.find((e) => e.key === "explosive");
+  assert.equal(typeof charge.damage, "string");
+  assert.equal(charge.thrown, false, "the non-numeric charge is never offered in the thrown picker");
 });

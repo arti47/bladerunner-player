@@ -7,10 +7,11 @@ import { el, clear, titleCase, uid } from "./core.js";
 import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
 import { Store, Combat } from "./store.js";
-import { maxHealth } from "./derived.js";
+import { maxHealth, reclampVitals } from "./derived.js";
 import { modal, showToast, confirmModal } from "./ui.js";
 import { Sync } from "./sync.js";
-import { rollCombatAttack, rollCombatSkill } from "./roller.js";
+import { rollCombatAttack, rollCombatSkill, armorForCombatant as armorFor, rollCritOnCombatant } from "./roller.js";
+import { renderChaseCard } from "./chase.js";
 
 const INIT_CARDS = D.INITIATIVE_CARDS; // 10
 
@@ -57,6 +58,7 @@ export function renderCombat(mount) {
   // ---- combatant list -----------------------------------------------------
   if (!state.combatants.length) {
     wrap.append(el("div", { class: "card" }, el("p", { class: "muted" }, "No combatants yet.")));
+    wrap.append(renderChaseCard(() => renderCombat(mount)));
     mount.append(wrap); return;
   }
   const ordered = state.active ? [...state.combatants].sort((a, b) => a.card - b.card) : state.combatants;
@@ -64,12 +66,14 @@ export function renderCombat(mount) {
   const list = el("div", { class: "list" });
   for (const c of ordered) list.append(combatantCard(c, c.id === activeId, commit));
   wrap.append(list);
+  wrap.append(renderChaseCard(() => renderCombat(mount)));
   mount.append(wrap);
 }
 
 function combatantCard(c, isTurn, commit) {
   const broken = c.health <= 0;
   const card = el("div", { class: "card combatant" + (isTurn ? " combatant--turn" : "") + (broken ? " combatant--broken" : "") });
+  const armor = armorFor(c);
   card.append(el("div", { class: "combatant__top" },
     el("span", { class: "combatant__init" + (c.card ? "" : " combatant__init--none"), title: "Initiative card",
       onClick: () => editCard(c, commit) }, c.card ? `#${c.card}` : "—"),
@@ -77,10 +81,27 @@ function combatantCard(c, isTurn, commit) {
     el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${c.name}`, onClick: () => commit((s) => { s.combatants = s.combatants.filter((x) => x.id !== c.id); }) }, "✕")));
   card.append(el("div", { class: "combatant__vitals" },
     el("span", { class: "track__num track__num--health" }, `♥ ${c.health}/${c.maxHealth}`),
+    armor ? el("span", { class: "pip", title: `${armor.name} — roll ${D.ARMOR_DICE}× d${D.LEVEL_DIE[armor.rating]} when hit` }, `🛡 ${armor.rating}`) : null,
     broken ? el("span", { class: "badge badge--danger" }, "Broken") : null,
     el("span", { class: "stepper__ctrl" },
-      el("button", { class: "btn btn--sm", "aria-label": `damage ${c.name}`, onClick: () => commit((s) => adjust(s, c.id, -1)) }, "−"),
+      el("button", { class: "btn btn--sm", "aria-label": `damage ${c.name}`, onClick: () => damageCombatant(c, commit) }, "−"),
       el("button", { class: "btn btn--sm", "aria-label": `heal ${c.name}`, onClick: () => commit((s) => adjust(s, c.id, +1)) }, "+"))));
+  // Conditions (§3.6) — these drive the attack engine's advantage/disadvantage.
+  const chips = el("div", { class: "chips combatant__conds" });
+  for (const cond of D.CONDITIONS) {
+    if (cond.key.startsWith("broken")) continue; // derived from Health
+    const on = !!(c.conditions || {})[cond.key];
+    chips.append(el("button", { class: "chip chip--sm" + (on ? " chip--on" : ""), title: cond.text,
+      onClick: () => commit((s) => {
+        const t = s.combatants.find((x) => x.id === c.id);
+        if (!t) return;
+        t.conditions = { ...(t.conditions || {}) };
+        if (on) delete t.conditions[cond.key]; else t.conditions[cond.key] = true;
+      }) }, cond.name));
+  }
+  card.append(chips);
+  for (const inj of c.criticalInjuries || [])
+    card.append(el("div", { class: "muted sheet__note" }, `☠ ${inj.injury} — ${inj.effect}`));
   card.append(el("div", { class: "rec-actions combatant__actions" },
     el("button", { class: "btn btn--sm btn--roll", onClick: () => rollCombatAttack(c, commit) }, "⚔ Attack"),
     el("button", { class: "btn btn--sm", onClick: () => rollCombatSkill(c, commit) }, "🎲 Skill")));
@@ -90,6 +111,20 @@ function combatantCard(c, isTurn, commit) {
 function adjust(state, id, delta) {
   const c = state.combatants.find((x) => x.id === id);
   if (c) c.health = Math.max(0, Math.min(c.maxHealth, c.health + delta));
+  // keep a PC's own sheet in step with the tracker
+  if (c?.kind === "pc" && c.charId) {
+    const pc = Store.get(c.charId);
+    if (pc) { pc.state.health = c.health; reclampVitals(pc); Store.save(pc); }
+  }
+}
+// Damage taken while already Broken forces an automatic critical injury [§3.7].
+function damageCombatant(c, commit) {
+  const wasBroken = c.health <= 0;
+  commit((s) => adjust(s, c.id, -1));
+  if (wasBroken) {
+    showToast(`${c.name} is Broken — further damage forces a critical injury.`, { kind: "warn" });
+    rollCritOnCombatant(c, commit);
+  }
 }
 function editCard(c, commit) {
   modal({ title: `Initiative — ${c.name}`, render(body, close) {
@@ -101,12 +136,34 @@ function editCard(c, commit) {
   } });
 }
 
+// Does this combatant draw an extra initiative card and choose? (Fast Reflexes
+// specialty, Synaptic Implants augmentation — both carry extraInitiativeCards.)
+function extraCards(c) {
+  if (c.kind !== "pc" || !c.charId) return 0;
+  const pc = Store.get(c.charId);
+  if (!pc) return 0;
+  const owned = (pc.specialties || []).map((s) => (typeof s === "string" ? s : s?.key));
+  let n = D.SPECIALTIES.filter((sp) => owned.includes(sp.key) && sp.effect?.extraInitiativeCards)
+    .reduce((t, sp) => t + sp.effect.extraInitiativeCards, 0);
+  const gearNames = (pc.inventory?.items || []).map((it) => (it.name || "").toLowerCase());
+  for (const aug of D.AUGMENTATIONS)
+    if (/initiative card/i.test(aug.text) && gearNames.some((g) => g.includes(aug.name.toLowerCase()))) n += 1;
+  return n;
+}
 function drawInitiative(state) {
   const deck = Array.from({ length: INIT_CARDS }, (_, i) => i + 1);
   for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
-  state.combatants.forEach((c, idx) => { c.card = deck[idx % INIT_CARDS] ?? idx + 1; });
+  let next = 0;
+  const drawn = [];
+  state.combatants.forEach((c) => {
+    const picks = [deck[next++ % INIT_CARDS]];
+    for (let k = 0; k < extraCards(c); k++) picks.push(deck[next++ % INIT_CARDS]); // draw extra, keep the best (lowest acts first)
+    c.card = Math.min(...picks);
+    if (picks.length > 1) drawn.push(`${c.name}: ${picks.join("/")} → #${c.card}`);
+  });
   state.active = true; state.round = 1; state.turnIndex = 0;
-  showToast("Initiative drawn — act from #1 upward.");
+  showToast(drawn.length ? `Initiative drawn — ${drawn.join("; ")}` : "Initiative drawn — act from #1 upward.",
+    { timeout: drawn.length ? 5000 : 2600 });
 }
 function nextTurn(commit) {
   commit((s) => {

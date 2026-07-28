@@ -109,6 +109,8 @@ export const DISCIPLINARY_ACTIONS = [
 
 // Case Table 3 — Main NPCs. Roll D3+3 NPCs for a case. Each: D8 type, then a D6 on
 // each of occupation / quirk / first name / last name.  [Ch09]
+// A case carries D3+3 main NPCs (roll the count, then roll each one).  [Ch09]
+export const CASE_MAIN_NPC_COUNT = { die: 3, bonus: 3, text: "D3+3 main NPCs (4–6)" };
 export const CASE_MAIN_NPCS = [
   { type: "Corporate",
     occupation: ["Corporate Agent", "Lab Worker", "Administrator", "Manager", "Security Officer", "Liaison Officer"],

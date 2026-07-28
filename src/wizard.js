@@ -17,7 +17,7 @@ function newDraft() {
   const skills = {}; for (const s of D.SKILLS) skills[s.key] = "D";
   return {
     step: 0,
-    nature: null, archetype: null, years: null,
+    nature: null, secretReplicant: false, archetype: null, years: null,
     attributes, skills, specialties: [],
     identity: { name: "", appearance: "", home: "", signatureItem: "", keyMemory: "", keyRelationship: "" },
     memory: { when: null, where: null, who: null, what: null, feel: null },
@@ -90,9 +90,13 @@ function stepNature(body, rerender) {
   body.append(el("p", { class: "muted" }, "Replicants are stronger and tougher (+2 Health) but less stable (−2 Resolve), all rookies, and start with fewer points. Humans are the baseline."));
   for (const key of ["human", "replicant"]) {
     const n = D.NATURES[key];
-    body.append(choice(n.name, key === "replicant" ? "+2 Health, −2 Resolve · +1 STR/AGI increase · always Rookie" : "Baseline capabilities and standing", draft.nature === key, () => { draft.nature = key; if (key === "replicant") draft.years = "rookie"; rerender(); }));
+    const on = draft.nature === key && !draft.secretReplicant;
+    body.append(choice(n.name, key === "replicant" ? "+2 Health, −2 Resolve · +1 STR/AGI increase · always Rookie" : "Baseline capabilities and standing", on, () => { draft.nature = key; draft.secretReplicant = false; if (key === "replicant") draft.years = "rookie"; rerender(); }));
   }
-  body.append(rollBtn("Roll (D6)", () => { const r = rollDie(6); draft.nature = R.lookupRange(D.NATURE_TABLE, r).nature; if (draft.nature === "replicant") draft.years = "rookie"; showToast(`D6=${r} → ${titleCase(draft.nature)}`); rerender(); }));
+  // Secret Replicant  [§3.5] — built and played as a human until the reveal.
+  body.append(choice("Secret Replicant", "Build as a human; the sheet carries a reveal button that applies the Replicant rules later.",
+    !!draft.secretReplicant, () => { draft.nature = "human"; draft.secretReplicant = true; rerender(); }, D.SECRET_REPLICANT.note));
+  body.append(rollBtn("Roll (D6)", () => { const r = rollDie(6); draft.nature = R.lookupRange(D.NATURE_TABLE, r).nature; draft.secretReplicant = false; if (draft.nature === "replicant") draft.years = "rookie"; showToast(`D6=${r} → ${titleCase(draft.nature)}`); rerender(); }));
 }
 
 // ---- Step 2: Archetype ----------------------------------------------------
@@ -262,7 +266,7 @@ function finish() {
 
   const character = normalizeCharacter({
     name: draft.identity.name || "Unnamed Blade Runner",
-    nature: draft.nature, archetype: draft.archetype, years: draft.years,
+    nature: draft.nature, secretReplicant: !!draft.secretReplicant, archetype: draft.archetype, years: draft.years,
     attributes: draft.attributes, skills: draft.skills, specialties: draft.specialties.slice(),
     identity: { ...draft.identity },
     inventory: { items },

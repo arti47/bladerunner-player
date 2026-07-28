@@ -27,7 +27,7 @@ export function countSpecialty(character, key) {
 // ---- Normalization / migration --------------------------------------------
 // Never crash on old/partial data — back-fill defaults. Bump SCHEMA_VERSION and
 // add a migration branch whenever the schema grows (CLAUDE.md §7).
-export const SCHEMA_VERSION = 3; // v3: per-character journal[] (roll log is a separate global store)
+export const SCHEMA_VERSION = 4; // v4: secretReplicant flag (§3.5 Secret Replicant option)
 
 export function normalizeCharacter(c = {}) {
   const attributes = { STR: "C", AGI: "C", INT: "C", EMP: "C", ...(c.attributes || {}) };
@@ -38,6 +38,7 @@ export function normalizeCharacter(c = {}) {
     id: c.id || undefined,
     name: c.name || "Unnamed Blade Runner",
     nature: c.nature === "replicant" ? "replicant" : "human",
+    secretReplicant: !!c.secretReplicant,   // v4: built human, secretly a Replicant (§3.5)
     archetype: c.archetype || null,
     years: c.years || "rookie",
     attributes,

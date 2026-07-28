@@ -129,6 +129,39 @@ function buildRulesIndex() {
   for (const g of D.AUGMENTATIONS) idx.push({ cat: "Augmentations", name: g.name, desc: `${g.text} · ${g.avail} (cost ${g.cost})`, text: `${g.name} ${g.text} implant augmentation` });
   for (const a of D.ARCHETYPES) idx.push({ cat: "Archetypes", name: a.name, desc: `Key ${attrName(a.keyAttr)} · ${a.keySkills.map((k) => D.SKILLS.find((s) => s.key === k)?.name).join(", ")} · Chinyen D${a.chinyenDie} · ${natLabel(a.nature)}`, text: `${a.name} archetype ${a.blurb}` });
   for (const n of NPCS) idx.push({ cat: "NPCs", name: n.name, desc: `STR ${n.attrs.STR} AGI ${n.attrs.AGI} INT ${n.attrs.INT} EMP ${n.attrs.EMP} · Health ${n.health} · ${n.gear.join(", ") || "—"}`, text: `${n.name} npc` });
+  // Combat & movement reference
+  for (const r of D.RANGES) idx.push({ cat: "Combat", name: `Range: ${r.name}`, desc: r.desc, text: `${r.name} range zone distance` });
+  for (const a of D.COMBAT_ACTIONS) idx.push({ cat: "Combat", name: a.action, desc: `Requires ${a.prereq}${a.skill ? ` · rolls ${D.SKILLS.find((s) => s.key === a.skill)?.name}` : " · no roll"}`, text: `${a.action} combat action ${a.prereq}` });
+  idx.push({ cat: "Combat", name: "Initiative", desc: `Draw once from ${D.INITIATIVE_CARDS} cards; act low→high; the order holds for the whole fight.`, text: "initiative cards order surprise ambush" });
+  idx.push({ cat: "Combat", name: "Armor", desc: `When hit, roll ${D.ARMOR_DICE} dice of the armor's rating; each success stops ${D.ARMOR_DAMAGE_PER_SUCCESS} damage. Stop it all and the critical injury is negated too. One suit only.`, text: "armor rating damage reduction protection" });
+  // Chases
+  D.CHASE.procedure.forEach((p, i) => idx.push({ cat: "Chases", name: `Procedure ${i + 1}`, desc: p, text: `chase procedure ${p}` }));
+  for (const m of D.CHASE.maneuvers) idx.push({ cat: "Chases", name: `Maneuver: ${m.name}`, desc: `${m.who === "both" ? "Either side" : m.who === "prey" ? "Prey only" : "Pursuer only"}${m.skill ? ` · ${D.SKILLS.find((s) => s.key === m.skill)?.name}` : ""}${m.vehicleSkill ? ` (vehicles: ${D.SKILLS.find((s) => s.key === m.vehicleSkill)?.name})` : ""} — ${m.text}`, text: `chase maneuver ${m.name} ${m.text}` });
+  idx.push({ cat: "Chases", name: "Distance & outcome", desc: `${D.CHASE.distance} Caught: ${D.CHASE.caught} Escape: ${D.CHASE.escape}`, text: "chase distance escape caught range" });
+  for (const [env, list] of Object.entries(D.CHASE.obstacles))
+    list.forEach((o, i) => idx.push({ cat: "Chases", name: `${titleCase(env)} obstacle ${i + 1}`, desc: o, text: `chase obstacle ${env} ${o}` }));
+  // Vehicles
+  for (const v of D.VEHICLES) idx.push({ cat: "Vehicles", name: v.name, desc: `Maneuverability ${v.maneuverability} · Hull ${v.hull}${v.armor ? ` · Armor ${v.armor}` : ""} · ${v.passengers} seats · ${v.avail} (cost ${v.cost})${v.note ? ` — ${v.note}` : ""}`, text: `${v.name} vehicle spinner car` });
+  for (const w of D.VEHICLE_WEAPONS) idx.push({ cat: "Vehicles", name: w.name, desc: `${w.damage != null ? `Damage ${w.damage}` : "Special"}${w.critDie ? ` · Crit D${w.critDie}` : ""}${w.minRange ? ` · ${titleCase(w.minRange)}–${titleCase(w.maxRange)}` : ""}${w.fullAuto ? " · full auto" : ""}${w.note ? ` — ${w.note}` : ""}`, text: `${w.name} vehicle weapon` });
+  // Health, stress & recovery
+  for (const t of ["crushing", "piercing"])
+    for (const e of (t === "crushing" ? D.CRIT_CRUSHING : D.CRIT_PIERCING))
+      idx.push({ cat: "Critical Injuries", name: `${titleCase(t)} ${e.roll}: ${e.injury}`, desc: `${e.effect} · heals ${e.healing}${e.instantKill ? " · INSTANT KILL" : e.lethal ? ` · lethal (${e.deathSave} death save)` : ""}`, text: `${e.injury} critical injury ${t}` });
+  for (const s of D.STRESS_FACTORS) idx.push({ cat: "Stress", name: `Stress +${s.factor}`, desc: s.text, text: `stress factor ${s.text}` });
+  for (const t of ["human", "replicant"])
+    for (const e of (t === "human" ? D.CRITICAL_STRESS_HUMAN : D.CRITICAL_STRESS_REPLICANT))
+      idx.push({ cat: "Stress", name: `${titleCase(t)} ${e.roll}: ${e.name}`, desc: e.text, text: `critical stress ${e.name} ${t}` });
+  idx.push({ cat: "Recovery", name: "Downtime Shift", desc: `Humans heal ${D.RECOVERY.downtimeHealthPerShift.human} Health, Replicants ${D.RECOVERY.downtimeHealthPerShift.replicant}, plus ${D.RECOVERY.medicalCareBonusHealth} more with medical care; Resolve heals the same Shift.`, text: "downtime recovery heal rest shift" });
+  idx.push({ cat: "Recovery", name: "Pace of the job", desc: `After ${D.RECOVERY.downtimeShiftsBeforeStress} investigation Shifts without Downtime you start taking stress (4 with Married to the Job).`, text: "downtime cadence shifts stress pace" });
+  idx.push({ cat: "Recovery", name: "First Aid", desc: "MEDICAL AID on a Broken character heals Health equal to your successes; Glue gives advantage. Alone, a Broken character regains 1 Health per Shift.", text: "first aid broken medical revive" });
+  // Advancement & the job
+  for (const y of D.YEARS_ON_FORCE) idx.push({ cat: "Years on the Force", name: `${y.name} (${y.years} yrs)`, desc: `+${y.attrIncreases} attribute · +${y.skillIncreases} skill · ${y.specialties} specialties · Promotion D${y.startingPromotionDie} · Chinyen ${y.chinyenMod >= 0 ? "+" : ""}${y.chinyenMod}`, text: `${y.name} years on the force experience` });
+  idx.push({ cat: "Advancement", name: "Learn a specialty", desc: `${D.SPECIALTY_LEARN_COST_PP} Promotion Points and one Shift at the Training Grounds (Downtime).`, text: "specialty cost promotion points training" });
+  idx.push({ cat: "Advancement", name: "Raise a skill", desc: `${Object.entries(D.SKILL_INCREASE_COST_HP).map(([lv, c]) => `${lv}→next ${c}`).join(" · ")} Humanity Points. Downtime only; attributes never rise.`, text: "skill increase humanity cost advancement" });
+  idx.push({ cat: "Advancement", name: "Humanity Points", desc: `Always earned for: ${D.HUMANITY_ALWAYS_TRIGGERS.join(" ")}`, text: "humanity points compassion key memory relationship" });
+  idx.push({ cat: "Advancement", name: "Baseline Test", desc: `${D.SKILLS.find((s) => s.key === D.BASELINE_TEST.skill).name} roll. Pass: ${D.BASELINE_TEST.onSuccess} Fail: ${D.BASELINE_TEST.onFail} ${D.BASELINE_TEST.note}`, text: "baseline test replicant insight" });
+  idx.push({ cat: "Advancement", name: "Acquiring gear", desc: `Pay the Cost in Promotion Points (LAPD) or Chinyen Points (black market), then roll ${D.SKILLS.find((s) => s.key === D.ACQUISITION.skill).name}. Paying double gives advantage. ${D.ACQUISITION.failureNote}`, text: "acquire gear connections availability cost requisition" });
+  for (const t of D.AVAILABILITY) idx.push({ cat: "Advancement", name: `Availability: ${t}`, desc: "Cost is paid in Promotion Points or Chinyen Points.", text: `availability ${t}` });
   return idx;
 }
 const attrName = (k) => (k === "MANEUVER" ? "Maneuverability" : D.ATTRIBUTES.find((a) => a.key === k)?.name || k);
@@ -200,9 +233,12 @@ function accountSection() {
   }
   return card;
 }
+let partyOff = null;   // one live party listener at a time (re-rendering Settings must not stack them)
 function partyList() {
   const wrap = el("div", { class: "party" });
-  Sync.onParty((members) => {
+  if (partyOff) { partyOff(); partyOff = null; }
+  partyOff = Sync.onParty((members) => {
+    if (!wrap.isConnected) { partyOff?.(); partyOff = null; return; }
     clear(wrap);
     if (!members.length) { wrap.append(el("span", { class: "muted" }, "No members yet.")); return; }
     for (const m of members) wrap.append(el("span", { class: "pip" }, `${m.displayName || "Blade Runner"}${m.role === "gm" ? " · GM" : ""}`));

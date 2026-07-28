@@ -42,6 +42,32 @@ export function lookupRange(table, roll) {
   });
 }
 
+// ---- Acquiring gear  [Ch08 / §3.11] ---------------------------------------
+// Everything with an Availability tier and a Cost can be requisitioned (LAPD,
+// Promotion Points) or bought (black market, Chinyen Points).
+export function acquirableItems() {
+  const out = [];
+  const add = (cat, list, extra = () => ({})) => {
+    for (const it of list) {
+      if (!it.avail || it.avail === "—") continue;
+      out.push({ key: it.key, name: it.name, cat, avail: it.avail, cost: it.cost, ...extra(it) });
+    }
+  };
+  add("Weapons", [...D.WEAPONS_MELEE, ...D.WEAPONS_RANGED, ...D.EXPLOSIVES]);
+  add("Armor", D.ARMOR);
+  add("Gear", D.GEAR);
+  add("Augmentations", D.AUGMENTATIONS);
+  add("Vehicles", D.VEHICLES);
+  return out;
+}
+// Costs are usually numbers; a few read "4–10" or "Special". Returns the number
+// or null when the table leaves it to the Game Runner.
+export function costOf(cost) {
+  if (typeof cost === "number") return cost;
+  const m = String(cost ?? "").match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
 // HP cost to raise a skill from its current level (null if already A).
 export function skillIncreaseCost(currentLevel) {
   return D.SKILL_INCREASE_COST_HP[currentLevel] ?? null;

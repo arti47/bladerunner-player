@@ -9,8 +9,8 @@ import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStres
 import { Store, RollLog } from "./store.js";
 import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard } from "./ui.js";
 import { navigate } from "./router.js";
-import { openSkillRoll, openWeaponPicker, proceduralRoll } from "./roller.js";
-import { Sync, watchCharacter } from "./sync.js";
+import { openSkillRoll, openWeaponPicker, proceduralRoll, openOpposedSkillRoll } from "./roller.js";
+import { Sync, watchCharacter, uploadPortrait } from "./sync.js";
 
 // Watch the active character for remote (party/GM) edits while it's on-screen.
 let charWatch = { id: null, off: null };
@@ -83,9 +83,19 @@ function sheetHeader(ch, arch, y, commit) {
   const fileInput = el("input", { type: "file", accept: "image/*", class: "visually-hidden", id: "portrait-file" });
   fileInput.addEventListener("change", () => {
     const f = fileInput.files?.[0];
-    if (f) compressImage(f, 400, (dataUrl) => commit((c) => { c.identity.portraitUrl = dataUrl; }));
+    if (!f) return;
+    compressImage(f, 400, async (dataUrl) => {
+      // Shared characters put the portrait in Storage and mirror only the URL —
+      // a base64 image in the character node would be re-sent on every save.
+      let url = dataUrl;
+      if (Sync.ready && Sync.inCampaign && ch.campaignId === Sync.campaignId) {
+        const hosted = await uploadPortrait(ch.id, dataUrl).catch(() => null);
+        if (hosted) url = hosted;
+      }
+      commit((c) => { c.identity.portraitUrl = url; });
+    });
   });
-  return el("div", { class: "card sheet__head" },
+  const head = el("div", { class: "card sheet__head" },
     el("label", { class: "sheet__portrait-wrap", for: "portrait-file", title: "Change portrait" }, portrait, fileInput),
     el("div", { class: "sheet__id" },
       el("div", { class: "card__title" }, ch.name),
@@ -93,6 +103,17 @@ function sheetHeader(ch, arch, y, commit) {
       ch.identity.portraitUrl
         ? el("button", { class: "btn btn--sm btn--ghost", onClick: () => commit((c) => { c.identity.portraitUrl = ""; }) }, "Remove portrait")
         : null));
+  // Secret Replicant (§3.5): the reveal switches on the full Replicant rules.
+  if (ch.secretReplicant && ch.nature !== "replicant") {
+    head.append(el("div", { class: "sheet__secret" },
+      el("div", { class: "muted sheet__note" }, `Secret Replicant — ${D.SECRET_REPLICANT.note}`),
+      el("button", { class: "btn btn--sm btn--danger", onClick: async () => {
+        if (!(await confirmModal("Reveal that this Blade Runner is a Replicant? Max Health +2, max Resolve −2, and every push costs stress from now on.", { title: "Reveal Replicant", okLabel: "Reveal", danger: true }))) return;
+        commit((c) => { c.nature = "replicant"; c.secretReplicant = false; (c.advancementLog ||= []).push("Revealed as a Replicant (+2 max Health, −2 max Resolve)."); });
+        showToast("Revealed — Replicant rules now apply.", { kind: "warn", timeout: 4500 });
+      } }, "Reveal Replicant identity")));
+  }
+  return head;
 }
 
 // ---- Vitals (Health / Resolve) --------------------------------------------
@@ -186,7 +207,10 @@ function skillsSection(ch, arch, rerender) {
       el("span", { class: "skill__lv" }, `${lv} · d${D.LEVEL_DIE[lv]}`, el("span", { class: "skill__die-cta muted" }, " ⚄"))));
   }
   return el("div", { class: "card" }, sectionTitle("Skills"),
-    el("p", { class: "muted sheet__note" }, "Tap a skill to roll its Base Dice."), list);
+    el("p", { class: "muted sheet__note" }, "Tap a skill to roll its Base Dice."), list,
+    el("div", { class: "inv__actions" },
+      el("button", { class: "btn btn--sm btn--roll", onClick: () => openOpposedSkillRoll(ch, rerender) }, "⚖ Opposed roll"),
+      el("span", { class: "muted sheet__note" }, "Stealth vs Observation, Manipulation vs Insight, Interrogation vs Stamina, the Voight-Kampff test — only the initiator may push.")));
 }
 
 // ---- Specialties ----------------------------------------------------------
@@ -216,8 +240,96 @@ function inventorySection(ch, commit, rerender) {
     const name = await promptModal("Item name", { title: "Add item", okLabel: "Add" });
     if (name && name.trim()) commit((c) => { c.inventory.items.push({ name: name.trim(), equipped: false }); });
   } }, "＋ Add item");
+  const acquire = el("button", { class: "btn btn--sm", onClick: () => acquireGear(ch, commit, rerender) }, "⚖ Acquire gear");
   const attack = el("button", { class: "btn btn--sm btn--roll", onClick: () => openWeaponPicker(ch, rerender) }, "⚔ Roll an attack");
-  return el("div", { class: "card" }, sectionTitle("Inventory"), list, el("div", { class: "inv__actions" }, add, attack));
+  const armor = equippedArmor(ch);
+  const card = el("div", { class: "card" }, sectionTitle("Inventory"), list);
+  if (armor)
+    card.append(el("div", { class: "muted sheet__note" },
+      `Armor: ${armor.name} (${armor.rating}) — when hit, roll ${D.ARMOR_DICE}× d${D.LEVEL_DIE[armor.rating]}; each success stops 1 damage, and stopping it all negates the critical injury.` +
+      (armor.disadvantage?.length ? ` Disadvantage to ${armor.disadvantage.map(R.skillName).join(", ")}.` : "")));
+  card.append(el("div", { class: "inv__actions" }, add, acquire, attack));
+  return card;
+}
+// The one suit that counts — best-rated equipped armor  [§3.7].
+function equippedArmor(ch) {
+  const worn = (ch.inventory.items || []).filter((it) => it.equipped)
+    .map((it) => D.ARMOR.find((a) => a.key === it.key || a.name.toLowerCase() === (it.name || "").toLowerCase()))
+    .filter((a) => a && a.rating);
+  return worn.sort((x, y) => D.LEVELS.indexOf(x.rating) - D.LEVELS.indexOf(y.rating))[0] || null;
+}
+
+// ---- Acquiring gear (§3.11) ------------------------------------------------
+// Pay the Cost in Promotion Points (LAPD) or Chinyen Points (black market), then
+// roll CONNECTIONS. Double payment = advantage. A failed roll costs the Shift,
+// not the points.
+function acquireGear(ch, commit, rerender) {
+  const catalog = R.acquirableItems();
+  modal({ title: "Acquire gear", render(body, close) {
+    body.append(el("p", { class: "muted" }, `Promotion ${ch.state.promotionPoints} · Chinyen ${ch.state.chinyenPoints}. Cost is paid in points, then you roll ${R.skillName(D.ACQUISITION.skill)}.`));
+    const cats = [...new Set(catalog.map((i) => i.cat))];
+    for (const cat of cats) {
+      const group = el("details", { class: "rules__group" }, el("summary", {}, cat));
+      for (const item of catalog.filter((i) => i.cat === cat)) {
+        group.append(el("button", { class: "list__row", onClick: () => { close(); chooseSource(ch, item, commit, rerender); } },
+          el("span", { class: "list__main" }, item.name),
+          el("span", { class: "list__sub muted" }, `${item.avail} · cost ${item.cost}`)));
+      }
+      body.append(group);
+    }
+    body.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
+  } });
+}
+function chooseSource(ch, item, commit, rerender) {
+  const st = { source: D.ACQUISITION.sources[0].key, double: false, cost: R.costOf(item.cost) ?? 1 };
+  modal({ title: `Acquire — ${item.name}`, render(body, close) {
+    const paint = () => { body.replaceChildren(); view(body); };
+    const view = (b) => {
+      b.append(el("p", { class: "muted" }, `${item.avail} · listed cost ${item.cost}${R.costOf(item.cost) === null ? " (Game Runner's call — set it below)" : ""}`));
+      b.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Where from"),
+        el("div", { class: "chips" }, ...D.ACQUISITION.sources.map((s) =>
+          el("button", { class: "chip" + (st.source === s.key ? " chip--on" : ""), onClick: () => { st.source = s.key; paint(); } }, s.name)))));
+      const src = D.ACQUISITION.sources.find((s) => s.key === st.source);
+      const pay = st.cost * (st.double ? 2 : 1);
+      const have = ch.state[src.currency] || 0;
+      b.append(el("div", { class: "stepper" },
+        el("span", { class: "stepper__label" }, "Cost"),
+        el("span", { class: "stepper__ctrl" },
+          el("button", { class: "btn btn--sm", "aria-label": "decrease cost", onClick: () => { st.cost = Math.max(0, st.cost - 1); paint(); } }, "−"),
+          el("span", { class: "stepper__val" }, st.cost),
+          el("button", { class: "btn btn--sm", "aria-label": "increase cost", onClick: () => { st.cost++; paint(); } }, "+"))));
+      b.append(el("label", { class: "picker__row" },
+        (() => { const i = el("input", { type: "checkbox", checked: st.double || null }); i.addEventListener("change", () => { st.double = !st.double; paint(); }); return i; })(),
+        el("span", {}, el("strong", {}, "Pay double"), " — ", el("span", { class: "muted" }, "advantage on the roll"))));
+      b.append(el("div", { class: "net-badge" + (have >= pay ? "" : " net-badge--dis") }, `Pays ${pay} ${src.symbol} — you have ${have}`));
+      b.append(el("div", { class: "muted sheet__note" }, D.ACQUISITION.failureNote));
+      b.append(el("div", { class: "modal__actions" },
+        el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
+        el("button", { class: "btn btn--primary", disabled: have < pay || null, onClick: () => {
+          close();
+          proceduralRoll(ch, {
+            skillKey: D.ACQUISITION.skill, title: `${item.name} — ${src.name}`,
+            adv: st.double && D.ACQUISITION.doublePaymentAdvantage ? 1 : 0,
+            note: `${pay} ${src.symbol} on the table.`,
+            onResult: ({ successes }) => {
+              if (successes >= 1) {
+                commit((c) => {
+                  c.state[src.currency] = Math.max(0, (c.state[src.currency] || 0) - pay);
+                  c.inventory.items.push({ key: item.key, name: item.name, equipped: false });
+                  (c.advancementLog ||= []).push(`Acquired ${item.name} (−${pay} ${src.symbol}).`);
+                });
+                showToast(`Acquired ${item.name} for ${pay} ${src.symbol}.`);
+              } else {
+                commit((c) => { c.state.shiftsSinceDowntime = (c.state.shiftsSinceDowntime || 0) + 1; });
+                showToast(D.ACQUISITION.failureNote, { kind: "warn", timeout: 4000 });
+              }
+              rerender();
+            },
+          });
+        } }, "⚄ Roll Connections")));
+    };
+    paint();
+  } });
 }
 
 // ---- Identity / flavor / notes --------------------------------------------
@@ -320,7 +432,7 @@ function takeCritinjury(ch, commit, rerender) {
           el("div", { class: "chips" }, ...["piercing", "crushing"].map((t) =>
             el("button", { class: "chip" + (st.type === t ? " chip--on" : ""), onClick: () => { st.type = t; paint(); } }, titleCase(t))))));
         b.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Crit Die"),
-          el("div", { class: "chips" }, ...[6, 8, 10, 12].map((d) =>
+          el("div", { class: "chips" }, ...D.DIE_SIZES.map((d) =>
             el("button", { class: "chip" + (st.die === d ? " chip--on" : ""), onClick: () => { st.die = d; paint(); } }, `d${d}`)))));
         b.append(el("div", { class: "modal__actions" },
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
@@ -404,13 +516,17 @@ function downtimeShift(ch, commit, care) {
   showToast(`Downtime Shift: +${D.RECOVERY.downtimeHealthPerShift[ch.nature] + (care ? 1 : 0)} Health, +1 Resolve.`);
 }
 function investigationShift(ch, commit) {
+  const wasBroken = isBrokenByDamage(ch);
   commit((c) => {
     c.state.shiftsSinceDowntime = (c.state.shiftsSinceDowntime || 0) + 1;
     c.state.shiftUses = {};
     if (c.state.shiftsSinceDowntime > downtimeLimit(c)) { c.state.resolve = Math.max(0, c.state.resolve - 1); }
+    // Left alone, a Broken character comes round on their own after a Shift. [§3.8]
+    if (wasBroken) c.state.health = Math.min(maxHealth(c), c.state.health + D.RECOVERY.brokenAloneHealPerShift);
   });
   const over = (ch.state.shiftsSinceDowntime || 0) + 1 > downtimeLimit(ch);
-  showToast(over ? "Investigation Shift — over the limit: +1 stress." : "Investigation Shift logged.");
+  showToast([over ? "Investigation Shift — over the limit: +1 stress." : "Investigation Shift logged.",
+    wasBroken ? `Broken and alone: +${D.RECOVERY.brokenAloneHealPerShift} Health.` : ""].filter(Boolean).join(" "));
 }
 function firstAid(ch, commit, rerender) {
   const advGlue = itemsInclude(ch, ["glue"]) ? 1 : 0;

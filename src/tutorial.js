@@ -113,6 +113,12 @@ function panelTable(host) {
       ["4. End it", "End Combat clears the tracker. Wounds, criticals, and stress stay on the sheets — recovery happens in Downtime."],
     ], [["Combat Tracker", () => navigate("combat")]]),
 
+    steps("4 · When they run", "Chases have their own procedure, and the tracker runs it.", [
+      ["Open the chase card", "It sits under the combatants on the Combat screen. Pick the environment and the starting distance."],
+      ["Each round", "Both sides choose a maneuver, then reveal an obstacle — the app rolls it off the right D12 table."],
+      ["Resolve", "Move the distance marker. Reaching Engaged means caught; going past Extreme means they are away."],
+    ], [["Combat Tracker", () => navigate("combat")]]),
+
     steps("Between sessions", null, [
       ["Downtime", "Each player takes a Downtime Shift on their sheet: Health and Resolve come back, and once-per-Shift specialties reset."],
       ["Advancement", `Specialties cost ${D.SPECIALTY_LEARN_COST_PP} Promotion Points. Raising a skill costs Humanity — ${Object.entries(D.SKILL_INCREASE_COST_HP).map(([lv, c]) => `${lv}→ ${c}`).join(", ")}. Attributes never rise.`],
@@ -141,6 +147,15 @@ function panelReference(host) {
       ["Turn", "One action, one move, plus free actions."],
       ["Ranges", D.RANGES.map((r) => r.name).join(" → ")],
       ["Close combat", "Opposed roll — the winner hits, ties miss, and only the attacker may push."],
+      ["Armor", `When you are hit, roll ${D.ARMOR_DICE} dice of your armor's rating; each success stops ${D.ARMOR_DAMAGE_PER_SUCCESS} damage, and stopping all of it also stops the critical injury. Only one suit counts.`],
+      ["Criticals", "Two successes over the target rolls the weapon's Crit Die on the Crushing or Piercing table; extra successes roll extra dice and you choose."],
+    ]),
+    facts("Chases", [
+      ["How it runs", "No map: both sides pick a maneuver in secret, the Game Runner reveals an obstacle, then they resolve — prey first, pursuer last."],
+      ["Distance", D.CHASE.distance],
+      ["Caught", D.CHASE.caught],
+      ["Away", D.CHASE.escape],
+      ["Maneuvers", D.CHASE.maneuvers.map((m) => m.name).join(" · ")],
     ]),
     facts("Recovery", [
       ["Downtime Shift", `+${D.RECOVERY.downtimeHealthPerShift.human} Health for humans, +${D.RECOVERY.downtimeHealthPerShift.replicant} for Replicants, +${D.RECOVERY.medicalCareBonusHealth} more with medical care.`],
@@ -150,7 +165,7 @@ function panelReference(host) {
     facts("Spending points", [
       ["Specialty", `${D.SPECIALTY_LEARN_COST_PP} Promotion Points, one Shift at the Training Grounds.`],
       ["Skill", Object.entries(D.SKILL_INCREASE_COST_HP).map(([lv, c]) => `${lv} → next: ${c} Humanity`).join(" · ") + ". Downtime only."],
-      ["Gear", "Promotion Points buy from the LAPD, Chinyen Points buy on the street — each needs a Connections roll."],
+      ["Gear", `Promotion Points requisition from the LAPD, Chinyen Points buy on the street — each needs a ${D.SKILLS.find((x) => x.key === D.ACQUISITION.skill).name} roll, and paying double gives advantage. ${D.ACQUISITION.failureNote}`],
     ]),
     facts("Conditions", D.CONDITIONS.map((c) => [c.name, c.text])),
   );
