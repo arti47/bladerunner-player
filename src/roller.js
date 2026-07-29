@@ -8,10 +8,12 @@
 import { el, rollDie, successesFor, titleCase, outcomeSummary } from "./core.js";
 import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
+import { CRITICAL_SUCCESS } from "../data-solo.js";
 import * as R from "./rules.js";
 import { Store, Combat, RollLog } from "./store.js";
 import { modal, showToast } from "./ui.js";
 import { reclampVitals, isBrokenByDamage } from "./derived.js";
+import { Settings } from "./settings.js";
 
 const dsize = (lvl) => D.LEVEL_DIE[lvl];
 const MANEUVER_DEFAULT = "C"; // no vehicle context: default Maneuverability for Driving
@@ -194,6 +196,7 @@ export function openSkillRoll(ch, skillKey, onDone) {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
         b.append(diceRow(st.dice));
         b.append(outcomeLine(succ, banes));
+        b.append(nextSteps(ch, sk, succ, (node) => b.insertBefore(node, b.lastChild)));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
         if (!st.pushed && pushable(st.dice) && !stressBlocksPush(ch)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
@@ -290,6 +293,32 @@ function levelPicker(label, value, onPick) {
   return el("div", { class: "field" }, el("label", { class: "field__label" }, label),
     el("div", { class: "chips" }, ...D.LEVELS.map((lv) =>
       el("button", { class: "chip" + (value === lv ? " chip--on" : ""), onClick: () => onPick(lv) }, `${lv} · d${dsize(lv)}`))));
+}
+
+// What to do with the roll you just made. One success means the action succeeds;
+// extras buy a better outcome (the book mechanises them only for attacks, first
+// aid and sprinting — otherwise they are yours to spend in the fiction). A
+// critical outside combat can be cashed in on the Solo Mode table, so that roll
+// is offered right here rather than sending you to another screen.
+function nextSteps(ch, sk, succ, addResult) {
+  if (succ < 1) return el("div", { class: "roll-next muted" },
+    "Failed — push it (each 1 left in the pool costs you), or take the failure and let it cost you something in the fiction.");
+  const box = el("div", { class: "roll-next" });
+  const extra = succ - 1;
+  box.append(el("p", { class: "muted" }, extra
+    ? `You succeed, with ${extra} extra success${extra === 1 ? "" : "es"} to spend — faster, quieter, more detail, one more question answered. (Attacks: +1 damage each. First aid: heals per success.)`
+    : "You succeed. One success is enough — no extras to spend."));
+  if (succ >= 2 && Settings.solo()) {
+    box.append(el("button", { class: "btn btn--sm btn--roll", onClick: () => {
+      const roll = rollDie(CRITICAL_SUCCESS.length);
+      const res = CRITICAL_SUCCESS[roll - 1];
+      logRoll({ label: `Crit Success — ${sk.name}`, text: `D${CRITICAL_SUCCESS.length}=${roll} · ${res.name}`, charId: ch.id, charName: ch.name, source: "sheet" });
+      addResult(el("div", { class: "roll-next__crit" },
+        el("strong", {}, res.name), el("p", {}, res.text),
+        el("div", { class: "roll-eyebrow" }, "Bonus"), el("p", { class: "muted" }, res.bonus)));
+    } }, "🎲 Crit Success (D8)"));
+  }
+  return box;
 }
 
 // ---- procedural roll (death save, stabilize, first aid, baseline) ---------
@@ -700,6 +729,7 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
         b.append(diceRow(st.dice));
         b.append(outcomeLine(succ, banes));
+        b.append(nextSteps(ch, sk, succ, (node) => b.insertBefore(node, b.lastChild)));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
         if (!st.pushed && canPush(rc) && pushable(st.dice)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {

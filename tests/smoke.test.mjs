@@ -1266,3 +1266,54 @@ test("sheet and combat rolls land in the solo Case Notes when Solo is on", async
   const off = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad || "");
   assert.equal(off.trim(), "", "Solo off = no case-note writes");
 });
+
+// Panels have to teach their own use: every roll card carries a collapsed "How
+// to use this" note, and a finished roll says what to do next.
+test("cards explain when to press them, and a roll says what comes next", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "scene", log: [], scratchpad: "", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {} }));
+  });
+  await page.goto(`${base}/index.html?how#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const cards = await page.$$eval(".panel .card", (els) => els.map((c) => ({
+    title: c.querySelector(".sheet__section")?.textContent,
+    lines: c.querySelectorAll(".how__line").length,
+  })));
+  assert.ok(cards.length >= 4, "the Scene panel has its cards");
+  for (const c of cards) assert.ok(c.lines > 0, `"${c.title}" has no How-to-use guidance`);
+
+  // GM cards too
+  await page.evaluate(() => localStorage.setItem("brp:gm", JSON.stringify({ panel: "prep", log: [], scratchpad: "" })));
+  await page.goto(`${base}/index.html?how2#gm`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const gmCards = await page.$$eval(".panel .card", (els) => els.map((c) => c.querySelectorAll(".how__line").length));
+  assert.ok(gmCards.every((n) => n > 0), "every GM Prep card explains itself");
+
+  // A successful roll on the sheet says what the extra successes buy, and a
+  // critical offers the Solo crit table without leaving the sheet.
+  await page.goto(`${base}/index.html?how3#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: /Firearms/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.waitForTimeout(250);
+  const next = await page.$eval(".roll-next", (n) => n.textContent);
+  assert.match(next, /You succeed/, next.slice(0, 120));
+  await page.click(".roll-next .btn");
+  await page.waitForTimeout(250);
+  assert.ok((await page.$(".roll-next__crit")) !== null, "the crit-success result renders in the roll");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+
+  // A failed roll points at the push instead
+  await page.evaluate(() => { Math.random = () => 0; });
+  await page.getByRole("button", { name: /Stamina/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.waitForTimeout(250);
+  assert.match(await page.$eval(".roll-next", (n) => n.textContent), /Failed/);
+  await page.keyboard.press("Escape");
+});

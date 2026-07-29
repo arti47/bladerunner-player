@@ -55,6 +55,42 @@ const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__sec
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const archName = (c) => (c.archetype ? (archetype(c.archetype)?.name || c.archetype) : "No archetype");
 
+// ---- "How to use this" — per-card guidance ---------------------------------
+// Keyed by card title: [what you press, when you press it].
+const HOW = {
+  "Build the case": [
+    ["🎲 Theme first", "— it selects the Assignment table. Then Sector and Twist for the shape of the case."],
+    ["⚡ Full Case Briefing", "rolls all four at once and writes them to your notes. Use it when prepping from scratch."],
+  ],
+  "Main NPC Generator": [
+    ["⚡ Full cast", "before the session — it rolls how many main NPCs the case carries, then each one."],
+    ["🎲 Main NPC", "mid-session, when the players talk to someone you never wrote."],
+  ],
+  "Clues & the finale": [
+    ["🎲 Clue", "while prepping: what the players can actually find at each location."],
+    ["🎲 Final Confrontation", "for where and in what conditions the case ends."],
+  ],
+  "Live Party Panel": [
+    ["Use during play", "to hand out damage and stress, set conditions, and award points as they earn them."],
+    ["Everything here writes", "to the player's own sheet — and syncs to their device if you share a campaign."],
+  ],
+  "Scene dressing": [
+    ["🎲 Location", "when the players go somewhere you did not prep — pick the sector first."],
+    ["🎲 Mood", "for weather, what is on the screens, and who walks past. Use it to open a scene."],
+  ],
+  "Drop-in Combatant Generator": [
+    ["Pick an adversary and drop it in", "when a fight starts — it appears in the shared Combat Tracker."],
+    ["Then open the tracker", "to draw initiative and run the exchange."],
+  ],
+  "Session Awards": [
+    ["Walk these at the end", "of a session: one point per line that happened, per character."],
+  ],
+  "Consequences & downtime": [
+    ["🎲 Disciplinary", "when a character loses their last Promotion Point or crosses the department."],
+    ["🎲 Downtime Event", "between sessions, to colour what the crew did with their hours off."],
+  ],
+};
+
 export function renderGm(mount, rerender) {
   clear(mount);
   const st = readGmState();
@@ -121,6 +157,13 @@ export function renderGm(mount, rerender) {
     let live = 0;
     for (const cardEl of panelEl.querySelectorAll(".card")) {
       const key = cardEl.querySelector(".sheet__section")?.textContent;
+      // Collapsed "how to use this" note, so the buttons explain when to press them.
+      if (HOW[key]) {
+        cardEl.append(el("details", { class: "how" },
+          el("summary", {}, "How to use this"),
+          ...HOW[key].map(([what, when]) => el("p", { class: "how__line" },
+            el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
+      }
       const list = key ? resultList(key) : [];
       if (!list.length) continue;
       live += list.length;

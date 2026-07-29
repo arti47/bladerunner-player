@@ -79,6 +79,84 @@ function rollGrouped(tbl) {
   return { d6, d, secondDie: tbl.secondDie, entry: block[Math.min(d, block.length) - 1] };
 }
 
+// ---- "How to use this" — per-card guidance ---------------------------------
+// Keyed by card title. Each line is [what you press, when you press it and what
+// you do with the result]. Procedure only — no rules numbers live here (§10.2).
+const HOW = {
+  "Your solo Blade Runner": [
+    ["Skip this card", "if you already have a Blade Runner. It is for a brand-new solo character."],
+    ["🎲 Origin Seed", "rolls why this detective works alone. Write it into the sheet's Notes — it is the hook the oracle keeps coming back to."],
+  ],
+  "How to start a Case File": [
+    ["Pick ONE way in", "then move down to the briefing. All four are official; they differ only in how much the dice decide."],
+    ["✍ Seed a note", "writes a stub into Case Notes for you to fill in yourself. Use it when you already have an idea."],
+    ["✍ Seed from an old case", "same, but for a thread left dangling by a previous investigation."],
+  ],
+  "Case Briefing": [
+    ["⚡ Generate full briefing", "once, at the start of a case. Read the four lines as the briefing Holden gives you, then start work."],
+    ["Single tables", "replace one part you do not like — reroll just the Assignment, or just the Hook."],
+    ["Anything the briefing leaves open", "is answered later with a Question Check on the Scene tab. Do not fill in every blank now."],
+  ],
+  "Core Case File Generator": [
+    ["Use this instead of the briefing", "when you want a Core-rulebook style case rather than the solo one."],
+    ["🎲 Theme first", "— it selects which Assignment table you roll on. Then Sector and Twist."],
+  ],
+  "Proceed to a location": [
+    ["Decide from your leads", "where the case takes you. Travelling there costs the Shift."],
+    ["🎲 Location", "only when you do not already know where you are going, or want the place described for you."],
+  ],
+  "Countdown Event Check": [
+    ["🎲 Roll the timer", "once per Shift, right after you pick the location — never on a Downtime Shift."],
+    ["Any success", "fires the event now: narrate the interruption, then the timer resets to D6."],
+    ["No successes", "means no event, but the die escalates — the next Shift is likelier to bite."],
+  ],
+  "Frame the scene": [
+    ["🎲 Scene Check", "when you are unsure how hard or dangerous a situation is. It tells you whether a skill roll is needed at all."],
+    ["🎲 Scene Category", "only when you are stuck for what the scene even is — it hands you an activity to play."],
+  ],
+  "Roll it out": [
+    ["The skill roll itself", "happens on your character sheet. These buttons answer the questions around it."],
+    ["🎲 Question Check", "for a yes/no fact — set the odds first if a yes is likely or unlikely."],
+    ["🎲 Cipher", "for an open question. Read the two words as a prompt and interpret them."],
+    ["🎲 Crit Success", "after you roll two or more successes outside combat — it turns the crit into a concrete benefit."],
+  ],
+  "Gather clues": [
+    ["Roll here after a successful", "search, examination, or interview on your sheet — a success is what earns a clue."],
+    ["⚡ Full clue", "gives all three parts at once. The single buttons fill one gap."],
+    ["Meaning", "is what the clue tells you; Descriptor and Type are the physical evidence."],
+    ["Then", "pin it into your Case Notes and turn it into a lead on the Leads tab."],
+  ],
+  "People you meet": [
+    ["Roll when an NPC appears", "that you had not planned — a witness, a fixer, a suspect."],
+    ["⚡ Full NPC", "does sphere, trait, skill level and human/Replicant in one press."],
+    ["🎲 NPC Skill", "only matters when they will be rolled against you. Never push an NPC's roll."],
+  ],
+  "Combat & chases": [
+    ["Roll when the opposition acts", "and you do not know what they would do — that is the job the Game Runner would have."],
+    ["🎲 NPC Tactics", "for how they fight; 🎲 NPC Chase Maneuver for how they run or pursue."],
+    ["Then", "run the exchange in the Combat Tracker."],
+  ],
+  "Review your hypotheses": [
+    ["Once per Shift", "when the location's scenes are done — not after every roll."],
+    ["＋ Add Hypothesis", "for a new theory (starts at D6). ▲ when evidence supports it, ▼ when it contradicts."],
+  ],
+  "Hypothesis Check": [
+    ["🎲 Check on a row", "only when the fiction can conclusively prove or disprove that theory."],
+    ["It cannot be pushed", "and a critical success is how a case ends."],
+  ],
+  "End the Shift": [
+    ["▶ End the Shift", "when you leave the location. It advances the counter on your sheet and warns you at the Downtime limit."],
+    ["🛌 Take Downtime instead", "to heal and reset the counter. No Countdown Check on a Downtime Shift."],
+  ],
+  "Downtime scene": [
+    ["🎲 Downtime Event", "only when you actually took Downtime — it colours the off-hours."],
+  ],
+  "Award your points": [
+    ["Tick as they happen", "during play, then count them at the end of the case or session."],
+    ["Move the totals", "onto your sheet, where they are spent on specialties and skills."],
+  ],
+};
+
 export function renderSolo(mount, rerender) {
   clear(mount);
   const st = readSoloState();
@@ -188,6 +266,13 @@ export function renderSolo(mount, rerender) {
     let live = 0;
     for (const cardEl of panelEl.querySelectorAll(".card")) {
       const key = cardEl.querySelector(".sheet__section")?.textContent;
+      // Collapsed "how to use this" note, so the buttons explain when to press them.
+      if (HOW[key]) {
+        cardEl.append(el("details", { class: "how" },
+          el("summary", {}, "How to use this"),
+          ...HOW[key].map(([what, when]) => el("p", { class: "how__line" },
+            el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
+      }
       const list = key ? resultList(key) : [];
       if (!list.length) continue;
       live += list.length;

@@ -571,3 +571,12 @@ textarea.input { resize: vertical; font-family: inherit; }
 .result-clear { justify-content: flex-end; }
 .autopin { margin: 0 0 .5rem; }
 .result-slot + .result-slot { margin-top: .4rem; }
+
+/* ---- Card guidance + post-roll next steps --------------------------------- */
+.how { margin-top: .6rem; border-top: 1px dashed var(--line); padding-top: .45rem; }
+.how > summary { cursor: pointer; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--cyan); }
+.how__line { margin: .35rem 0 0; font-size: .85rem; overflow-wrap: anywhere; }
+.roll-next { margin-top: .6rem; border-left: 2px solid var(--cyan); padding-left: .6rem; display: flex; flex-direction: column; gap: .4rem; }
+.roll-next p { margin: 0; font-size: .88rem; }
+.roll-next .btn { align-self: flex-start; }
+.roll-next__crit { border-top: 1px solid var(--line); padding-top: .4rem; }
