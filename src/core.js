@@ -3,6 +3,9 @@
 
 export const APP_NAME = "Blade Runner Player";
 export const STORAGE_PREFIX = "brp:"; // localStorage key namespace
+// The tutorial remembers its open panel here. Shared so a feature screen can
+// deep-link straight to the panel that documents it.
+export const TUTORIAL_KEY = "brp:tutorial";
 
 // ---- DOM helpers ----------------------------------------------------------
 export function el(tag, attrs = {}, ...children) {

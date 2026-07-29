@@ -19,7 +19,7 @@ import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
 import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
-import { rollDie, successesFor, uid, clear } from "./core.js";
+import { rollDie, successesFor, uid, clear, TUTORIAL_KEY } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store } from "./store.js";
 import { applyInvestigationShift, applyDowntimeShift, downtimeLimitFor, maxHealth, maxResolve } from "./derived.js";
@@ -544,6 +544,8 @@ export function renderSolo(mount, rerender) {
     renderBoardPanel(root, {
       card, btn, grid, show, rerender,
       pin: pinNote,
+      // The board is a house aid, so it carries a link to its own walkthrough.
+      openGuide: () => { try { localStorage.setItem(TUTORIAL_KEY, "board"); } catch {} navigate("tutorial"); },
       // A promoted suspect becomes a hypothesis on the Leads tab, so the case
       // still closes through the book's own Hypothesis Check.
       onPromote: (text) => {

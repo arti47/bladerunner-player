@@ -1252,6 +1252,78 @@ test("GM panels follow the arc of a session", async (t) => {
   assert.deepEqual(await cardsOn("Wrap"), ["Session Awards", "Consequences & downtime"]);
 });
 
+// The Case Board tutorial is the feature's documentation, so it has to actually
+// render — and to keep reading its numbers from data-house.js rather than
+// restating them (§10.2), which is what makes it stay correct.
+test("the Case Board tutorial walks the whole feature, with live numbers [house aid]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?tut1#tutorial`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:tutorial", "board");
+  });
+  await page.goto(`${base}/index.html?tut2#tutorial`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+
+  const pills = await page.$$eval(".segnav__pill", (e) => e.map((x) => x.textContent.trim()));
+  assert.deepEqual(pills, ["Setup", "Solo", "Case Board", "At the Table", "Cheat Sheet"]);
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Case Board");
+
+  // A numbered walkthrough, in order, with no gaps.
+  const numbered = await page.$$eval(".panel .card", (cards) => {
+    const c = cards.find((x) => x.querySelector(".card__title")?.textContent.startsWith("Step by step"));
+    return [...c.querySelectorAll(".tut__step .tut__label")].map((l) => l.textContent.trim());
+  });
+  assert.ok(numbered.length >= 8, `expected a full walkthrough, got ${numbered.length} steps`);
+  numbered.forEach((label, i) => assert.ok(label.startsWith(`${i + 1} ·`), `step ${i + 1} out of order: ${label}`));
+
+  // The outcome table is rendered from the data, band for band.
+  const bands = await page.$$eval(".panel .card", (cards) => {
+    const c = cards.find((x) => x.querySelector(".card__title")?.textContent.includes("Discovery Check can give"));
+    return [...c.querySelectorAll("dt")].map((d) => d.textContent.trim());
+  });
+  const rows = await page.evaluate(async () => (await import("/data-house.js")).DISCOVERY_OUTCOMES.map((r) => (r.max === Infinity ? `${r.min}+` : `${r.min}–${r.max}`)));
+  assert.deepEqual(bands, rows, "every discovery band is documented, straight from data-house.js");
+
+  // Live numbers, not restated ones, and no template leaks.
+  const text = await page.$eval(".panel", (e) => e.textContent);
+  const H = await page.evaluate(async () => {
+    const h = await import("/data-house.js");
+    return { box: h.BOX_MAX, clinch: h.CLINCHER_CONNECTIONS, die: h.DISCOVERY_ROLL.die, dice: h.MATRIX_DICE.map((d) => `D${d}`).join(", ") };
+  });
+  assert.ok(text.includes(`${H.box} boxes`), "the box cap comes from the data");
+  assert.ok(text.includes(`${H.clinch} connections`), "so does the clincher threshold");
+  assert.ok(text.includes(`D${H.die}`) && text.includes(H.dice), "so do the dice");
+  assert.ok(text.includes("House aid"), "and it says plainly that this is not canon");
+  assert.ok(!/undefined|NaN|\[object/.test(text), "no template leaks");
+  const tutorialSrc = fs.readFileSync(path.join(ROOT, "src", "tutorial.js"), "utf8");
+  assert.ok(/data-house\.js/.test(tutorialSrc), "tutorial.js reads the house data directly");
+
+  // Both cross-panel buttons work, in both directions.
+  await page.getByRole("button", { name: /Back to the solo loop/ }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Solo");
+  await page.getByRole("button", { name: /Case Board guide/ }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Case Board");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.equal(overflow, 0, "no horizontal overflow at 390px");
+
+  // The feature links to its own documentation, opening the right panel.
+  await page.evaluate(() => {
+    localStorage.setItem("brp:tutorial", "setup");
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "board", hypotheses: [], log: [], scratchpad: "", results: {} }));
+  });
+  await page.goto(`${base}/index.html?tut3#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /Step-by-step guide/ }).click();
+  await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(() => location.hash), "#tutorial");
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Case Board",
+    "the board's guide button lands on the Case Board panel, not wherever the tutorial was left");
+});
+
 // The tutorial's step buttons deep-link by route name. A renamed or removed
 // route would leave a dead button, so assert every target really routes.
 test("every tutorial deep-link points at a real route", async (t) => {

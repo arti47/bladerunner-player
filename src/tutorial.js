@@ -3,23 +3,26 @@
 // the Home tile and Settings).  Last-viewed panel persists in brp:tutorial.
 //
 // Scope rule (CLAUDE.md §10.2): this module teaches the APP's flow. Every rules
-// NUMBER shown here is read live from data.js — nothing mechanical is hardcoded.
+// NUMBER shown here is read live from data.js (or data-house.js, for the one
+// house aid) — nothing mechanical is hardcoded.
 import * as D from "../data.js";
-import { el, clear, titleCase } from "./core.js";
+import * as H from "../data-house.js";      // house aids (Case Board, §3.17)
+import { skillName } from "./rules.js";
+import { el, clear, titleCase, TUTORIAL_KEY } from "./core.js";
 import { segmentNav } from "./ui.js";
 import { Settings } from "./settings.js";
 import { navigate } from "./router.js";
 
-const KEY = "brp:tutorial";
 const SEGMENTS = [
   { key: "setup", label: "Setup" },
   { key: "solo", label: "Solo" },
+  { key: "board", label: "Case Board" },
   { key: "table", label: "At the Table" },
   { key: "reference", label: "Cheat Sheet" },
 ];
 
-const readPanel = () => { try { return localStorage.getItem(KEY) || "setup"; } catch { return "setup"; } };
-const writePanel = (p) => { try { localStorage.setItem(KEY, p); } catch {} };
+const readPanel = () => { try { return localStorage.getItem(TUTORIAL_KEY) || "setup"; } catch { return "setup"; } };
+const writePanel = (p) => { try { localStorage.setItem(TUTORIAL_KEY, p); } catch {} };
 
 export function renderTutorial(mount, rerender) {
   clear(mount);
@@ -30,7 +33,7 @@ export function renderTutorial(mount, rerender) {
     segmentNav({ segments: SEGMENTS, active: panel, onSelect: (k) => { writePanel(k); rerender(); } }),
   );
   const host = el("div", { class: "panel" });
-  ({ setup: panelSetup, solo: panelSolo, table: panelTable, reference: panelReference }[panel])(host);
+  ({ setup: panelSetup, solo: panelSolo, board: panelBoard, table: panelTable, reference: panelReference }[panel])(host, rerender);
   body.append(host);
   mount.append(body);
 }
@@ -67,7 +70,7 @@ function panelSetup(host) {
 }
 
 // ---- Solo -----------------------------------------------------------------
-function panelSolo(host) {
+function panelSolo(host, rerender) {
   if (!Settings.solo()) host.append(hint("Solo Mode is currently off — turn it on in Settings to get the Solo tab.", () => navigate("settings")));
   host.append(
     steps("The solo loop", "Solo play replaces the Game Runner with dice. You ask, the oracle answers, you narrate.", [
@@ -82,16 +85,89 @@ function panelSolo(host) {
     ], [["Open Solo Mode", () => navigate("solo")], ["Combat Tracker", () => navigate("combat")]]),
 
     steps("Optional: the Case Board", "A house aid, not part of the Blade Runner rules — the Board tab in Solo Mode. Skip it and nothing else changes.", [
-      ["Pin what you find", "Solo ▸ <b>Board</b> ▸ ＋ Clue / ＋ Suspect. Rolled boxes are filled from the official Solo tables; typed ones are whatever you already know."],
-      ["Draw the lines", "🔗 Connect when you work out how a clue implicates someone. Clues only ever connect to suspects, and a suspect's 🔗 count is how close they are to being the answer."],
-      ["Let it feed you leads", "Succeed on Observation, Tech, Medical Aid, Connections, Manipulation or Insight and the result offers a Discovery Check. Spend it on the Board — the fuller the board, the better the result."],
-      ["Close the case by the book", "When the board names a culprit, ★ promotes them to a hypothesis on Leads. The board awards nothing itself: the Hypothesis Check is what pays out."],
-    ], [["Open the Case Board", () => navigate("solo")]]),
+      ["What it adds", "Somewhere to pin your clues and suspects, draw the connections between them, and let the evidence tell you when the case has an answer."],
+      ["Where it fits", "Between step 4 (what you find) and step 5 (your hypotheses). It feeds Leads; it never replaces it."],
+      ["Full walkthrough", "The <b>Case Board</b> tab of this tutorial is the step-by-step guide."],
+    ], [["Case Board guide", () => { writePanel("board"); rerender(); window.scrollTo(0, 0); }], ["Open the Case Board", () => navigate("solo")]]),
 
     steps("Solo habits worth keeping", null, [
       ["Write it down", "Pin oracle results (📌) into case notes and pin rolls into your character's journal. Solo play falls apart when you can't remember what you established."],
       ["Answer before you roll", "If you already know what's behind the door, don't ask the oracle. It's for genuine uncertainty."],
       ["Respect the pace", `Three investigation Shifts without Downtime and you start taking stress — the sheet enforces it (${D.RECOVERY.downtimeShiftsBeforeStress} shifts, 4 with Married to the Job).`],
+    ]),
+  );
+}
+
+// ---- Case Board (house aid) ------------------------------------------------
+// Every number here is read from data-house.js — the tutorial never restates a
+// value (§10.2), so correcting the aid corrects its documentation.
+function panelBoard(host, rerender) {
+  if (!Settings.solo()) host.append(hint("Solo Mode is off — the Board lives on the Solo tab, so turn Solo Mode on first.", () => navigate("settings")));
+
+  const skills = H.DISCOVERY_SKILLS.map(skillName);
+  const skillList = skills.slice(0, -1).join(", ") + " or " + skills.at(-1);
+  const dice = H.MATRIX_DICE.map((d) => `D${d}`).join(", ");
+  const clincherRow = H.DISCOVERY_OUTCOMES.find((r) => r.effect === "clincher");
+
+  host.append(
+    steps("What this is", H.BOARD.credit, [
+      ["The idea", "A detective's corkboard. Every clue and every suspect gets a numbered box; when you work out that a clue implicates someone, you draw a line. Enough lines and the board names your culprit."],
+      ["Why bother", "Solo play generates evidence faster than you can hold it in your head. The board remembers, and the connection counts turn a pile of notes into a case that visibly closes."],
+      ["What it is not", `It is <b>not Blade Runner canon</b> and it awards nothing. Every card on the tab is headed "House aid". Ignore the tab and the rest of the app is unchanged.`],
+      ["Where the content comes from", "Rolled boxes are filled from the <b>official Solo Mode tables</b> — Imagining Clues for a clue, the character generator for a suspect, Cipher when you want two words to interpret."],
+    ]),
+
+    steps("Step by step", "Do these in order the first time. After that it is just: find something, put it up, connect it.", [
+      ["1 · Turn Solo Mode on", "Settings ▸ Solo Mode. The Solo tab appears in the bottom nav, and <b>Board</b> is its fourth pill: Case · Shift · Scene · <b>Board</b> · Leads · Wrap · Notes."],
+      ["2 · Open a case first", "The board is for the middle of an investigation, not the start. Roll a briefing on Solo ▸ <b>Case</b> so you have something to investigate."],
+      ["3 · Put your first boxes up", "Solo ▸ <b>Board</b>. <b>🎲 ＋ Clue</b> and <b>🎲 ＋ Suspect</b> roll one from the official tables; <b>✍ ＋ Clue</b> and <b>✍ ＋ Suspect</b> let you type what you already know. Boxes are numbered as they arrive — C1, S2, C3 — and that tag is how the app refers to them everywhere."],
+      ["4 · Interpret every box before you move on", "A rolled clue is a prompt, not a fact. Decide what “Counterfeit Document” actually means in your case, then press <b>📌</b> on the box to write it into the Case Notes. A board you cannot read later is worthless."],
+      ["5 · Connect what you can justify", "When you work out how a clue implicates a suspect, press <b>🔗</b> on either box. Pick the other end from the list, or press <b>🎲 Let the board decide</b> and interpret whatever it hands you — the surprise is usually more interesting. <b>Clues only ever connect to suspects</b>, never clue-to-clue."],
+      ["6 · Earn Discovery Checks by playing", `You do not roll on the board for free. Succeed on ${skillList} <b>on your character sheet</b> and the result offers <b>🔍 Earn a Discovery Check</b>. Press it and the check is banked; the Board card shows how many you are holding.`],
+      ["7 · Spend a check when you want a lead", `Solo ▸ Board ▸ <b>🎲 Discovery Check</b>. It rolls D${H.DISCOVERY_ROLL.die} and <b>adds the number of boxes already on the board</b>, so the fuller the case the better the result — a busy board closes itself. The outcome may hand you a clue, a name, a connection, or nothing.`],
+      ["8 · Watch the connection counts", `The 🔗 number on each suspect is how close they are to being your answer. At <b>${H.CLINCHER_CONNECTIONS} connections</b> the board calls it without waiting for a clincher roll.`],
+      ["9 · Close the case by the book", `When the board names someone, an <b>answer</b> card appears. Press <b>★ Promote to a hypothesis</b> and it lands on Solo ▸ <b>Leads</b>. ${H.PROMOTE.note}`],
+      ["10 · Housekeeping", `The board holds ${H.BOX_MAX} boxes; past that, retire one with <b>✕</b> before adding another (removing a box takes its connections with it). <b>✕ Clear the board</b> wipes the boxes but leaves your notes. Solo ▸ Notes ▸ <b>⟲ Start a fresh case</b> clears the board along with everything else.`],
+    ], [["Open the Case Board", () => navigate("solo")], ["Open sheet to earn a check", () => navigate("sheet")]]),
+
+    facts("What a Discovery Check can give you", H.DISCOVERY_OUTCOMES.map((r) => [
+      r.max === Infinity ? `${r.min}+` : `${r.min}–${r.max}`,
+      r.text,
+    ])),
+
+    steps("Reading a Discovery Check result", `The total is the die plus your box count, so these bands arrive in roughly that order over a case.`, [
+      ["A new box", "The app rolls its content for you and drops it on the board, numbered next in sequence."],
+      ["A new box, connected", "Same, but it also rolls which existing box it implicates — that is the board handing you a lead you did not have."],
+      ["A connection only", "Two things already on your board turn out to be linked. Decide why; that reason is usually the best story beat of the Shift."],
+      ["Nothing useful", "The trail stays cold. It still cost you the check, and the board is one roll closer to converging."],
+      ["The clincher", `At ${clincherRow.min} or more. Treated as a connected clue whose suspect <b>is</b> the answer.`],
+      ["Something impossible", "An outcome the board cannot honour — a connection with nothing to connect to, or a new box on a full board — degrades to “nothing useful” rather than being re-rolled."],
+    ]),
+
+    facts("Board rules at a glance", [
+      ["Boxes", `Up to ${H.BOX_MAX}, numbered in the order they arrive. C = clue, S = suspect.`],
+      ["Connections", "Clue ↔ suspect only, never doubled, recorded on both boxes."],
+      ["Discovery Check", `D${H.DISCOVERY_ROLL.die} + boxes on the board. ${H.DISCOVERY_ROLL.note}`],
+      ["Earned by", skillList + " — a success on your sheet, while Solo Mode is on."],
+      ["Letting the board choose", `The smallest die that reaches your box count (${dice}), skipping forward past any box the connection may not land on. A roll past the last box is yours to choose, not a re-roll.`],
+      ["Clincher", `A clincher result, or any suspect reaching ${H.CLINCHER_CONNECTIONS} connections.`],
+      ["Awards", "None. The board points; the Hypothesis Check on Leads pays."],
+    ]),
+
+    steps("A worked Shift", "What this looks like in play, start to finish.", [
+      ["You arrive", "Shift tab: the Location generator puts you in a flooded parking structure. The Countdown check comes up empty, so the timer escalates."],
+      ["You search", "Observation on your sheet succeeds with two dice. You take the 🔍 and bank a Discovery Check."],
+      ["You put it up", "Board ▸ 🎲 ＋ Clue rolls something you read as a shell casing with the serial filed off. It becomes C1, and you pin your reading to the notes."],
+      ["You name someone", "🎲 ＋ Suspect gives you an evasive fixer with security contacts. S2. You decide the casing came through their hands, so 🔗 connects C1 to S2."],
+      ["You spend the check", "🎲 Discovery Check rolls 58, plus 2 boxes = 60: a new clue, already connected. It lands as C3 and the board ties it to S2. Now S2 carries two lines, and you have a reason to go looking for them."],
+      ["Later, it closes", `Two Shifts on, S2 is carrying ${H.CLINCHER_CONNECTIONS} lines and the answer card appears. You ★ promote them, rate the hypothesis, and run the Hypothesis Check on Leads — and that is what pays you the Promotion Points.`],
+    ], [["Back to the solo loop", () => { writePanel("solo"); rerender(); window.scrollTo(0, 0); }]]),
+
+    steps("Habits that make it work", null, [
+      ["Only connect what you can explain", "A line you cannot justify is a line you will not remember. Say the reason out loud, then pin it."],
+      ["Do not put everything up", "Boxes are for things that could matter. A board of twenty trivia entries converges on a random name."],
+      ["Let it surprise you", "When a connection or a suspect makes no sense yet, that is the case getting more interesting — not the aid misfiring."],
+      ["Keep the book in charge", "The board is scaffolding. Scenes, rolls, pushes, stress, and every point you earn still come from the printed rules."],
     ]),
   );
 }
