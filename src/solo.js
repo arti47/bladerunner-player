@@ -440,7 +440,8 @@ export function renderSolo(mount, rerender) {
       grid(btn("🎲 Location", () => { const e = rollColumn(S.LOCATION_ENVIRONMENT), p = rollColumn(S.LOCATION_PLACE); show({ label: "Location", text: `${e.entry} ${p.entry}`, pin: `[Location] ${e.entry} ${p.entry}`, title: "Location Generator", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${e.entry} ${p.entry}`), el("p", { class: "muted roll-center" }, `Environment D6=${e.d6}/D12=${e.d}  |  Place D6=${p.d6}/D12=${p.d}`)) }); }))));
 
     // Countdown Event Check — once per Shift, when you head to a new location.
-    const timerCard = stepCard(2, "Countdown Event Check", S.COUNTDOWN_TIMER.note);
+    const TIMER_CARD = "Countdown Event Check";
+    const timerCard = stepCard(2, TIMER_CARD, S.COUNTDOWN_TIMER.note);
     const chip = doneChip("countdown");
     if (chip) timerCard.append(el("div", { class: "chips" }, chip));
     timerCard.append(el("div", { class: "timer-display" }, el("span", { class: "timer-display__label" }, "Current Timer Die:"), el("span", { class: "timer-display__die" }, st.timerDie)));
@@ -465,7 +466,16 @@ export function renderSolo(mount, rerender) {
       }),
       btn("▲ Upgrade", () => stepTimer(1), "sm ghost"),
       btn("▼ Downgrade", () => stepTimer(-1), "sm ghost"),
-      btn("✕ Reset (D6)", () => { st.timerDie = "D6"; writeSoloState(st); rerender(); }, "sm ghost")));
+      // A reset UNDOES this Shift's check: the die goes back to the start of the
+      // ladder, the "done this Shift" marker clears, and the stale result is
+      // dropped — otherwise the card kept claiming the check was already made.
+      btn(`✕ Reset (${S.ESCALATION_STEPS[0]})`, () => {
+        st.timerDie = S.ESCALATION_STEPS[0];
+        setFlag("countdown", false);
+        if (st.results) delete st.results[TIMER_CARD];
+        writeSoloState(st);
+        rerender();
+      }, "sm ghost")));
     root.append(timerCard);
 
     root.append(el("div", { class: "btn-row" }, btn("At the location — play the scenes →", () => { st.panel = "scene"; writeSoloState(st); rerender(); }, "primary")));

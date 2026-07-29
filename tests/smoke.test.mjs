@@ -993,6 +993,49 @@ test("roll logs read top to bottom too — newest entry is last", async (t) => {
 // Scene -> Leads -> Wrap -> Notes, and the two things that OPEN a Shift
 // (proceed to a location, then the Countdown Event Check) sit together on the
 // Shift panel, in that order.
+// Resetting the Countdown Timer means undoing this Shift's check. It used to
+// put the die back but leave the "done this Shift" marker standing, so the card
+// went on claiming the check was made and a re-roll asked to confirm.
+test("resetting the Countdown Timer clears the done-this-Shift marker [Solo p.006]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?treset1#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "shift", timerDie: "D8", shiftNo: 1, shiftFlags: {}, hypotheses: [], log: [], scratchpad: "", results: {} }));
+  });
+  await page.goto(`${base}/index.html?treset2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const solo = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  const chips = () => page.$$eval(".panel .chip--done", (e) => e.map((x) => x.textContent.trim()));
+  const slots = () => page.$$eval(".result-slot .result-slot__title", (e) => e.map((x) => x.textContent.trim()));
+  const first = await page.evaluate(async () => (await import("/data-solo.js")).ESCALATION_STEPS[0]);
+
+  // The label names the die from the data, not a hardcoded "D6".
+  const resetLabel = await page.$$eval(".panel .btn", (e) => e.map((x) => x.textContent.trim()).find((x) => /Reset/.test(x)));
+  assert.equal(resetLabel, `✕ Reset (${first})`);
+
+  await page.evaluate(() => { Math.random = () => 0; });   // all 1s: no event, the timer escalates
+  await page.getByRole("button", { name: "🎲 Roll the timer" }).click();
+  await page.waitForTimeout(250);
+  assert.deepEqual(await chips(), ["✓ done this Shift"], "the check is marked done");
+  assert.equal((await solo()).shiftFlags.countdown, true);
+  assert.equal((await solo()).timerDie, "D10", "a miss escalated D8 → D10");
+  assert.equal((await slots()).length, 1, "the result is on the card");
+
+  await page.getByRole("button", { name: /Reset/ }).click();
+  await page.waitForTimeout(250);
+  const after = await solo();
+  assert.deepEqual(await chips(), [], "the done-this-Shift marker is gone");
+  assert.equal(after.shiftFlags.countdown, false, "and so is the flag behind it");
+  assert.equal(after.timerDie, first, "the die is back to the start of the ladder");
+  assert.deepEqual(await slots(), [], "the stale result is dropped");
+
+  // A reset really is an undo: rolling again must not ask to confirm.
+  await page.getByRole("button", { name: "🎲 Roll the timer" }).click();
+  await page.waitForTimeout(250);
+  assert.equal((await page.$$(".modal")).length, 0, "no 'already done this Shift' prompt after a reset");
+});
+
 // ---------------------------------------------------------------------------
 // Case Board — HOUSE AID (§3.17). Drives the whole loop through the real UI:
 // boxes, connections, a Discovery Check, a clincher, and the hand-back to the
