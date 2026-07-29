@@ -1140,3 +1140,40 @@ test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t)
   const pad = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:gm")).scratchpad || "");
   assert.match(pad, /\[Sector\]/, "auto-pin wrote the roll to the notes with no extra tap");
 });
+
+// Every roll button must land a visible result — the Core Case File Generator
+// sat in a bare <details>, so its rolls had no card to render into and showed
+// nothing. Sweep every dice button on the roll-heavy panels and assert the
+// slot count goes up on each click.
+test("every oracle button on Solo and GM shows a result", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const sweep = async (screen, storeKey, panels) => {
+    for (const panel of panels) {
+      await page.evaluate(([k, p]) => {
+        localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+        localStorage.setItem(k, JSON.stringify({ panel: p, altOpen: true, log: [], scratchpad: "", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {} }));
+      }, [storeKey, panel]);
+      await page.goto(`${base}/index.html?sweep=${screen}${panel}#${screen}`, { waitUntil: "load" });
+      await page.waitForTimeout(250);
+      await page.evaluate(() => document.querySelectorAll("details").forEach((d) => (d.open = true)));
+      const labels = await page.$$eval(".panel .btn", (els) =>
+        els.map((e) => e.textContent).filter((l) => l.startsWith("\u{1F3B2}")));
+      for (const label of labels) {
+        await page.locator(`.panel .btn:text-is("${label}")`).first().click();
+        await page.waitForTimeout(200);
+        // The result must be visible where the button is — in its card, or on
+        // the panel when the button has no card. (Counting all slots would miss
+        // this once a card's history hits its cap.)
+        const ok = await page.evaluate((lbl) => {
+          const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent === lbl);
+          if (!b) return false;
+          const host = b.closest(".card") || b.closest(".panel");
+          return host.querySelectorAll(":scope > .result-slot").length > 0;
+        }, label);
+        assert.ok(ok, `${screen}/${panel}: "${label}" produced no visible result`);
+      }
+    }
+  };
+  await sweep("solo", "brp:solo", ["case", "shift", "scene"]);
+  await sweep("gm", "brp:gm", ["prep", "play", "wrap"]);
+});

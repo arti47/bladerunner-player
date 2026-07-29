@@ -26,6 +26,7 @@ import { navigate } from "./router.js";
 const SOLO_KEY = "brp:solo";
 const LOG_CAP = 50;
 const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
+const LOOSE = "__panel";    // bucket for rolls fired outside any card
 const SEGMENTS = [
   { key: "case", label: "Case" },
   { key: "shift", label: "Shift" },
@@ -103,7 +104,9 @@ export function renderSolo(mount, rerender) {
   // `slot` overrides the card lookup for results raised outside a button click.
   const show = ({ label, text, pin, title, render, slot }) => {
     const pinLine = pin || `[${label}] ${text}`;
-    const key = slot || cardTitleOf(activeBtn);
+    // A roll fired from outside a card (a bare <details>, a stray row) still has
+    // to show its result — park it on the panel rather than vanishing into a toast.
+    const key = slot || cardTitleOf(activeBtn) || LOOSE;
     if (key) {
       st.results = st.results || {};
       const list = resultList(key);
@@ -114,7 +117,6 @@ export function renderSolo(mount, rerender) {
     }
     if (st.autoPin && pinLine) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
     record(label, text, pinLine);   // record() rerenders, painting the slot
-    if (!key) showToast(text);
   };
   // Hypothesis Check (Solo Mode): roll the hypothesis's rating dice as Base Dice
   // (6+ = 1 success, 10+ = 2), no push. ≥2 successes = crit, 1 = success, 0 = fail.
@@ -201,10 +203,17 @@ export function renderSolo(mount, rerender) {
         },
       })));
     }
+    // Results with no owning card hang at the end of the panel.
+    for (const r of resultList(LOOSE)) {
+      live += 1;
+      panelEl.append(resultSlot({ title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts, onPin: pinNote,
+        onDismiss: () => { st.results[LOOSE] = resultList(LOOSE).filter((x) => x.id !== r.id); if (!st.results[LOOSE].length) delete st.results[LOOSE]; writeSoloState(st); rerender(); } }));
+    }
     if (!live) return;
     const shown = [...panelEl.querySelectorAll(".card")]
       .map((c) => c.querySelector(".sheet__section")?.textContent)
-      .filter((k) => k && resultList(k).length);
+      .filter((k) => k && resultList(k).length)
+      .concat(resultList(LOOSE).length ? [LOOSE] : []);
     panelEl.append(el("div", { class: "btn-row result-clear" },
       btn(`\u2715 Clear ${live === 1 ? "this result" : "these " + live + " results"}`, () => {
         for (const key of shown) delete st.results[key];
@@ -261,22 +270,27 @@ export function renderSolo(mount, rerender) {
 
     // Alternate route in: the Core Rulebook's Case File Generator. Theme picks the
     // Assignment sub-table, so rolling Theme arms the Assignment button. [Core p.222]
+    // It lives in a CARD (collapsed by default) so its rolls get a result slot like
+    // every other card; the open state persists so a roll doesn't fold it shut.
+    const alt = stepCard("Alternative", "Core Case File Generator", "The Core Rulebook's case tables (pp.222+). Either method works — mix and match as you like.");
     const themeLabel = el("p", { class: "muted small" }, st.selectedTheme ? `Assignment table: ${st.selectedTheme}` : "Roll a Theme first — it selects the Assignment table.");
-    root.append(el("details", { class: "rules__group solo-alt" },
-      el("summary", {}, "Alternate: Core Case File Generator"),
-      el("p", { class: "muted small" }, "The Core Rulebook's case tables (pp.222+). Either method works — mix and match as you like."),
+    const details = el("details", { class: "rules__group solo-alt", open: st.altOpen || null },
+      el("summary", {}, "Show the Core tables"),
       themeLabel,
       grid(
-        btn("🎲 Theme (D10)", () => { const roll = rollDie(10); const res = lookupRange(GM.CASE_THEME, roll); st.selectedTheme = res.theme; writeSoloState(st); themeLabel.textContent = `Assignment table: ${res.theme}`; show({ label: "Theme", text: res.theme, title: `Case Theme — ${roll} (D10)`, render: (b) => { b.append(el("h3", { class: "roll-result" }, res.theme), el("p", { class: "muted" }, `Assignment uses D${res.die}.`)); } }); }),
-        btn("🎲 Assignment", () => {
+        btn("🎲 Theme (D10)", () => { const roll = rollDie(10); const res = lookupRange(GM.CASE_THEME, roll); st.selectedTheme = res.theme; writeSoloState(st); show({ label: "Theme", text: res.theme, pin: `[Theme] ${res.theme}`, title: `Case Theme — ${roll} (D10)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res.theme), el("p", { class: "muted" }, `Assignment uses D${res.die}.`)) }); }),
+        btn("🎲 Core Assignment", () => {
           const theme = st.selectedTheme || GM.CASE_THEME[0].theme;
           const list = GM.CASE_ASSIGNMENT[theme] || [];
           if (!list.length) { showToast("Roll a Theme first.", { kind: "warn" }); return; }
           const roll = rollDie(list.length); const t = list[roll - 1];
           show({ label: "Assignment", text: t, pin: `[Assignment] ${t}`, title: `Assignment — ${roll} (D${list.length})`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, theme), el("p", { class: "roll-prose" }, t)) });
         }),
-        btn("🎲 Sector (D8)", () => { const roll = rollDie(8); const res = lookupRange(GM.CASE_SECTOR, roll); show({ label: "Sector", text: res?.sector || "?", title: `Sector — ${roll} (D8)`, render: (b) => { b.append(el("h3", { class: "roll-result" }, res?.sector || "Unknown")); } }); }),
-        btn("🎲 Twist (D12)", () => rollTable("Twist", GM.CASE_TWIST, 12)))));
+        btn("🎲 Sector (D8)", () => { const roll = rollDie(8); const res = lookupRange(GM.CASE_SECTOR, roll); show({ label: "Sector", text: res?.sector || "?", pin: `[Sector] ${res?.sector || "?"}`, title: `Sector — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res?.sector || "Unknown")) }); }),
+        btn("🎲 Twist (D12)", () => rollTable("Twist", GM.CASE_TWIST, 12))));
+    details.addEventListener("toggle", () => { st.altOpen = details.open; writeSoloState(st); });
+    alt.append(details);
+    root.append(alt);
 
     root.append(el("div", { class: "btn-row" }, btn("Briefed — start the first Shift →", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
 
