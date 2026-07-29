@@ -528,10 +528,10 @@ test("Countdown Timer fires on a success and escalates on a miss [Solo p.006]", 
     await page.evaluate(() => { location.hash = "#__r"; location.hash = "#solo"; });
     await page.waitForTimeout(150);
     await page.getByRole("button", { name: "🎲 Roll the timer" }).first().click();
-    await page.waitForTimeout(200);
-    const title = await page.$eval(".modal", (m) => m.textContent);
+    await page.waitForTimeout(250);
+    // The result lands inline in the Countdown card, not in a modal.
+    const title = await page.$eval(".result-slot", (m) => m.textContent);
     const die = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).timerDie);
-    await page.keyboard.press("Escape");
     return { title, die };
   };
   const fired = await run(true);
@@ -589,10 +589,9 @@ test("the solo NPC generator rolls human/Replicant [Solo p.019]", async (t) => {
   await page.goto(`${base}/index.html?npcnat2#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
   await page.getByRole("button", { name: /Human or Replicant/ }).first().click();
-  await page.waitForTimeout(200);
-  const body = await page.$eval(".modal", (m) => m.textContent);
+  await page.waitForTimeout(250);
+  const body = await page.$eval(".result-slot", (m) => m.textContent);
   assert.ok(/Replicant|Human|Ambiguous/.test(body), body.slice(0, 120));
-  await page.keyboard.press("Escape");
 });
 
 test("a successful roll offers no push; a failed one does [Core Ch01 p016]", async (t) => {
@@ -769,11 +768,9 @@ test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
     await page.click(`.segnav__pill:text-is("${pill}")`);
     await page.waitForTimeout(120);
     await page.getByRole("button", { name: label }).first().click();
-    await page.waitForTimeout(200);
-    const body = await page.$eval(".modal", (m) => m.textContent);
+    await page.waitForTimeout(250);
+    const body = await page.$eval(".result-slot", (m) => m.textContent);
     assert.match(body, check, `${label} produced a result`);
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(120);
   }
   await page.click('.segnav__pill:text-is("Wrap")');
   await page.waitForTimeout(120);
@@ -887,7 +884,7 @@ test("case notes read top to bottom — new entries land at the end", async (t) 
   // pinning a roll result adds to the bottom too
   await page.getByRole("button", { name: "🎲 Relevance" }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "📌 Pin to notes" }).first().click();
+  await page.getByRole("button", { name: /^📌 Pin/ }).first().click();
   await page.waitForTimeout(250);
   notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
   const pinIdx = notes.lastIndexOf("• [Relevance]");
@@ -904,7 +901,7 @@ test("case notes read top to bottom — new entries land at the end", async (t) 
   await page.waitForTimeout(250);
   await page.getByRole("button", { name: "🎲 Twist (D12)" }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "📌 Pin to notes" }).first().click();
+  await page.getByRole("button", { name: /^📌 Pin/ }).first().click();
   await page.waitForTimeout(250);
   const gmNotes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:gm")).scratchpad);
   assert.ok(gmNotes.startsWith("OLDEST LINE"), `GM notes keep their order:\n${gmNotes}`);
@@ -1055,4 +1052,69 @@ test("every tutorial deep-link points at a real route", async (t) => {
     const rendered = await page.$eval("#screen", (el) => el.children.length);
     assert.ok(rendered > 0, `tutorial links to #${route}, which renders nothing`);
   }
+});
+
+// Oracle results are inline, in the card that produced them: no modal, one slot
+// per card, a per-tab clear, a Reroll that re-runs the same button, and the
+// whole lot surviving a reload.
+test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?slot#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "scene", log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {}, scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?slot2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+
+  const slots = () => page.$$eval(".result-slot", (els) => els.map((e) => ({
+    title: e.querySelector(".result-slot__title").textContent,
+    body: e.querySelector(".result-slot__body").textContent,
+    card: e.closest(".card").querySelector(".sheet__section").textContent,
+  })));
+
+  await page.getByRole("button", { name: "\u{1F3B2} Scene Check (D8)" }).first().click();
+  await page.waitForTimeout(250);
+  assert.equal((await page.$$(".modal")).length, 0, "no modal — the result is inline");
+  let live = await slots();
+  assert.equal(live.length, 1);
+  assert.equal(live[0].card, "Frame the scene", "the result sits in the card that rolled it");
+
+  await page.getByRole("button", { name: "\u{1F3B2} Meaning (D8)" }).first().click();
+  await page.waitForTimeout(250);
+  live = await slots();
+  assert.equal(live.length, 2, "each card keeps its own result");
+  assert.equal(live[1].card, "Gather clues");
+  assert.match(await page.$eval(".result-clear .btn", (b) => b.textContent), /Clear these 2 results/);
+
+  // Reroll re-runs the same button (deterministically forced to a different face)
+  await page.evaluate(() => { Math.random = () => 0; });
+  await page.locator(".result-slot").first().getByRole("button", { name: /Reroll/ }).click();
+  await page.waitForTimeout(250);
+  live = await slots();
+  assert.equal(live.length, 2, "rerolling replaces the result, it does not add one");
+  assert.match(live[0].title, /Scene Check — 1 \(D8\)/, "the reroll re-ran the Scene Check button");
+
+  // Results survive a reload, then the per-tab clear wipes them
+  await page.goto(`${base}/index.html?slot3#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.equal((await slots()).length, 2, "inline results persist across a reload");
+  await page.locator(".result-slot").first().getByRole("button", { name: /^\u{1F4CC} Pin/u }).click();
+  await page.waitForTimeout(200);
+  await page.click(".result-clear .btn");
+  await page.waitForTimeout(250);
+  assert.equal((await slots()).length, 0, "the per-tab clear removes every result on that tab");
+  const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.match(notes, /\[Scene Check\]/, "pinning from a slot still writes to the case notes");
+
+  // Same surface on the GM screen
+  await page.evaluate(() => localStorage.setItem("brp:gm", JSON.stringify({ panel: "prep", log: [], scratchpad: "" })));
+  await page.goto(`${base}/index.html?slotgm#gm`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "\u{1F3B2} Theme (D10)" }).first().click();
+  await page.waitForTimeout(250);
+  assert.equal((await page.$$(".modal")).length, 0);
+  const gm = await slots();
+  assert.equal(gm.length, 1);
+  assert.equal(gm[0].card, "Build the case");
 });

@@ -118,6 +118,33 @@ export function sectionTitle(t) {
 }
 
 // ---- Shared roll surface (Solo & GM) --------------------------------------
+// Oracle and generator rolls land INLINE, in the card that produced them, so a
+// result stays on screen next to the button and beside the other cards' results
+// (Solo/GM only — dice rolls in roller.js keep their own modal flow).
+// `html` is the serialized result markup, produced by rendering the same node
+// tree the modal used, so a stored result survives a reload.
+export function resultSlot({ title, html, pinLine, onPin, onReroll, onDismiss, stamp }) {
+  const box = el("div", { class: "result-slot", role: "status", "aria-live": "polite" });
+  const head = el("div", { class: "result-slot__head" },
+    el("span", { class: "result-slot__title" }, title || "Result"),
+    stamp ? el("span", { class: "result-slot__time muted" }, new Date(stamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) : null);
+  box.append(head, el("div", { class: "result-slot__body", html: html || "" }));
+  const actions = el("div", { class: "result-slot__actions" });
+  if (typeof onReroll === "function") actions.append(el("button", { class: "btn btn--sm btn--roll", onClick: onReroll }, "\u21bb Reroll"));
+  if (pinLine && typeof onPin === "function") actions.append(el("button", { class: "btn btn--sm btn--ghost", onClick: () => onPin(pinLine) }, "\u{1F4CC} Pin"));
+  if (typeof onDismiss === "function") actions.append(el("button", { class: "btn btn--sm btn--ghost", onClick: onDismiss, "aria-label": "Dismiss this result" }, "\u2715"));
+  box.append(actions);
+  return box;
+}
+
+// Serialize a render(body) callback into markup for a result slot. Everything
+// goes through el()/text nodes, so user-entered text is escaped on the way in.
+export function renderToHtml(render) {
+  const d = el("div");
+  if (typeof render === "function") render(d);
+  return d.innerHTML;
+}
+
 // A result modal that always offers "Pin to notes" (when a pin line + handler
 // are given) alongside OK. `render(body)` fills the result content.
 export function resultModal({ title, render, pinLine, onPin }) {

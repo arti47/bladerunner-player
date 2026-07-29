@@ -2,8 +2,9 @@
 // Gated by Settings.gm(); mounted at route #gm. State in brp:gm.
 // Segmented sub-nav, in the order a session runs (remembers last panel):
 //   Prep (build the case) · Play (party + scene dressing) · Fight · Wrap · Notes.
-// Oracle/generator rolls show a result modal AND record a labeled Roll Log entry;
-// results pin (📌) to the GM Scratchpad.
+// Oracle/generator rolls drop their result INLINE in the card that made it (with
+// Reroll / Pin / dismiss, plus a per-tab clear) and record a labeled Roll Log
+// entry; results pin (📌) to the GM Scratchpad.
 
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
@@ -11,7 +12,7 @@ import { NPCS } from "../data-npcs.js";
 import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
-import { el, sectionTitle, segmentNav, resultModal, rollLogCard, modal, showToast, confirmModal, appendToNotes } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes } from "./ui.js";
 import { rollDie, uid, titleCase, clear } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { navigate } from "./router.js";
@@ -44,6 +45,9 @@ function readGmState() {
   return base;
 }
 function writeGmState(st) { try { localStorage.setItem(GM_KEY, JSON.stringify(st)); } catch (e) {} }
+// Set by btn() on every click so show() knows which card to drop the result in.
+let activeBtn = null;
+const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__section")?.textContent || null;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const archName = (c) => (c.archetype ? (archetype(c.archetype)?.name || c.archetype) : "No archetype");
 
@@ -62,7 +66,18 @@ export function renderGm(mount, rerender) {
   };
   // Notes read top to bottom — the newest entry lands at the bottom.
   const pinNote = (line) => { st.scratchpad = appendToNotes(st.scratchpad, `• ${line}`); writeGmState(st); showToast("Pinned to the end of your notes."); rerender(); };
-  const show = ({ label, text, pin, title, render }) => { const pinLine = pin || `[${label}] ${text}`; record(label, text, pinLine); resultModal({ title, pinLine, onPin: pinNote, render }); };
+  // A roll writes its result into the card that produced it (and the roll log).
+  const show = ({ label, text, pin, title, render, slot }) => {
+    const pinLine = pin || `[${label}] ${text}`;
+    const key = slot || cardTitleOf(activeBtn);
+    if (key) {
+      st.results = st.results || {};
+      st.results[key] = { title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn?.textContent || null };
+      writeGmState(st);
+    }
+    record(label, text, pinLine);   // record() rerenders, painting the slot
+    if (!key) showToast(text);
+  };
 
   mount.append(el("div", { class: "card screen-head" },
     sectionTitle("Game Master Screen"),
@@ -71,7 +86,38 @@ export function renderGm(mount, rerender) {
 
   const panel = el("div", { class: "panel" });
   ({ prep: panelPrep, play: panelPlay, fight: panelFight, wrap: panelWrap, notes: panelNotes }[st.panel] || panelPrep)(panel);
+  paintResults(panel);
   mount.append(panel);
+
+  // Paint each card's last result underneath it, and offer a per-tab clear.
+  // The Reroll button re-clicks the button that produced the result, so it
+  // survives a reload (the handler itself is not serializable).
+  function paintResults(panelEl) {
+    const live = [];
+    for (const cardEl of panelEl.querySelectorAll(".card")) {
+      const key = cardEl.querySelector(".sheet__section")?.textContent;
+      const r = key && st.results?.[key];
+      if (!r) continue;
+      live.push(key);
+      cardEl.append(resultSlot({
+        title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts,
+        onPin: pinNote,
+        onReroll: () => {
+          const again = [...cardEl.querySelectorAll(".btn")].find((b) => b.textContent === r.btnLabel);
+          if (again) again.click();
+          else showToast("Roll it again from the buttons above.", { kind: "warn" });
+        },
+        onDismiss: () => { delete st.results[key]; writeGmState(st); rerender(); },
+      }));
+    }
+    if (!live.length) return;
+    panelEl.append(el("div", { class: "btn-row result-clear" },
+      btn(`\u2715 Clear ${live.length === 1 ? "this result" : "these " + live.length + " results"}`, () => {
+        for (const key of live) delete st.results[key];
+        writeGmState(st); rerender();
+      }, "sm ghost")));
+  }
+
 
   // ---- PANELS (in the order a session runs) --------------------------------
   function panelPrep(root) {
@@ -313,5 +359,8 @@ function stepCard(step, title, sub, ...children) {
 function grid(...children) { return el("div", { class: "roll-grid" }, ...children.filter(Boolean)); }
 function btn(label, onClick, variant = "roll") {
   const cls = "btn " + variant.split(" ").map((v) => (v === "roll" ? "btn--roll" : v === "primary" ? "btn--primary" : v === "ghost" ? "btn--ghost" : v === "sm" ? "btn--sm" : "")).join(" ");
-  return el("button", { class: cls.trim(), onClick }, label);
+  // Record the button so a result raised by this click knows which card it
+  // belongs to (and which button to press again on Reroll).
+  const b = el("button", { class: cls.trim(), onClick: (e) => { activeBtn = b; onClick(e); } }, label);
+  return b;
 }

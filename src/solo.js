@@ -9,13 +9,14 @@
 //   Leads — step 5 review hypotheses · step 6 Hypothesis Check
 //   Wrap  — step 7 end the Shift, Downtime, and the award checklists
 //   Notes — the Case Log and the roll log
-// Every oracle/generator roll shows a result modal AND records a labeled entry
+// Every oracle/generator roll drops its result INLINE in the card that made it
+// (with Reroll / Pin / dismiss, plus a per-tab clear) and records a labeled entry
 // in the Roll Log; results pin (📌) to Case Notes.
 
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { el, sectionTitle, segmentNav, resultModal, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
 import { rollDie, successesFor, uid, clear } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { RollLog, Store } from "./store.js";
@@ -51,6 +52,9 @@ function readSoloState() {
   return base;
 }
 function writeSoloState(st) { try { localStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch (e) {} }
+// Set by btn() on every click so show() knows which card to drop the result in.
+let activeBtn = null;
+const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__section")?.textContent || null;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // Two-tier roll helpers (Solo Mode oracle procedure): roll D6 to pick a block,
@@ -94,10 +98,18 @@ export function renderSolo(mount, rerender) {
     st.scratchpad = appendToNotes(st.scratchpad, block);
     writeSoloState(st); rerender();
   };
-  const show = ({ label, text, pin, title, render }) => {
+  // A roll writes its result into the card that produced it (and the roll log).
+  // `slot` overrides the card lookup for results raised outside a button click.
+  const show = ({ label, text, pin, title, render, slot }) => {
     const pinLine = pin || `[${label}] ${text}`;
-    record(label, text, pinLine);
-    resultModal({ title, pinLine, onPin: pinNote, render });
+    const key = slot || cardTitleOf(activeBtn);
+    if (key) {
+      st.results = st.results || {};
+      st.results[key] = { title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn?.textContent || null };
+      writeSoloState(st);
+    }
+    record(label, text, pinLine);   // record() rerenders, painting the slot
+    if (!key) showToast(text);
   };
   // Hypothesis Check (Solo Mode): roll the hypothesis's rating dice as Base Dice
   // (6+ = 1 success, 10+ = 2), no push. ≥2 successes = crit, 1 = success, 0 = fail.
@@ -108,8 +120,8 @@ export function renderSolo(mount, rerender) {
     const out = succ >= 2 ? S.HYPOTHESIS_CHECK.crit : succ >= 1 ? S.HYPOTHESIS_CHECK.success : S.HYPOTHESIS_CHECK.failure;
     const faces = dice.map((d) => `D${d.size}:${d.face}`).join(", ");
     const ppTxt = `${out.pp > 0 ? "+" : ""}${out.pp} PP`;
-    record("Hypothesis Check", `${faces} · ${out.name} (${ppTxt})`, `[Hypothesis] ${h.text} → ${out.name} (${ppTxt})`);
-    resultModal({ title: "Hypothesis Check", pinLine: `[Hypothesis] ${h.text} → ${out.name} (${ppTxt})`, onPin: pinNote, render: (b) => b.append(
+    show({ label: "Hypothesis Check", text: `${faces} · ${out.name} (${ppTxt})`,
+      pin: `[Hypothesis] ${h.text} → ${out.name} (${ppTxt})`, title: "Hypothesis Check", render: (b) => b.append(
       el("p", { class: "muted" }, `“${h.text}”`),
       el("p", { class: "muted small" }, `Rating ${h.die} · rolled ${faces} · ${succ} success${succ === 1 ? "" : "es"}`),
       el("h3", { class: "roll-result " + (out.pp > 0 ? "roll-result--ok" : "roll-result--warn") }, `${out.name} — ${ppTxt} (if this ends the case)`),
@@ -141,7 +153,38 @@ export function renderSolo(mount, rerender) {
 
   const panel = el("div", { class: "panel" });
   ({ case: panelCase, shift: panelShift, scene: panelScene, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
+  paintResults(panel);
   mount.append(panel);
+
+  // Paint each card's last result underneath it, and offer a per-tab clear.
+  // The Reroll button re-clicks the button that produced the result, so it
+  // survives a reload (the handler itself is not serializable).
+  function paintResults(panelEl) {
+    const live = [];
+    for (const cardEl of panelEl.querySelectorAll(".card")) {
+      const key = cardEl.querySelector(".sheet__section")?.textContent;
+      const r = key && st.results?.[key];
+      if (!r) continue;
+      live.push(key);
+      cardEl.append(resultSlot({
+        title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts,
+        onPin: pinNote,
+        onReroll: () => {
+          const again = [...cardEl.querySelectorAll(".btn")].find((b) => b.textContent === r.btnLabel);
+          if (again) again.click();
+          else showToast("Roll it again from the buttons above.", { kind: "warn" });
+        },
+        onDismiss: () => { delete st.results[key]; writeSoloState(st); rerender(); },
+      }));
+    }
+    if (!live.length) return;
+    panelEl.append(el("div", { class: "btn-row result-clear" },
+      btn(`\u2715 Clear ${live.length === 1 ? "this result" : "these " + live.length + " results"}`, () => {
+        for (const key of live) delete st.results[key];
+        writeSoloState(st); rerender();
+      }, "sm ghost")));
+  }
+
 
   // ---- PANELS -------------------------------------------------------------
   function panelCase(root) {
@@ -248,12 +291,12 @@ export function renderSolo(mount, rerender) {
         setFlag("countdown");
         if (successes > 0) {
           const evRoll = rollDie(12); const ev = S.COUNTDOWN_EVENT[evRoll - 1]; st.timerDie = S.ESCALATION_STEPS[0];
-          record("Countdown Event", `Triggered · ${ev.name}`, `[Countdown] TRIGGERED — ${ev.name}: ${ev.examples}`);
-          resultModal({ title: "⚠️ Countdown Event Triggered!", pinLine: `[Countdown] TRIGGERED — ${ev.name}: ${ev.examples}`, onPin: pinNote, render: (b) => b.append(el("p", { class: "roll-result--warn" }, `Rolled ${rr.join(", ")} (${successes} success${successes > 1 ? "es" : ""}) — the event fires. Timer resets to ${S.ESCALATION_STEPS[0]}.`), el("div", { class: "roll-eyebrow" }, `Event #${evRoll} — ${ev.name}`), el("p", { class: "roll-prose" }, ev.examples)) });
+          show({ label: "Countdown Event", text: `Triggered · ${ev.name}`, pin: `[Countdown] TRIGGERED — ${ev.name}: ${ev.examples}`,
+            title: "⚠️ Countdown Event Triggered!", render: (b) => b.append(el("p", { class: "roll-result--warn" }, `Rolled ${rr.join(", ")} (${successes} success${successes > 1 ? "es" : ""}) — the event fires. Timer resets to ${S.ESCALATION_STEPS[0]}.`), el("div", { class: "roll-eyebrow" }, `Event #${evRoll} — ${ev.name}`), el("p", { class: "roll-prose" }, ev.examples)) });
         } else {
           const i = S.ESCALATION_STEPS.indexOf(st.timerDie); if (i !== -1 && i < S.ESCALATION_STEPS.length - 1) st.timerDie = S.ESCALATION_STEPS[i + 1];
-          record("Timer", `${rr.join(", ")} · no event → ${st.timerDie}`, `[Timer] No event (${rr.join(", ")}) → ${st.timerDie}`);
-          resultModal({ title: "Countdown Timer — No Event", render: (b) => b.append(el("p", { class: "roll-result--ok" }, `Rolled ${rr.join(", ")} (no successes).`), el("p", { class: "muted" }, `No event this Shift — the pressure builds. Timer upgraded to ${st.timerDie}.`)) });
+          show({ label: "Timer", text: `${rr.join(", ")} · no event → ${st.timerDie}`, pin: `[Timer] No event (${rr.join(", ")}) → ${st.timerDie}`,
+            title: "Countdown Timer — No Event", render: (b) => b.append(el("p", { class: "roll-result--ok" }, `Rolled ${rr.join(", ")} (no successes).`), el("p", { class: "muted" }, `No event this Shift — the pressure builds. Timer upgraded to ${st.timerDie}.`)) });
         }
       }),
       btn("▲ Upgrade", () => stepTimer(1), "sm ghost"),
@@ -498,5 +541,8 @@ function card(title, sub, ...children) {
 function grid(...children) { return el("div", { class: "roll-grid" }, ...children.filter(Boolean)); }
 function btn(label, onClick, variant = "roll") {
   const cls = "btn " + variant.split(" ").map((v) => (v === "roll" ? "btn--roll" : v === "primary" ? "btn--primary" : v === "ghost" ? "btn--ghost" : v === "sm" ? "btn--sm" : "")).join(" ");
-  return el("button", { class: cls.trim(), onClick }, label);
+  // Record the button so a result raised by this click knows which card it
+  // belongs to (and which button to press again on Reroll).
+  const b = el("button", { class: cls.trim(), onClick: (e) => { activeBtn = b; onClick(e); } }, label);
+  return b;
 }

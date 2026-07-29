@@ -555,3 +555,17 @@ textarea.input { resize: vertical; font-family: inherit; }
 /* ---- Solo: procedure-ordered panels --------------------------------------- */
 .step-eyebrow { margin-top: 0; color: var(--cyan); font-weight: 700; }
 .chip--done { border-color: var(--ok, var(--cyan)); color: var(--ok, var(--cyan)); cursor: default; font-size: .78rem; }
+
+/* ---- Inline roll results (Solo & GM cards) -------------------------------- */
+.result-slot { margin-top: .7rem; border: 1px solid var(--line); border-left: 3px solid var(--amber);
+  border-radius: .5rem; background: var(--panel-2); padding: .6rem .7rem; display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.result-slot__head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; min-width: 0; }
+.result-slot__title { font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; color: var(--amber);
+  font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
+.result-slot__time { font-size: .72rem; flex: 0 0 auto; }
+.result-slot__body { min-width: 0; overflow-wrap: anywhere; }
+.result-slot__body > :first-child { margin-top: 0; }
+.result-slot__body .roll-result { margin: .1rem 0; }
+.result-slot__body .roll-eyebrow { margin-top: .5rem; }
+.result-slot__actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.result-clear { justify-content: flex-end; }
