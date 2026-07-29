@@ -81,6 +81,13 @@ function panelSolo(host) {
       ["8. Close the shift", "Solo ▸ <b>Wrap</b> ▸ End the Shift (it advances the Shift counter on your sheet and enforces the Downtime cadence), roll a Downtime scene if you took one, then walk the Promotion and Humanity checklists."],
     ], [["Open Solo Mode", () => navigate("solo")], ["Combat Tracker", () => navigate("combat")]]),
 
+    steps("Optional: the Case Board", "A house aid, not part of the Blade Runner rules — the Board tab in Solo Mode. Skip it and nothing else changes.", [
+      ["Pin what you find", "Solo ▸ <b>Board</b> ▸ ＋ Clue / ＋ Suspect. Rolled boxes are filled from the official Solo tables; typed ones are whatever you already know."],
+      ["Draw the lines", "🔗 Connect when you work out how a clue implicates someone. Clues only ever connect to suspects, and a suspect's 🔗 count is how close they are to being the answer."],
+      ["Let it feed you leads", "Succeed on Observation, Tech, Medical Aid, Connections, Manipulation or Insight and the result offers a Discovery Check. Spend it on the Board — the fuller the board, the better the result."],
+      ["Close the case by the book", "When the board names a culprit, ★ promotes them to a hypothesis on Leads. The board awards nothing itself: the Hypothesis Check is what pays out."],
+    ], [["Open the Case Board", () => navigate("solo")]]),
+
     steps("Solo habits worth keeping", null, [
       ["Write it down", "Pin oracle results (📌) into case notes and pin rolls into your character's journal. Solo play falls apart when you can't remember what you established."],
       ["Answer before you roll", "If you already know what's behind the door, don't ask the oracle. It's for genuine uncertainty."],

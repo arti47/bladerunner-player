@@ -14,6 +14,8 @@ import { Store, Combat, RollLog } from "./store.js";
 import { modal, showToast } from "./ui.js";
 import { reclampVitals, isBrokenByDamage } from "./derived.js";
 import { Settings } from "./settings.js";
+import * as H from "../data-house.js";
+import { Board } from "./board.js";
 
 const dsize = (lvl) => D.LEVEL_DIE[lvl];
 const MANEUVER_DEFAULT = "C"; // no vehicle context: default Maneuverability for Driving
@@ -317,6 +319,16 @@ function nextSteps(ch, sk, succ, addResult) {
         el("strong", {}, res.name), el("p", {}, res.text),
         el("div", { class: "roll-eyebrow" }, "Bonus"), el("p", { class: "muted" }, res.bonus)));
     } }, "🎲 Crit Success (D8)"));
+  }
+  // House aid: a successful investigative roll earns a Discovery Check for the
+  // solo Case Board (data-house.js). Banked here, spent over on Solo ▸ Board.
+  if (Settings.solo() && H.DISCOVERY_SKILLS.includes(sk.key)) {
+    const earn = el("button", { class: "btn btn--sm btn--ghost", onClick: () => {
+      const n = Board.earn(1);
+      earn.disabled = true;
+      addResult(el("p", { class: "roll-next__earned muted" }, `Discovery Check banked (${n} waiting) — spend it on Solo ▸ Board. House aid.`));
+    } }, "🔍 Earn a Discovery Check");
+    box.append(earn);
   }
   return box;
 }

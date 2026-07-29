@@ -1,6 +1,7 @@
 // rules.js — pure rules lookups over the data libraries. No UI, no state.
 import * as D from "../data.js";
 import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
+import { rollDie } from "./core.js";
 
 export const dieForLevel = (level) => D.LEVEL_DIE[level];        // "B" -> 10
 export const dieSizeForLevel = (level) => D.LEVEL_DIE[level];    // alias (die size == max face)
@@ -49,6 +50,26 @@ export function lookupRange(table, roll) {
     const max = r.max !== undefined ? r.max : (r.range ? r.range[1] : Infinity);
     return roll >= min && roll <= max;
   });
+}
+
+// ---- Two-tier oracle rolls  [Solo Mode] -----------------------------------
+// The Solo book's big tables are rolled in two stages: a D6 picks the block,
+// then a second die scopes the entry within it. Used by the Solo assistant and
+// by anything else that fills content from those tables.
+// Cipher/Location are flat arrays of three equal blocks of 12 (D6 1–2/3–4/5–6).
+export function rollColumn(flat) {
+  const d6 = rollDie(6);
+  const bi = d6 <= 2 ? 0 : d6 <= 4 ? 1 : 2;
+  const d = rollDie(12);
+  return { d6, d, entry: flat[bi * 12 + (d - 1)] };
+}
+// Grouped tables carry their own { secondDie, blockRanges, blocks }.
+export function rollGrouped(tbl) {
+  const d6 = rollDie(6);
+  const bi = Math.max(0, tbl.blockRanges.findIndex(([lo, hi]) => d6 >= lo && d6 <= hi));
+  const block = tbl.blocks[bi];
+  const d = rollDie(tbl.secondDie);
+  return { d6, d, secondDie: tbl.secondDie, entry: block[Math.min(d, block.length) - 1] };
 }
 
 // ---- Acquiring gear  [Ch08 / §3.11] ---------------------------------------

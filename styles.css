@@ -551,6 +551,19 @@ textarea.input { resize: vertical; font-family: inherit; }
 .solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
 .solo-method:first-of-type { border-top: 0; }
 .rolllog__scope { padding: .1rem .6rem .4rem; }
+/* Case Board (house aid): boxes, connections and the pick list. */
+.board__group { margin: .6rem 0; }
+.board__box { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; margin: .4rem 0; background: var(--surface-2, transparent); }
+.board__box--solved { border-color: var(--warn, var(--accent)); }
+.board__head { display: flex; gap: .45rem; align-items: baseline; flex-wrap: wrap; }
+.board__tag { font-family: var(--font-mono, monospace); font-size: .8rem; color: var(--accent); flex: 0 0 auto; }
+.board__name { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
+.board__count { flex: 0 0 auto; font-size: .85rem; color: var(--muted); }
+.board__detail { margin: .25rem 0 0; }
+.board__pick { display: grid; gap: .35rem; margin: .5rem 0; }
+.board__pick .btn { justify-content: flex-start; text-align: left; }
+.roll-next__earned { margin: .4rem 0 0; }
+
 /* Solo: the printed Investigation Procedure, collapsed on the Shift panel. */
 .solo-proc { margin-top: .6rem; }
 .solo-proc__list { margin: .4rem 0 0; padding-left: 1.2rem; display: grid; gap: .4rem; }

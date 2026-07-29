@@ -8,10 +8,15 @@ import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
 import * as GM from "../data-gm.js";
 import * as SO from "../data-solo.js";
+import * as H from "../data-house.js";
+import * as BRD from "../src/board.js";
 import * as core from "../src/core.js";
 import * as R from "../src/rules.js";
 import { maxHealth, maxResolve, normalizeCharacter, reclampVitals, SCHEMA_VERSION } from "../src/derived.js";
 
+// The board mutates a plain state object; addBox is re-exported under a
+// clearer local name because these tests call it a lot.
+const Board_addBox = (b, kind, name) => BRD.addBox(b, kind, name);
 const mkChar = (o = {}) => ({ nature: "human", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, specialties: [], state: {}, ...o });
 
 // ---------------------------------------------------------------------------
@@ -721,4 +726,106 @@ test("case notes append: newest entry goes to the bottom, blank line between", a
   // empty additions do not disturb the notes
   assert.equal(appendToNotes("old", ""), "old\n");
   assert.equal(appendToNotes("", ""), "");
+});
+
+// ---------------------------------------------------------------------------
+// Case Board — HOUSE AID (data-house.js + src/board.js).
+// Not Blade Runner canon: these checks pin the procedure, and pin the promise
+// that no third-party word table is ever shipped in this repo (§12).
+// ---------------------------------------------------------------------------
+const emptyBoard = () => ({ boxes: [], nextN: 1, checks: 0, solvedId: null });
+
+test("the board is labelled a house aid, and ships no borrowed word tables", () => {
+  assert.equal(H.BOARD.houseAid, true);
+  assert.match(H.BOARD.credit, /not part of the Blade Runner RPG/i);
+  // Every array in data-house.js is a short mechanical table. A long list of
+  // evocative words would mean a third-party table had crept in.
+  for (const [name, value] of Object.entries(H)) {
+    if (!Array.isArray(value)) continue;
+    assert.ok(value.length <= 20, `${name} has ${value.length} entries — house data stays mechanical`);
+  }
+  const src = readFileSync(new URL("../data-house.js", import.meta.url), "utf8");
+  assert.ok(!/1D100 DESCRIPTOR|Mystery Descriptors/i.test(src), "no descriptor word table");
+  // Box content comes from the official Solo tables instead.
+  const board = readFileSync(new URL("../src/board.js", import.meta.url), "utf8");
+  for (const table of ["CLUE_MEANING", "CLUE_EVIDENCE_DESCRIPTOR", "CLUE_EVIDENCE_TYPE", "CHARACTER_SPHERE", "CHARACTER_TRAIT", "CIPHER_METHOD"])
+    assert.ok(board.includes(table), `boxes are filled from the official ${table}`);
+});
+
+test("discovery outcomes cover every total with no gap [house aid]", () => {
+  const rows = H.DISCOVERY_OUTCOMES;
+  assert.equal(rows[0].min, 1);
+  assert.equal(rows.at(-1).max, Infinity, "a big enough total always lands on the clincher");
+  for (let i = 1; i < rows.length; i++) assert.equal(rows[i].min, rows[i - 1].max + 1, `no gap before ${rows[i].min}`);
+  const effects = new Set(rows.map((r) => r.effect));
+  assert.deepEqual([...effects], ["nothing", "clue", "suspect", "clue+link", "suspect+link", "link", "clincher"]);
+  // boundaries, and the escalator: the same D100 face converges as boxes pile up
+  for (const [total, effect] of [[1, "nothing"], [15, "nothing"], [16, "clue"], [50, "suspect"], [70, "clue+link"], [80, "suspect+link"], [100, "link"], [101, "clincher"], [400, "clincher"]])
+    assert.equal(R.lookupRange(rows, total).effect, effect, `total ${total}`);
+  assert.equal(H.DISCOVERY_ROLL.addBoxCount, true);
+  assert.equal(H.DISCOVERY_FALLBACK, "nothing");
+});
+
+test("matrix die is the smallest that reaches the board [house aid]", () => {
+  assert.deepEqual([1, 3, 4, 5, 6, 7, 11, 12, 14, 20, 21].map(H.matrixDie), [4, 4, 4, 6, 6, 8, 12, 12, 20, 20, 20]);
+  assert.ok(H.MATRIX_DICE.every((d, i, a) => i === 0 || d > a[i - 1]), "dice listed smallest first");
+});
+
+test("connections only ever run clue ↔ suspect, once [house aid]", () => {
+  assert.deepEqual(H.CONNECTS, { clue: "suspect", suspect: "clue" });
+  const b = emptyBoard();
+  const c1 = Board_addBox(b, "clue", "print"), c2 = Board_addBox(b, "clue", "shell"), s1 = Board_addBox(b, "suspect", "Tyrell");
+  assert.equal(BRD.canConnect(c1, c2), false, "clue to clue is illegal");
+  assert.equal(BRD.canConnect(c1, c1), false, "a box cannot connect to itself");
+  assert.equal(BRD.canConnect(c1, s1), true);
+  assert.equal(BRD.connect(b, c1.id, s1.id), true);
+  assert.equal(c1.links.length, 1);
+  assert.equal(s1.links.length, 1, "the link is recorded on both boxes");
+  assert.equal(BRD.connect(b, c1.id, s1.id), false, "never doubled");
+  assert.equal(BRD.connectionsOf(b, s1), 1);
+  // removing a box takes its links with it
+  BRD.removeBox(b, c1.id);
+  assert.equal(s1.links.length, 0);
+  assert.equal(b.boxes.length, 2);
+});
+
+test("the board caps at 20 boxes, and a clincher needs 6 connections [house aid]", () => {
+  assert.equal(H.BOX_MAX, 20);
+  assert.equal(H.CLINCHER_CONNECTIONS, 6);
+  const b = emptyBoard();
+  for (let i = 0; i < H.BOX_MAX; i++) Board_addBox(b, i % 2 ? "clue" : "suspect", `box ${i}`);
+  assert.equal(BRD.isFull(b), true);
+  assert.equal(Board_addBox(b, "clue", "one too many"), null, "a full board refuses a new box");
+  assert.equal(BRD.resolvableEffect(b, "clue"), "nothing", "and the discovery roll degrades instead");
+
+  const b2 = emptyBoard();
+  const s = Board_addBox(b2, "suspect", "Tyrell");
+  assert.equal(BRD.isClincherByWeight(b2), false);
+  for (let i = 0; i < H.CLINCHER_CONNECTIONS; i++) BRD.connect(b2, Board_addBox(b2, "clue", `c${i}`).id, s.id);
+  assert.equal(BRD.isClincherByWeight(b2), true, "6 connections names the culprit on their own");
+  assert.equal(BRD.leadingSuspect(b2).id, s.id);
+});
+
+test("an impossible discovery outcome degrades rather than re-rolling [house aid]", () => {
+  const clueOnly = emptyBoard(); Board_addBox(clueOnly, "clue", "print");
+  assert.equal(BRD.resolvableEffect(clueOnly, "clue+link"), "nothing", "nothing to implicate");
+  assert.equal(BRD.resolvableEffect(clueOnly, "suspect+link"), "suspect+link", "a clue exists to link to");
+  assert.equal(BRD.resolvableEffect(clueOnly, "link"), "nothing");
+  assert.equal(BRD.resolvableEffect(clueOnly, "clincher"), "nothing", "no suspect to accuse");
+  assert.equal(BRD.resolvableEffect(clueOnly, "clue"), "clue", "an ordinary find always lands");
+});
+
+test("a Discovery Check is earned by the book's investigative skills [house aid]", () => {
+  for (const key of H.DISCOVERY_SKILLS) assert.ok(R.skill(key), `${key} is a real skill`);
+  // and the engine actually reads the list
+  const roller = readFileSync(new URL("../src/roller.js", import.meta.url), "utf8");
+  assert.ok(/DISCOVERY_SKILLS/.test(roller), "roller.js offers the check off a successful roll");
+  assert.ok(/Settings\.solo\(\)/.test(roller), "and only while Solo Mode is on");
+});
+
+test("the board's files are cached and the module map documents them", () => {
+  const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
+  for (const f of ["./data-house.js", "./src/board.js"]) assert.ok(sw.includes(`"${f}"`), `${f} is in the app shell`);
+  const spec = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
+  for (const f of ["data-house.js", "src/board.js"]) assert.ok(spec.includes(f), `${f} is documented in CLAUDE.md`);
 });

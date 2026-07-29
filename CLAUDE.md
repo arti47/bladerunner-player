@@ -79,6 +79,11 @@ compendium · Firebase multiplayer party with shared combat tracker · GM screen
 - **Power/spell automation: expected ABSENT** (Blade Runner is not a magic system), but
   confirm during Stage A — if the game has any comparable automatable subsystem, record it
   in §3.9 and decide at the checkpoint.
+- **House aids: ONE, added by owner request (2026-07-29).** The **Case Board** (§3.17,
+  `data-house.js` + `src/board.js`) is the only non-canon subsystem in the app. It is
+  quarantined in its own data file and its own Solo tab, labelled "House aid" in the UI,
+  and never touches the official economy. Anything else non-canon follows the same
+  pattern or does not ship (§10.8).
 
 ---
 
@@ -307,6 +312,27 @@ Confrontation)**, **Case Table 8 (Mood Pieces)**, the **per-sector location tabl
 Solo Mode's D12), and the session **award checklists** (8 Promotion / 9 losses / 11 Humanity,
 distinction at 5 PP in a session).
 
+**3.17 Case Board — HOUSE AID, not canon** (`data-house.js` + `src/board.js`, owner
+request 2026-07-29). An optional clue-and-suspect board for solo play, following the
+mystery-board procedure popularised by the **Mystery Matrix in Mythic Magazine** (Word Mill
+Games) — the *procedure only*: **none of that supplement's tables are reproduced**, and
+where it calls for descriptor words this app rolls the official Solo Mode tables instead
+(Imagining Clues for a clue, the character generator for a suspect, Cipher for a prompt),
+so the board fills with Blade Runner content. Mechanics: up to **20 boxes**, each a clue
+(`C`) or suspect (`S`), numbered sequentially; a **connection runs only clue↔suspect** and
+never doubles; a **matrix roll** picks a box with the smallest die that reaches the board
+(D4/6/8/10/12/20), skipping forward past any box the connection may not land on, and a roll
+past the last box is the player's choice, not a re-roll; a **Discovery Check** is `D100 +
+boxes on the board` read off `DISCOVERY_OUTCOMES` (nothing / clue / suspect / clue+link /
+suspect+link / link two existing / **clincher** at 101+), with an outcome the board cannot
+honour degrading to "nothing" rather than being re-rolled; the **clincher** names the
+culprit, and a suspect carrying **6 connections** does so on its own. It is quarantined:
+its own data file, its own Solo tab, every card headed **"House aid"**, and it **awards
+nothing** — the answer is handed back to the book via *Promote to a hypothesis*, so the
+official Hypothesis Check pays out. Checks are earned on the sheet: a **successful roll of
+Observation / Tech / Medical Aid / Connections / Manipulation / Insight** offers one, only
+while Solo Mode is on.
+
 ---
 
 ## 4. Stage B — The Checkpoint (one user sign-off)
@@ -372,12 +398,14 @@ discovered rules ambiguities — never for permission to continue.
 | `data-npcs.js` | Humanoid NPCs / archetypes / animals |
 | `data-pregens.js` | Published pre-generated characters (CONDITIONAL on §3.14) |
 | `data-solo.js` | Official Solo Mode tables (PRESENT for this project) |
+| `data-house.js` | **HOUSE AIDS — not canon.** The Case Board procedure (§3.17). Quarantined so every canonical data file stays pure book. |
 | `data-gm.js` | GM reference: Case File Generator + disciplinary actions (project-specific) |
 | `firebase-config.js` | Placeholder config + `FIREBASE_ENABLED` flag |
 | `database.rules.json` | RTDB security rules (player/GM roles, ownership + role validation) |
 | `storage.rules` | Cloud Storage rules — portraits only, authed, ≤1 MB images |
 | `manifest.json`, `service-worker.js`, `icon.svg` | PWA |
 | `src/chase.js` | Chase tracker (foot/ground/aerial) surfaced on the Combat screen; obstacle rolls land in an inline result slot |
+| `src/board.js` | Case Board (house aid, §3.17): the `Board` store (`brp:board`), the pure board operations, and the Solo ▸ Board panel |
 | `tests/` + `package.json` | Dev-only headless regression harness (`npm test`; `update.test.mjs` runs the service worker for real); dev-only `playwright-core`; `node_modules` gitignored; not in the SW app shell |
 | `README.md` | Setup incl. Firebase steps, GitHub Pages deploy, and the personal-use licensing note (§12) |
 | `CLAUDE.md` | This document — the project's living canonical spec |
@@ -393,7 +421,7 @@ One module per responsibility; explicit `import`/`export`, nothing smuggled thro
 |---|---|
 | `core.js` | Foundational constants, DOM/util helpers, raw dice functions, `appendToNotes`. No imports. |
 | `ui.js` | Themed modals/toasts/confirm/prompt + the shared inline result slot (`resultSlot`/`renderToHtml`) used by Solo & GM. |
-| `rules.js` | Pure rules lookups over the data libraries (find ability, parse gear, build skills, requirement checks). |
+| `rules.js` | Pure rules lookups over the data libraries (find ability, parse gear, build skills, requirement checks) + the Solo two-tier oracle rolls (`rollColumn`/`rollGrouped`) shared by Solo and the Case Board. |
 | `derived.js` | Character-derived calculations (effective maxima, encumbrance, equipped gear, data normalization/migration) + the Shift transitions (`applyInvestigationShift`/`applyDowntimeShift`/`downtimeLimitFor`) shared by the sheet and Solo. |
 | `settings.js` | Feature toggles (solo, GM screen, advanced automation). |
 | `store.js` | Local/cloud character persistence + combat mirroring + global roll log (`RollLog`), which mirrors sheet/combat rolls into the solo Case Notes while Solo Mode is on. |
@@ -403,7 +431,8 @@ One module per responsibility; explicit `import`/`export`, nothing smuggled thro
 | `sheet.js` | The full character sheet + all in-play tracking UI. |
 | `combat.js` | Shared combat tracker: initiative, turn state, combatant cards, conditions. |
 | `chase.js` | Foot & vehicle chases: distance, maneuvers, D12 obstacle tables (§3.12). |
-| `solo.js` | Solo assistant — PRESENT (official Solo Mode). Panels follow the book's Investigation Procedure: Case · Shift · Scene · Leads · Wrap · Notes. |
+| `board.js` | Case Board — **house aid** (§3.17). Owns `brp:board`, the pure board operations (connect/discovery/matrix roll/clincher), and the Solo ▸ Board panel. Imports no canon-only module beyond the tables it fills boxes from. |
+| `solo.js` | Solo assistant — PRESENT (official Solo Mode). Panels follow the book's Investigation Procedure: Case · Shift · Scene · **Board** (house aid) · Leads · Wrap · Notes. |
 | `gm.js` | GM dashboard — panels follow the arc of a session: Prep · Play · Fight · Wrap · Notes. |
 | `tutorial.js` | "How to Play" — procedural walkthroughs (setup / solo / table) + a live cheat sheet. |
 | `screens.js` | Top-level screen renderers (home/rules/about) + party banner. |
@@ -456,6 +485,13 @@ engine (§3.6) and `criticalInjuries` record crits applied from an attack (§3.7
 **Chase state** (local-only, §3.12) lives under `brp:chase` via `chase.js` `Chase`:
 `{ active, env:"foot"|"ground"|"aerial", round, distIdx, obstacle{roll,text}|null,
 prey, pursuer, log[] }`. `distIdx` indexes `RANGES`; below 0 = caught, past the end = escaped.
+
+**Case Board state** (local-only, house aid, §3.17) lives under `brp:board` via `board.js`
+`Board`: `{ boxes[{ id, n, kind:"clue"|"suspect", name, detail, links[boxId] }], nextN,
+checks, solvedId|null }`. `links` is kept symmetric on both boxes, `checks` is the bank of
+earned Discovery Checks, and `solvedId` is set by a clincher. Solo's "Start a fresh case"
+calls `Board.clear()`. Not mirrored to Firebase and not part of `SCHEMA_VERSION` — it is
+per-device scratch state, like `brp:chase`.
 
 **Global roll log** (local-only, not mirrored) is stored under `brp:rolllog` via `store.js`
 `RollLog`: newest-first in storage, **rendered oldest-first** so every screen reads top to
@@ -687,6 +723,12 @@ Re-verify the finished app against the source:
 - The generated app is a **personal play aid** built from the user's own books. State in
   the README that if the user publishes or distributes it, licensing is their
   responsibility.
+- **House aids from third-party supplements (added 2026-07-29):** mechanics may be
+  implemented; **tables, word lists and prose may not**. The Case Board (§3.17) follows the
+  Mystery Matrix *procedure* from Mythic Magazine and reproduces none of its content — its
+  boxes are filled from the user's own Solo Mode tables. The credit line is stated in
+  `data-house.js` and shown in the app. A regression check fails if any long word list
+  appears in `data-house.js`.
 - Repo visibility: the plan called for a **private** repo (the app derives from licensed
   rulebooks the user owns). The owner chose **public** instead (free Pages from a branch).
   Mitigation that keeps this defensible: the repo holds **no rulebook prose or art** — only
@@ -766,3 +808,4 @@ static files. No build step and no Actions workflow — `git push` to `main` *is
 | 2026-07-29 | **Panels now teach their own use; a finished roll says what comes next (user: "how to use each panel? still not intuitive").** Card subtitles said what a card *was*, never when to press which button — the Scene tab's "Roll it out" card offered Question Check / Crit Success / Cipher with no cue for which one a given moment calls for. (a) Every Solo and GM card gains a collapsed **"How to use this"** note (`HOW` map keyed by card title, rendered in the same pass that paints results): each line is *what you press* → *when, and what you do with the result* — e.g. Crit Success is "after you roll two or more successes outside combat", Gather Clues is "after a successful search/examine/interview on your sheet", the Countdown check is "once per Shift, right after you pick the location". Procedure only; no rules numbers (§10.2). (b) The sheet's skill-roll result gains a **next-steps block** (`nextSteps()` in `roller.js`): a failure points at the push and its cost, a success states that one success is enough and what extra successes buy (with the three cases the book actually mechanises), and a **critical outside combat offers 🎲 Crit Success (D8) inline** — the Solo Mode table now rolls where you are instead of sending you to another screen, and logs to the roll log/case notes like any other roll. | User asked how to use each panel; screenshots of "Roll it out" and "Gather clues" | `npm test` → **117 pass / 0 fail**. New check asserts every card on Solo ▸ Scene and GM ▸ Prep carries guidance lines, that a forced critical shows the next-steps block and renders the crit-table result inline, and that a forced failure points at the push. Drove all six Solo tabs at 390px: guidance present on 14/14 roll cards, no overflow, zero console errors. | brp-v47 |
 | 2026-07-29 | **Update toast now has an Update button (user request).** The old toast just said "Update available — reload to refresh" and the service worker called `skipWaiting()` in `install`, so a mid-session deploy could swap modules under the player with no way to apply it deliberately. New flow: the worker **installs and waits**; the page shows a **sticky toast — "A new version is available." · [Update now] · [✕]** — and pressing it posts `SKIP_WAITING` to the waiting worker, which activates, drops the stale cache, and the page reloads once on `controllerchange`. New `src/update.js` owns this (kept out of `main.js` so Settings can import it without a `main → router → screens` cycle); `showToast` gained `action: {label,onClick}` and `timeout: 0` for toasts that must not disappear before they can be pressed. The app now also calls `registration.update()` on launch and whenever it returns to the foreground, so an installed PWA notices a GitHub Pages deploy without being reinstalled, and **Settings ▸ App version ▸ Check for updates** does it on demand. **Two bugs found by driving it:** (1) the first install fires `controllerchange` via `clients.claim()`, so the naive reload-on-controllerchange bounced every new visitor — reload now happens only after a pressed update (`updateRequested`); (2) `#toast-region` is `pointer-events: none`, so the new button could not be clicked at all — actionable toasts take pointer events back. | User: "Add ability to click button on toast to update app when new code in GitHub." | `npm test` → **119 pass / 0 fail**, including a new `tests/update.test.mjs` that runs the **real** service worker: installs it, serves a bumped `CACHE_VERSION` as a "deploy", asserts no toast on first install, a waiting worker + both caches after the check, then presses the button and asserts the old cache is gone, the toast cleared, the app re-rendered, zero page errors — plus a guard that the toast button is the top element at its own centre. | brp-v48 |
 | 2026-07-29 | **`SOLO_SEQUENCE` corrected to the printing and given consumers.** The Solo tabs were re-ordered to the Investigation Procedure in the previous pass, but `data-solo.js` still held the old five-line paraphrase of that procedure — **dead data with no reader**, while `solo.js` labelled its cards with nine hardcoded `"Step n"` strings (§10.2). Replaced it with the printing's **seven numbered steps** (`{step, title, text, where}`, Solo Mode p.005); `stepCard()` now takes the step *number* and builds the eyebrow from the table, and the Shift panel carries a collapsed **"The Investigation Procedure — the whole loop"** reference rendered from it, each step naming the tab that serves it. Cards outside the numbered loop ("Before you start", "Get briefed") still pass a string. No mechanic or layout changed. | The sequence of play was stated in two places and the data-layer copy was the wrong one | `npm test` → **120 pass / 0 fail**. A unit check pins the seven steps, their tab mapping, that `solo.js` reads the table, and that no `stepCard("Step` literal survives; the existing panel-order smoke test now also asserts the rendered procedure list matches the data in step order. | brp-v49 |
+| 2026-07-29 | **Case Board — the one house aid (owner request).** Incorporated the mystery-board procedure popularised by Mythic Magazine's Mystery Matrix into solo play **without removing or changing anything already there**. New `data-house.js` (quarantined, non-canon: `BOX_MAX 20`, clue↔suspect-only `CONNECTS`, `MATRIX_DICE` + `matrixDie()`, `DISCOVERY_OUTCOMES` D100+boxes, `CLINCHER_CONNECTIONS 6`, `DISCOVERY_SKILLS`) and new `src/board.js` (the `Board` store at `brp:board`, the pure board operations, and the panel). Solo gains a **7th pill, Board**, between Scene and Leads — `Case · Shift · Scene · Board · Leads · Wrap · Notes`; every card is headed **House aid**. Boxes are filled from the **official** Solo tables (Imagining Clues / character generator / Cipher) — **none of the supplement's tables are reproduced** (§12), and a unit check fails if a long word list ever lands in `data-house.js`. **Discovery Checks are earned on the sheet:** a successful Observation, Tech, Medical Aid, Connections, Manipulation or Insight roll offers `🔍 Earn a Discovery Check` in the result's next-steps block (Solo only), banked and spent on the Board. The board **awards nothing** — a clincher (or a suspect on 6 connections) offers **★ Promote to a hypothesis**, so the case still closes through the book's own Hypothesis Check. `rollColumn`/`rollGrouped` moved from `solo.js` into `rules.js` so both screens share one implementation. **Three real bugs found by driving it headless, all fixed:** the card-level Connect button was passed straight to `btn()` and received the click event as its `from` argument ("Sundefined is already connected…"); `named()` was a `const` declared below the render body that calls `boxList()`, so it hit its TDZ and blanked the panel (the same fault class as the earlier `doneChip` bug); and "Let the board decide" neither persisted the link nor honoured a failed `connect()`, so a duplicate link was reported but never saved — `matrixRoll` now takes an `accept` predicate and skips forward past any box the connection may not land on. | Owner: "Can you incorporate the mystery crafter into the system without losing any of the current features" | `npm test` → **131 pass / 0 fail**. Nine new unit checks pin the house-aid labelling and the no-word-table promise, gap-free discovery ranges with boundary totals, the die ladder, connection legality/symmetry/removal, the 20-box cap, the 6-connection clincher, outcome degradation, and that `DISCOVERY_SKILLS` are real skills read by `roller.js`. Smoke drives the whole loop at 360px: add rolled + typed boxes, connect by pick list and by board roll, a Discovery Check, a forced clincher, promote-to-hypothesis landing in Leads, the sheet earning a check (and not offering one for Firearms, nor with Solo off), and "Start a fresh case" wiping the board. Zero console errors, zero overflow. Two harness fixes came with it: the board test now forces the die so it covers both the landed-on-a-box and the past-the-last-box branches (a 1-in-6 flake caught it), and `npm test` runs its files with `--test-concurrency=1` — three parallel Chromium instances were starving the service-worker test's 20s waits. | brp-v50 |

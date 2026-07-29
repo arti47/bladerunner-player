@@ -993,6 +993,201 @@ test("roll logs read top to bottom too — newest entry is last", async (t) => {
 // Scene -> Leads -> Wrap -> Notes, and the two things that OPEN a Shift
 // (proceed to a location, then the Countdown Event Check) sit together on the
 // Shift panel, in that order.
+// ---------------------------------------------------------------------------
+// Case Board — HOUSE AID (§3.17). Drives the whole loop through the real UI:
+// boxes, connections, a Discovery Check, a clincher, and the hand-back to the
+// book's Hypothesis Check. Also pins that it adds to Solo without taking
+// anything away, and that the sheet is what earns a check.
+// ---------------------------------------------------------------------------
+test("the Case Board runs a case: boxes, connections, discovery, clincher, promote [house aid]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const open = async (tag) => {
+    await page.goto(`${base}/index.html?board${tag}#solo`, { waitUntil: "load" });
+    await page.waitForTimeout(250);
+  };
+  await open("0");
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "board", hypotheses: [], log: [], scratchpad: "OLD NOTE", results: {} }));
+    localStorage.removeItem("brp:board");
+  });
+  await open("1");
+
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Board");
+  const eyebrows = await page.$$eval(".panel .card .step-eyebrow", (e) => e.map((x) => x.textContent.trim()));
+  assert.ok(eyebrows.length && eyebrows.every((x) => x === "House aid"), `every board card is labelled a house aid: ${eyebrows}`);
+
+  const board = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:board")));
+  // Rolled boxes take their content from the official Solo tables.
+  for (const name of ["🎲 ＋ Clue", "🎲 ＋ Suspect", "🎲 ＋ Clue", "🎲 ＋ Suspect"]) {
+    await page.getByRole("button", { name, exact: true }).click();
+    await page.waitForTimeout(180);
+  }
+  let b = await board();
+  assert.equal(b.boxes.length, 4);
+  assert.deepEqual(b.boxes.map((x) => x.n), [1, 2, 3, 4], "boxes are numbered sequentially");
+  assert.ok(b.boxes.every((x) => x.name && x.detail), "rolled boxes carry a name and detail");
+
+  // Typed box
+  await page.getByRole("button", { name: "✍ ＋ Suspect", exact: true }).click();
+  await page.waitForTimeout(150);
+  await page.fill(".modal input, .modal textarea", "Eldon Tyrell");
+  await page.getByRole("button", { name: /^(OK|Add)$/ }).click();
+  await page.waitForTimeout(200);
+  assert.ok((await board()).boxes.some((x) => x.name === "Eldon Tyrell"), "a typed suspect lands on the board");
+
+  // Connect from the pick list — clues may only be offered suspects.
+  await page.getByRole("button", { name: "🔗 Connect two boxes" }).click();
+  await page.waitForTimeout(150);
+  const options = await page.$$eval(".board__pick .btn", (e) => e.map((x) => x.textContent.trim()));
+  assert.ok(options.length >= 3 && options.every((o) => o.startsWith("S")), `only suspects offered: ${options}`);
+  await page.locator(".board__pick .btn").first().click();
+  await page.waitForTimeout(250);
+  b = await board();
+  assert.equal(b.boxes.filter((x) => x.links.length).length, 2, "the link is recorded on both boxes");
+
+  // Connect by letting the board roll — this must PERSIST (it once did not).
+  // The die is forced: face 1 lands on a real box, and a face past the last box
+  // is the printed "you choose" branch, not a re-roll.
+  const links = async () => (await board()).boxes.reduce((n, x) => n + x.links.length, 0);
+  // Roll from a named box — one that still has a legal partner, since a fully
+  // connected box correctly refuses to open the picker at all.
+  const boardRoll = async (force, tag) => {
+    await page.evaluate((r) => { Math.random = () => r; }, force);
+    await page.locator(".board__box").filter({ has: page.locator(".board__tag", { hasText: new RegExp(`^${tag}$`) }) })
+      .getByRole("button", { name: /^Connect / }).click();
+    await page.waitForTimeout(150);
+    await page.getByRole("button", { name: "🎲 Let the board decide" }).click();
+    await page.waitForTimeout(250);
+  };
+  const before = await links();
+  await boardRoll(0, "S2");        // lowest face — lands on a real box
+  assert.equal(await links(), before + 2, "a board-rolled connection is saved, not just announced");
+
+  await boardRoll(0.999, "C1");   // highest face on a D6 with 5 boxes — past the end
+  assert.equal(await links(), before + 2, "a roll past the last box adds nothing; you pick instead");
+  const warned = await page.$$eval(".toast", (e) => e.map((x) => x.textContent));
+  assert.ok(warned.some((w) => /past the board/.test(w)), `and says so: ${warned}`);
+  await page.keyboard.press("Escape");
+
+  // The discovery roll lands inline, in its own card.
+  await page.getByRole("button", { name: "🎲 Discovery Check" }).click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "Roll anyway" }).click();
+  await page.waitForTimeout(300);
+  const byCard = await page.$$eval(".panel .card", (cards) => cards.map((c) => [
+    c.querySelector(".sheet__section")?.textContent,
+    [...c.querySelectorAll(":scope > .result-slot .result-slot__title")].map((x) => x.textContent.trim())]));
+  const discCard = byCard.find(([title]) => title === "Discovery Check");
+  assert.ok(discCard[1].some((x) => /Discovery Check —/.test(x)), `the result lands in the Discovery card: ${JSON.stringify(byCard)}`);
+
+  // Pinning a box writes to the case notes, at the end.
+  await page.locator(".board__box").first().getByRole("button", { name: /^Pin / }).click();
+  await page.waitForTimeout(250);
+  const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.ok(notes.startsWith("OLD NOTE"), "existing notes are kept");
+  assert.match(notes.trim().split("\n").pop(), /^• \[Board [CS]\d+\]/, "the pinned box is the last line");
+
+  // Six connections on one suspect names the culprit without a clincher roll.
+  await page.evaluate(() => {
+    const b = JSON.parse(localStorage.getItem("brp:board"));
+    const s = b.boxes.find((x) => x.kind === "suspect");
+    for (let i = 0; i < 6; i++) {
+      const c = { id: "seed" + i, n: b.nextN++, kind: "clue", name: "Seeded clue " + i, detail: "", links: [s.id] };
+      if (!s.links.includes(c.id)) s.links.push(c.id);
+      b.boxes.push(c);
+    }
+    localStorage.setItem("brp:board", JSON.stringify(b));
+  });
+  await open("2");
+  const titles = await page.$$eval(".panel .card .sheet__section", (e) => e.map((x) => x.textContent.trim()));
+  assert.ok(titles.includes("The answer"), `the board calls it: ${titles}`);
+
+  // …and hands the case back to the book, awarding nothing itself.
+  await page.getByRole("button", { name: /Promote to a hypothesis/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: /^(OK|Add to Leads)$/ }).click();
+  await page.waitForTimeout(250);
+  const solo = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  assert.equal(solo.hypotheses.length, 1, "the suspect becomes a hypothesis on Leads");
+  assert.equal(solo.hypotheses[0].die, "D6", "rated at the book's starting die, not the board's connection count");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.equal(overflow, 0, "no horizontal overflow at 360px");
+
+  // Nothing was taken away: the official panels and their cards are all still there.
+  for (const [pill, expect] of [["Shift", "Countdown Event Check"], ["Scene", "Frame the scene"], ["Leads", "Review your hypotheses"], ["Wrap", "End the Shift"]]) {
+    await page.click(`.segnav__pill:text-is("${pill}")`);
+    await page.waitForTimeout(150);
+    const cards = await page.$$eval(".panel .card .sheet__section", (e) => e.map((x) => x.textContent.trim()));
+    assert.ok(cards.includes(expect), `${pill} still has "${expect}": ${cards}`);
+  }
+});
+
+test("a Discovery Check is earned on the sheet, and only by investigative rolls [house aid]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  // Roll a named skill with the dice forced to succeed, and report what the
+  // result offered. `solo` toggles Solo Mode off to prove the gate.
+  const rollSkill = async (tag, skillName, solo) => {
+    await page.goto(`${base}/index.html?earn${tag}a#sheet`, { waitUntil: "load" });
+    await page.evaluate((on) => {
+      localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: on, gm: false }));
+      localStorage.removeItem("brp:board");
+    }, solo);
+    await page.evaluate(async () => {
+      const { Store } = await import("/src/store.js");
+      const { normalizeCharacter } = await import("/src/derived.js");
+      const ch = normalizeCharacter({ name: "Board Runner", nature: "human", archetype: "analyst", years: "seasoned",
+        attributes: { STR: "C", AGI: "C", INT: "A", EMP: "B" } });
+      Store.setActiveId(Store.save(ch).id);
+    });
+    await page.goto(`${base}/index.html?earn${tag}b#sheet`, { waitUntil: "load" });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { Math.random = () => 0.999; });
+    await page.getByRole("button", { name: new RegExp(`Roll ${skillName}`) }).first().click();
+    await page.waitForTimeout(150);
+    await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+    await page.waitForTimeout(250);
+    const offered = await page.$$eval(".modal .btn", (e) => e.map((x) => x.textContent.trim()));
+    return offered;
+  };
+
+  const obs = await rollSkill("1", "Observation", true);
+  assert.ok(obs.some((x) => /Earn a Discovery Check/.test(x)), `a successful Observation offers the check: ${obs}`);
+  await page.getByRole("button", { name: /Earn a Discovery Check/ }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:board")).checks), 1, "the check is banked");
+  await page.keyboard.press("Escape");
+
+  const gun = await rollSkill("2", "Firearms", true);
+  assert.ok(!gun.some((x) => /Earn a Discovery Check/.test(x)), `shooting straight is not investigating: ${gun}`);
+  await page.keyboard.press("Escape");
+
+  const off = await rollSkill("3", "Observation", false);
+  assert.ok(!off.some((x) => /Earn a Discovery Check/.test(x)), `nothing offered with Solo Mode off: ${off}`);
+  await page.keyboard.press("Escape");
+});
+
+test("Start a fresh case wipes the Case Board too [house aid]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?bwipe1#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "notes", hypotheses: [{ id: "h", text: "t", die: "D6" }], log: [], scratchpad: "notes here", results: {} }));
+    localStorage.setItem("brp:board", JSON.stringify({ boxes: [{ id: "x", n: 1, kind: "clue", name: "print", detail: "", links: [] }], nextN: 2, checks: 3, solvedId: null }));
+  });
+  await page.goto(`${base}/index.html?bwipe2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /Start a fresh case/ }).click();
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: "Wipe everything" }).click();
+  await page.waitForTimeout(250);
+  const b = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:board")));
+  assert.deepEqual(b.boxes, [], "the board is cleared");
+  assert.equal(b.checks, 0, "banked checks are cleared");
+  assert.equal(b.nextN, 1, "numbering restarts");
+});
+
 test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.005]", async (t) => {
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?soloseq#solo`, { waitUntil: "load" });
@@ -1004,7 +1199,8 @@ test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.
   await page.waitForTimeout(200);
 
   const pills = await page.$$eval(".segnav__pill", (els) => els.map((e) => e.textContent.trim()));
-  assert.deepEqual(pills, ["Case", "Shift", "Scene", "Leads", "Wrap", "Notes"]);
+  assert.deepEqual(pills, ["Case", "Shift", "Scene", "Board", "Leads", "Wrap", "Notes"],
+    "the house-aid Board sits between the scene that finds evidence and the leads it feeds");
   // a legacy panel key migrates instead of falling back to the first panel
   const active = await page.$eval(".segnav__pill--on", (e) => e.textContent.trim());
   assert.equal(active, "Leads", "legacy 'track' panel maps to Leads");
@@ -1292,6 +1488,14 @@ test("cards explain when to press them, and a roll says what comes next", async 
   })));
   assert.ok(cards.length >= 4, "the Scene panel has its cards");
   for (const c of cards) assert.ok(c.lines > 0, `"${c.title}" has no How-to-use guidance`);
+
+  // The house-aid Board tab is held to the same standard.
+  await page.evaluate(() => localStorage.setItem("brp:solo", JSON.stringify({ panel: "board", log: [], scratchpad: "", hypotheses: [], results: {} })));
+  await page.goto(`${base}/index.html?howboard#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const boardCards = await page.$$eval(".panel .card", (els) => els.map((c) => [c.querySelector(".sheet__section")?.textContent, c.querySelectorAll(".how__line").length]));
+  assert.ok(boardCards.length >= 2, `the Board panel has its cards: ${JSON.stringify(boardCards)}`);
+  for (const [title, lines] of boardCards) assert.ok(lines > 0, `board card "${title}" has no How-to-use guidance`);
 
   // GM cards too
   await page.evaluate(() => localStorage.setItem("brp:gm", JSON.stringify({ panel: "prep", log: [], scratchpad: "" })));

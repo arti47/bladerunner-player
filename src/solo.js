@@ -6,6 +6,8 @@
 //   Case  — before the loop: your solo origin, opening a case, the briefing
 //   Shift — step 1 proceed to a location · step 2 Countdown Event Check
 //   Scene — step 3 frame the scene · step 4 skill rolls, clues, NPCs, combat
+//   Board — HOUSE AID (src/board.js): the clue-and-suspect board, between the
+//           scene that finds evidence and the leads it feeds
 //   Leads — step 5 review hypotheses · step 6 Hypothesis Check
 //   Wrap  — step 7 end the Shift, Downtime, and the award checklists
 //   Notes — the Case Log and the roll log
@@ -18,10 +20,11 @@ import * as GM from "../data-gm.js";
 import * as D from "../data.js";
 import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
 import { rollDie, successesFor, uid, clear } from "./core.js";
-import { lookupRange } from "./rules.js";
+import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store } from "./store.js";
 import { applyInvestigationShift, applyDowntimeShift, downtimeLimitFor, maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
+import { Board, renderBoardPanel } from "./board.js";
 
 const SOLO_KEY = "brp:solo";
 const LOG_CAP = 50;
@@ -31,6 +34,7 @@ const SEGMENTS = [
   { key: "case", label: "Case" },
   { key: "shift", label: "Shift" },
   { key: "scene", label: "Scene" },
+  { key: "board", label: "Board" },
   { key: "leads", label: "Leads" },
   { key: "wrap", label: "Wrap" },
   { key: "notes", label: "Notes" },
@@ -60,24 +64,6 @@ let activeBtn = null;
 let freshResult = null;
 const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__section")?.textContent || null;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-// Two-tier roll helpers (Solo Mode oracle procedure): roll D6 to pick a block,
-// then a second die scoped to only that block's entries.
-// Cipher/Location store flat arrays of 3 equal blocks of 12 (D6 1–2/3–4/5–6 → D12).
-function rollColumn(flat) {
-  const d6 = rollDie(6);
-  const bi = d6 <= 2 ? 0 : d6 <= 4 ? 1 : 2;
-  const d = rollDie(12);
-  return { d6, d, entry: flat[bi * 12 + (d - 1)] };
-}
-// Grouped tables carry their own { secondDie, blockRanges, blocks }.
-function rollGrouped(tbl) {
-  const d6 = rollDie(6);
-  const bi = Math.max(0, tbl.blockRanges.findIndex(([lo, hi]) => d6 >= lo && d6 <= hi));
-  const block = tbl.blocks[bi];
-  const d = rollDie(tbl.secondDie);
-  return { d6, d, secondDie: tbl.secondDie, entry: block[Math.min(d, block.length) - 1] };
-}
 
 // ---- "How to use this" — per-card guidance ---------------------------------
 // Keyed by card title. Each line is [what you press, when you press it and what
@@ -154,6 +140,23 @@ const HOW = {
   "Award your points": [
     ["Tick as they happen", "during play, then count them at the end of the case or session."],
     ["Move the totals", "onto your sheet, where they are spent on specialties and skills."],
+  ],
+  "Case Board": [
+    ["This whole tab is a house aid", "not part of the Blade Runner rules. Ignore it and nothing else changes."],
+    ["🎲 ＋ Clue / ＋ Suspect", "when you find evidence or meet someone worth suspecting — the box is filled from the official Solo tables."],
+    ["✍ ＋ Clue / ＋ Suspect", "when you already know what you found and only want it on the board."],
+    ["🔗 Connect", "when you work out how a clue implicates a suspect. Clues only ever connect to suspects. Let the board decide if you want the link to surprise you."],
+    ["🔗 count on a suspect", "is how close they are to being your answer — the board calls it once one of them is far enough ahead."],
+    ["★ on a suspect", "sends them to Leads as a hypothesis, which is what actually pays out."],
+  ],
+  "Discovery Check": [
+    ["Earn one first", "by succeeding on Observation, Tech, Medical Aid, Connections, Manipulation or Insight on your sheet — the result offers you the check."],
+    ["🎲 Discovery Check", "when you want the board to give you something. The fuller the board, the better the result: a busy case closes itself."],
+    ["Spent a scene searching?", "roll it without a banked check and confirm — the honesty is yours."],
+  ],
+  "The answer": [
+    ["Appears only", "when a clincher lands or one suspect is far enough ahead on connections."],
+    ["★ Promote to a hypothesis", "then rate it and run the Hypothesis Check on Leads. The board never awards Promotion Points itself."],
   ],
 };
 
@@ -261,7 +264,7 @@ export function renderSolo(mount, rerender) {
   const doneChip = (key) => (flagged(key) ? el("span", { class: "chip chip--done" }, "✓ done this Shift") : null);
 
   const panel = el("div", { class: "panel" });
-  ({ case: panelCase, shift: panelShift, scene: panelScene, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
+  ({ case: panelCase, shift: panelShift, scene: panelScene, board: panelBoard, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
   paintResults(panel);
   mount.append(panel);
 
@@ -536,6 +539,24 @@ export function renderSolo(mount, rerender) {
     root.append(el("div", { class: "btn-row" }, btn("Scenes done \u2014 review the leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); }, "primary")));
   }
 
+  // ---- BOARD: a house aid, not part of the printing -----------------------
+  function panelBoard(root) {
+    renderBoardPanel(root, {
+      card, btn, grid, show, rerender,
+      pin: pinNote,
+      // A promoted suspect becomes a hypothesis on the Leads tab, so the case
+      // still closes through the book's own Hypothesis Check.
+      onPromote: (text) => {
+        st.hypotheses.push({ id: uid(), text, die: S.HYPOTHESIS.newRating });
+        setFlag("review");
+        writeSoloState(st);
+        rerender();
+      },
+    });
+    root.append(el("div", { class: "btn-row" },
+      btn("Board reviewed \u2014 on to your leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
+  }
+
   // ---- LEADS: steps 5-6 ---------------------------------------------------
   function panelLeads(root) {
     const review = stepCard(5, "Review your hypotheses",
@@ -675,7 +696,7 @@ export function renderSolo(mount, rerender) {
         rerender();
       }, "sm ghost"),
       btn("⟲ Start a fresh case", async () => {
-        const ok = await confirmModal("Wipe the whole solo assistant — case notes, roll log, hypotheses, milestone checklists, and the Countdown Timer — and start a new case from scratch?",
+        const ok = await confirmModal("Wipe the whole solo assistant — case notes, roll log, hypotheses, the Case Board, milestone checklists, and the Countdown Timer — and start a new case from scratch?",
           { title: "Start a fresh case", okLabel: "Wipe everything", danger: true });
         if (!ok) return;
         st.scratchpad = "";
@@ -684,6 +705,7 @@ export function renderSolo(mount, rerender) {
         st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
         st.timerDie = S.ESCALATION_STEPS[0];
         st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null;
+        Board.clear();
         writeSoloState(st);
         showToast("Solo assistant reset — new case, clean slate.");
         rerender();
