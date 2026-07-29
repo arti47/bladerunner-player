@@ -102,7 +102,7 @@ export function renderSolo(mount, rerender) {
   };
   // A roll writes its result into the card that produced it (and the roll log).
   // `slot` overrides the card lookup for results raised outside a button click.
-  const show = ({ label, text, pin, title, render, slot }) => {
+  const show = ({ label, text, pin, title, render, slot, skipAutoPin }) => {
     const pinLine = pin || `[${label}] ${text}`;
     // A roll fired from outside a card (a bare <details>, a stray row) still has
     // to show its result — park it on the panel rather than vanishing into a toast.
@@ -115,7 +115,7 @@ export function renderSolo(mount, rerender) {
       st.results[key] = list;
       writeSoloState(st);
     }
-    if (st.autoPin && pinLine) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
+    if (st.autoPin && pinLine && !skipAutoPin) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
     record(label, text, pinLine);   // record() rerenders, painting the slot
   };
   // Hypothesis Check (Solo Mode): roll the hypothesis's rating dice as Base Dice
@@ -256,8 +256,14 @@ export function renderSolo(mount, rerender) {
       el("div", { class: "btn-row" },
         btn("⚡ Generate full briefing", () => {
           const a = rollAssignment(), r = pick(S.CASE_BRIEFING.relevance), c = pick(S.CASE_BRIEFING.complication), h = pick(S.CASE_BRIEFING.hook);
-          addNote(`=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${c}\n• Personal Hook: ${h}\n\n`);
-          record("Briefing", `${a} · ${r}`, `[Briefing] ${a} — ${r}`);
+          // The whole briefing goes to the notes AND stays on screen in the card.
+          st.scratchpad = appendToNotes(st.scratchpad, `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${c}\n• Personal Hook: ${h}`);
+          show({ label: "Briefing", text: `${a} · ${r}`, pin: `[Briefing] ${a} — ${r}`, title: "Case Briefing", skipAutoPin: true,
+            render: (b) => b.append(
+              el("div", { class: "roll-eyebrow" }, "Assignment"), el("p", {}, a),
+              el("div", { class: "roll-eyebrow" }, "Relevance"), el("p", { class: "muted" }, r),
+              el("div", { class: "roll-eyebrow" }, "Complication"), el("p", { class: "muted" }, c),
+              el("div", { class: "roll-eyebrow" }, "Personal Hook"), el("p", { class: "muted" }, h)) });
           showToast("Full briefing added to Case Notes.");
         }, "primary")),
       el("p", { class: "muted small" }, "Or roll the briefing tables one at a time:"),

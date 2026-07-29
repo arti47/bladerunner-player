@@ -69,7 +69,7 @@ export function renderGm(mount, rerender) {
   // Notes read top to bottom — the newest entry lands at the bottom.
   const pinNote = (line) => { st.scratchpad = appendToNotes(st.scratchpad, `• ${line}`); writeGmState(st); showToast("Pinned to the end of your notes."); rerender(); };
   // A roll writes its result into the card that produced it (and the roll log).
-  const show = ({ label, text, pin, title, render, slot }) => {
+  const show = ({ label, text, pin, title, render, slot, skipAutoPin }) => {
     const pinLine = pin || `[${label}] ${text}`;
     // A roll fired from outside a card (a bare <details>, a stray row) still has
     // to show its result — park it on the panel rather than vanishing into a toast.
@@ -82,7 +82,7 @@ export function renderGm(mount, rerender) {
       st.results[key] = list;
       writeGmState(st);
     }
-    if (st.autoPin && pinLine) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
+    if (st.autoPin && pinLine && !skipAutoPin) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
     record(label, text, pinLine);   // record() rerenders, painting the slot
   };
 
@@ -167,14 +167,17 @@ export function renderGm(mount, rerender) {
       btn("🎲 Assignment", () => { const theme = st.selectedTheme || "Replicant Crimes & Punishments"; const list = GM.CASE_ASSIGNMENT[theme] || []; if (!list.length) return; const roll = rollDie(list.length); const t = list[roll - 1]; show({ label: "Assignment", text: t, pin: `[Assignment] ${t}`, title: `Assignment — ${roll} (D${list.length})`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, theme), el("p", { class: "roll-prose" }, t)) }); }),
       btn("🎲 Sector (D8)", () => { const roll = rollDie(8); const res = lookupRange(GM.CASE_SECTOR, roll); show({ label: "Sector", text: res?.sector || "?", pin: `[Sector] ${res?.sector || "?"}`, title: `Sector — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res?.sector || "Unknown")) }); }),
       btn("🎲 Twist (D12)", () => { const roll = rollDie(12); const t = GM.CASE_TWIST[roll - 1]; show({ label: "Twist", text: t, pin: `[Twist] ${t}`, title: `Case Twist — ${roll} (D12)`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) }); }),
-      btn("⚡ Full Case Briefing", async () => {
-        const ok = await confirmModal("Generate a full case briefing and prepend it to the GM Scratchpad?", { title: "Generate Case Briefing" });
-        if (!ok) return;
+      btn("⚡ Full Case Briefing", () => {
         const th = pick(GM.CASE_THEME), as = pick(GM.CASE_ASSIGNMENT[th.theme] || ["Unknown"]), se = pick(GM.CASE_SECTOR), tw = pick(GM.CASE_TWIST);
+        // Written to the scratchpad AND left on screen in the card.
         st.scratchpad = appendToNotes(st.scratchpad, `=== CASE BRIEFING (${new Date().toLocaleString()}) ===\n• Theme: ${th.theme}\n• Sector: ${se.sector}\n• Assignment: ${as}\n• Twist: ${tw}`);
-        writeGmState(st);
-        record("Briefing", `${th.theme} · ${se.sector}`, `[Briefing] ${th.theme} — ${as}`);
-        showToast("Case briefing added to scratchpad.");
+        show({ label: "Briefing", text: `${th.theme} · ${se.sector}`, pin: `[Briefing] ${th.theme} — ${as}`, title: "Case Briefing", skipAutoPin: true,
+          render: (b) => b.append(
+            el("div", { class: "roll-eyebrow" }, "Theme"), el("p", {}, th.theme),
+            el("div", { class: "roll-eyebrow" }, "Sector"), el("p", { class: "muted" }, se.sector),
+            el("div", { class: "roll-eyebrow" }, "Assignment"), el("p", {}, as),
+            el("div", { class: "roll-eyebrow" }, "Twist"), el("p", { class: "muted" }, tw)) });
+        showToast("Case briefing added to the scratchpad.");
       }, "primary")));
     root.append(c);
 

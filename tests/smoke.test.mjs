@@ -891,7 +891,8 @@ test("case notes read top to bottom — new entries land at the end", async (t) 
   // pinning a roll result adds to the bottom too
   await page.getByRole("button", { name: "🎲 Relevance" }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: /^📌 Pin/ }).first().click();
+  // The card now holds the briefing's slot too — pin the Relevance one.
+  await page.locator(".result-slot").filter({ hasText: "Relevance" }).last().getByRole("button", { name: /^📌 Pin/ }).click();
   await page.waitForTimeout(250);
   notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
   const pinIdx = notes.lastIndexOf("• [Relevance]");
@@ -1157,7 +1158,7 @@ test("every oracle button on Solo and GM shows a result", async (t) => {
       await page.waitForTimeout(250);
       await page.evaluate(() => document.querySelectorAll("details").forEach((d) => (d.open = true)));
       const labels = await page.$$eval(".panel .btn", (els) =>
-        els.map((e) => e.textContent).filter((l) => l.startsWith("\u{1F3B2}")));
+        els.map((e) => e.textContent).filter((l) => /^[\u{1F3B2}\u26A1]/u.test(l)));   // dice + the "full" generators
       for (const label of labels) {
         await page.locator(`.panel .btn:text-is("${label}")`).first().click();
         await page.waitForTimeout(200);
