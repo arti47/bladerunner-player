@@ -25,6 +25,7 @@ import { navigate } from "./router.js";
 
 const SOLO_KEY = "brp:solo";
 const LOG_CAP = 50;
+const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
 const SEGMENTS = [
   { key: "case", label: "Case" },
   { key: "shift", label: "Shift" },
@@ -105,9 +106,13 @@ export function renderSolo(mount, rerender) {
     const key = slot || cardTitleOf(activeBtn);
     if (key) {
       st.results = st.results || {};
-      st.results[key] = { title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn?.textContent || null };
+      const list = resultList(key);
+      list.push({ id: uid(), title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn?.textContent || null });
+      while (list.length > RESULT_HISTORY) list.shift();   // keep the last few to compare
+      st.results[key] = list;
       writeSoloState(st);
     }
+    if (st.autoPin && pinLine) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
     record(label, text, pinLine);   // record() rerenders, painting the slot
     if (!key) showToast(text);
   };
@@ -133,6 +138,12 @@ export function renderSolo(mount, rerender) {
   mount.append(el("div", { class: "card screen-head" },
     sectionTitle("Solo Mode Assistant"),
     el("p", { class: "muted" }, "Official Solo Mode oracle, generators, and trackers — organized by the flow of play.")));
+  mount.append(el("div", { class: "chips autopin" },
+    el("button", {
+      class: "chip" + (st.autoPin ? " chip--on" : ""),
+      "aria-pressed": st.autoPin ? "true" : "false",
+      onClick: () => { st.autoPin = !st.autoPin; writeSoloState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
+    }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)));
   mount.append(segmentNav({ segments: SEGMENTS, active: st.panel, onSelect: (k) => { st.panel = k; writeSoloState(st); rerender(); } }));
 
   // A card headed with its place in the Investigation Procedure (Solo Mode p.005).
@@ -156,31 +167,47 @@ export function renderSolo(mount, rerender) {
   paintResults(panel);
   mount.append(panel);
 
-  // Paint each card's last result underneath it, and offer a per-tab clear.
+  // Results are kept per card as a short history (oldest first). Older state
+  // stored a single object — read it as a one-entry list.
+  function resultList(key) {
+    const v = st.results?.[key];
+    return Array.isArray(v) ? v : v ? [{ id: v.id || "r0", ...v }] : [];
+  }
+
+  // Paint each card's results underneath it, and offer a per-tab clear.
   // The Reroll button re-clicks the button that produced the result, so it
   // survives a reload (the handler itself is not serializable).
   function paintResults(panelEl) {
-    const live = [];
+    let live = 0;
     for (const cardEl of panelEl.querySelectorAll(".card")) {
       const key = cardEl.querySelector(".sheet__section")?.textContent;
-      const r = key && st.results?.[key];
-      if (!r) continue;
-      live.push(key);
-      cardEl.append(resultSlot({
+      const list = key ? resultList(key) : [];
+      if (!list.length) continue;
+      live += list.length;
+      // Oldest first, newest nearest the buttons — the same reading order as
+      // the notes and the roll log. Only the newest offers a Reroll.
+      list.forEach((r, i) => cardEl.append(resultSlot({
         title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts,
         onPin: pinNote,
-        onReroll: () => {
+        onReroll: i === list.length - 1 ? () => {
           const again = [...cardEl.querySelectorAll(".btn")].find((b) => b.textContent === r.btnLabel);
           if (again) again.click();
           else showToast("Roll it again from the buttons above.", { kind: "warn" });
+        } : null,
+        onDismiss: () => {
+          st.results[key] = resultList(key).filter((x) => x.id !== r.id);
+          if (!st.results[key].length) delete st.results[key];
+          writeSoloState(st); rerender();
         },
-        onDismiss: () => { delete st.results[key]; writeSoloState(st); rerender(); },
-      }));
+      })));
     }
-    if (!live.length) return;
+    if (!live) return;
+    const shown = [...panelEl.querySelectorAll(".card")]
+      .map((c) => c.querySelector(".sheet__section")?.textContent)
+      .filter((k) => k && resultList(k).length);
     panelEl.append(el("div", { class: "btn-row result-clear" },
-      btn(`\u2715 Clear ${live.length === 1 ? "this result" : "these " + live.length + " results"}`, () => {
-        for (const key of live) delete st.results[key];
+      btn(`\u2715 Clear ${live === 1 ? "this result" : "these " + live + " results"}`, () => {
+        for (const key of shown) delete st.results[key];
         writeSoloState(st); rerender();
       }, "sm ghost")));
   }

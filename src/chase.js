@@ -5,7 +5,7 @@
 // `brp:chase` so a chase survives a reload.
 import { el, uid, rollDie, STORAGE_PREFIX } from "./core.js";
 import * as D from "../data.js";
-import { showToast, sectionTitle, resultModal } from "./ui.js";
+import { showToast, sectionTitle, resultSlot, renderToHtml } from "./ui.js";
 import { RollLog } from "./store.js";
 
 const KEY = STORAGE_PREFIX + "chase";
@@ -72,17 +72,25 @@ export function renderChaseCard(rerender) {
       `${side === "prey" ? "Prey" : "Pursuer"} — ${m.name}${skill ? ` (${skillName(skill)})` : ""}: ${m.text}`));
   }
 
-  // 2 — obstacle
+  // 2 — obstacle. The roll lands inline under the button (same surface as the
+  // Solo/GM oracles) instead of a modal you have to dismiss mid-chase.
+  const rollObstacle = () => {
+    const table = D.CHASE.obstacles[st.env];
+    const roll = rollDie(table.length);
+    const text = table[roll - 1];
+    commit((s) => { s.obstacle = { roll, text, die: table.length }; s.log.unshift({ id: uid(), text: `R${s.round} obstacle: ${text}` }); });
+    try { RollLog.add({ label: "Chase obstacle", text: `D${table.length}=${roll} · ${text}`, source: "combat" }); } catch {}
+  };
   card.append(el("div", { class: "rec-actions" },
-    el("button", { class: "btn btn--sm btn--roll", onClick: () => {
-      const table = D.CHASE.obstacles[st.env];
-      const roll = rollDie(table.length);
-      const text = table[roll - 1];
-      commit((s) => { s.obstacle = { roll, text }; s.log.unshift({ id: uid(), text: `R${s.round} obstacle: ${text}` }); });
-      try { RollLog.add({ label: "Chase obstacle", text: `D${table.length}=${roll} · ${text}`, source: "combat" }); } catch {}
-      resultModal({ title: `Chase obstacle — ${roll} (D${table.length})`, render: (b) => b.append(el("p", { class: "roll-prose" }, text)) });
-    } }, "🎲 Reveal obstacle")));
-  if (st.obstacle) card.append(el("div", { class: "notice" }, `Obstacle #${st.obstacle.roll}: ${st.obstacle.text}`));
+    el("button", { class: "btn btn--sm btn--roll", onClick: rollObstacle }, "🎲 Reveal obstacle")));
+  if (st.obstacle) {
+    card.append(resultSlot({
+      title: `Obstacle — ${st.obstacle.roll} (D${st.obstacle.die || D.CHASE.obstacles[st.env].length})`,
+      html: renderToHtml((b) => b.append(el("p", { class: "roll-prose" }, st.obstacle.text))),
+      onReroll: rollObstacle,
+      onDismiss: () => commit((s) => { s.obstacle = null; }),
+    }));
+  }
 
   // 3 — resolve: move the distance, then advance the round
   card.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Distance"),

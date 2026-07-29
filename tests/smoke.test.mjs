@@ -180,7 +180,7 @@ test("the chase card runs a chase and rolls obstacles from the right table [§3.
   await page.waitForTimeout(150);
   await page.getByRole("button", { name: "🎲 Reveal obstacle" }).first().click();
   await page.waitForTimeout(200);
-  const obstacle = await page.$eval(".modal", (m) => m.textContent);
+  const obstacle = await page.$eval(".result-slot", (m) => m.textContent);
   const legal = await page.evaluate(async () => (await import("/data.js")).CHASE.obstacles.foot);
   assert.ok(legal.some((o) => obstacle.includes(o.slice(0, 24))), `obstacle came from the foot table: ${obstacle}`);
   await page.keyboard.press("Escape");
@@ -758,20 +758,27 @@ test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
   await page.goto(`${base}/index.html?gm9b#gm`, { waitUntil: "load" });
   await page.waitForTimeout(250);
   // Each table now sits on the panel of the session where you'd reach for it.
+  // Results are inline, so read the newest slot in the card that owns the button.
   for (const [pill, label, check] of [
-    ["Prep", /\u{1F3B2} Clue \(D8\)/u, /Witness|Forensic Evidence|Recording|Documents|Rumors|Anonymous Tip|Item/],
-    ["Prep", /\u{1F3B2} Final Confrontation/u, /rain|Thunder|heat|cold|colors|Overgrown|wind|outage|dust|Fog/],
-    ["Play", /\u{1F3B2} Location \(D6×D6\)/u, /Sector|Downtown/],
-    ["Play", /\u{1F3B2} Mood/u, /Weather/],
-    ["Wrap", /\u{1F3B2} Downtime Event \(D8\)/u, /At home/],
+    ["Prep", "🎲 Clue (D8)", /Witness|Forensic Evidence|Recording|Documents|Rumors|Anonymous Tip|Item/],
+    ["Prep", "🎲 Final Confrontation (D10)", /rain|Thunder|heat|cold|colors|Overgrown|wind|outage|dust|Fog/],
+    ["Play", "🎲 Location (D6×D6)", /Sector|Downtown/],
+    ["Play", "🎲 Mood (D8×3)", /Weather/],
+    ["Wrap", "🎲 Downtime Event (D8)", /At home/],
   ]) {
     await page.click(`.segnav__pill:text-is("${pill}")`);
     await page.waitForTimeout(120);
-    await page.getByRole("button", { name: label }).first().click();
+    await page.click(`.btn:text-is("${label}")`);
     await page.waitForTimeout(250);
-    const body = await page.$eval(".result-slot", (m) => m.textContent);
+    const body = await page.evaluate((lbl) => {
+      const b = [...document.querySelectorAll(".btn")].find((x) => x.textContent === lbl);
+      const slots = b.closest(".card").querySelectorAll(".result-slot");
+      return slots[slots.length - 1].textContent;
+    }, label);
     assert.match(body, check, `${label} produced a result`);
+    assert.ok(!/\bnull\b/.test(body), `${label} rendered a literal null: ${body}`);
   }
+
   await page.click('.segnav__pill:text-is("Wrap")');
   await page.waitForTimeout(120);
   const text = await page.$eval("#screen", (e) => e.textContent);
@@ -1087,18 +1094,24 @@ test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t)
   assert.equal(live[1].card, "Gather clues");
   assert.match(await page.$eval(".result-clear .btn", (b) => b.textContent), /Clear these 2 results/);
 
-  // Reroll re-runs the same button (deterministically forced to a different face)
+  // Reroll re-runs the same button and stacks onto that card's short history,
+  // newest last, capped — so a few draws can be compared side by side.
   await page.evaluate(() => { Math.random = () => 0; });
-  await page.locator(".result-slot").first().getByRole("button", { name: /Reroll/ }).click();
-  await page.waitForTimeout(250);
+  const rerolls = await page.$$eval(".result-slot .btn", (els) => els.filter((b) => /Reroll/.test(b.textContent)).length);
+  assert.equal(rerolls, 2, "only the newest result on each card offers a Reroll");
+  for (let i = 0; i < 4; i++) {
+    await page.locator(".result-slot").filter({ hasText: "Scene Check" }).last().getByRole("button", { name: /Reroll/ }).click();
+    await page.waitForTimeout(200);
+  }
   live = await slots();
-  assert.equal(live.length, 2, "rerolling replaces the result, it does not add one");
-  assert.match(live[0].title, /Scene Check — 1 \(D8\)/, "the reroll re-ran the Scene Check button");
+  const scene = live.filter((r) => r.card === "Frame the scene");
+  assert.equal(scene.length, 3, "the per-card history is capped");
+  assert.match(scene[scene.length - 1].title, /Scene Check — 1 \(D8\)/, "the newest reroll sits last");
 
   // Results survive a reload, then the per-tab clear wipes them
   await page.goto(`${base}/index.html?slot3#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  assert.equal((await slots()).length, 2, "inline results persist across a reload");
+  assert.equal((await slots()).length, 4, "inline results persist across a reload");
   await page.locator(".result-slot").first().getByRole("button", { name: /^\u{1F4CC} Pin/u }).click();
   await page.waitForTimeout(200);
   await page.click(".result-clear .btn");
@@ -1117,4 +1130,13 @@ test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t)
   const gm = await slots();
   assert.equal(gm.length, 1);
   assert.equal(gm[0].card, "Build the case");
+
+  // Auto-pin writes every subsequent roll straight into the notes.
+  await page.click(".autopin .chip");
+  await page.waitForTimeout(150);
+  assert.equal(await page.$eval(".autopin .chip", (b) => b.getAttribute("aria-pressed")), "true");
+  await page.click('.btn:text-is("🎲 Sector (D8)")');
+  await page.waitForTimeout(250);
+  const pad = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:gm")).scratchpad || "");
+  assert.match(pad, /\[Sector\]/, "auto-pin wrote the roll to the notes with no extra tap");
 });

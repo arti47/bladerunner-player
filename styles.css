@@ -569,3 +569,5 @@ textarea.input { resize: vertical; font-family: inherit; }
 .result-slot__body .roll-eyebrow { margin-top: .5rem; }
 .result-slot__actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .result-clear { justify-content: flex-end; }
+.autopin { margin: 0 0 .5rem; }
+.result-slot + .result-slot { margin-top: .4rem; }
