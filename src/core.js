@@ -53,3 +53,13 @@ export function outcomeSummary(succ, banes) {
   const s = `${base} · ${succ} success${succ === 1 ? "" : "es"}`;
   return banes ? `${s} · ${banes} bane${banes === 1 ? "" : "s"}` : s;
 }
+
+// ---- notes ----------------------------------------------------------------
+// Case notes read top to bottom: the newest entry goes at the END, separated
+// from what came before by a single blank line.
+export function appendToNotes(existing, block) {
+  const body = String(existing || "").replace(/\s+$/, "");
+  const add = String(block || "").replace(/^\s+/, "").replace(/\s+$/, "");
+  if (!add) return body ? body + "\n" : "";
+  return (body ? body + "\n\n" : "") + add + "\n";
+}

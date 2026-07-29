@@ -1216,3 +1216,53 @@ test("rolling keeps your place and brings the new result on screen", async (t) =
   await page.waitForTimeout(250);
   assert.equal(await page.evaluate(() => window.scrollY), 0, "a tab switch scrolls to the top");
 });
+
+// With Solo Mode on there is no Game Runner keeping the record, so rolls made
+// outside the solo assistant have to reach the Case Notes by themselves.
+test("sheet and combat rolls land in the solo Case Notes when Solo is on", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "notes", scratchpad: "OLDEST LINE", log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {} }));
+    localStorage.removeItem("brp:rolllog");
+  });
+  await page.goto(`${base}/index.html?solonotes#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+
+  // roll a skill on the character sheet
+  await page.getByRole("button", { name: /Firearms/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.waitForTimeout(250);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+
+  let notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.ok(notes.startsWith("OLDEST LINE"), "existing notes are kept");
+  assert.match(notes, /\[.+ · Firearms\]/, `the sheet roll reached the case notes:\n${notes}`);
+  assert.match(notes, /success|Failure/, "with its outcome");
+
+  // an oracle roll is NOT mirrored twice — the solo screen owns those
+  await page.evaluate(() => localStorage.setItem("brp:solo", JSON.stringify({ panel: "scene", scratchpad: "", log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {} })));
+  await page.goto(`${base}/index.html?solonotes2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.click('.btn:text-is("🎲 Scene Check (D8)")');
+  await page.waitForTimeout(250);
+  notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad || "");
+  assert.equal(notes.trim(), "", "oracle rolls only reach the notes via pin or auto-pin");
+
+  // and nothing is written at all when Solo Mode is off
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: false, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "notes", scratchpad: "", log: [] }));
+  });
+  await page.goto(`${base}/index.html?solooff#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /Firearms/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.waitForTimeout(250);
+  await page.keyboard.press("Escape");
+  const off = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad || "");
+  assert.equal(off.trim(), "", "Solo off = no case-note writes");
+});

@@ -1,8 +1,9 @@
 // store.js — local/cloud character persistence. Phase 0: localStorage only.
 // Firebase cloud mirroring is layered in during Phase 5 (sync.js) behind
 // FIREBASE_ENABLED; the API here stays stable.
-import { STORAGE_PREFIX, uid } from "./core.js";
+import { STORAGE_PREFIX, uid, appendToNotes } from "./core.js";
 import { normalizeCharacter } from "./derived.js";
+import { Settings } from "./settings.js";
 import { mirrorCharacter, mirrorCombat } from "./sync.js";
 
 const KEY = STORAGE_PREFIX + "characters";
@@ -10,6 +11,7 @@ const ACTIVE = STORAGE_PREFIX + "activeCharacter";
 const COMBAT = STORAGE_PREFIX + "combat";
 const ROLLLOG = STORAGE_PREFIX + "rolllog";
 const ROLLLOG_CAP = 150;
+const SOLO = STORAGE_PREFIX + "solo";
 
 function readMap() {
   try { return JSON.parse(localStorage.getItem(KEY) || "{}"); }
@@ -66,11 +68,28 @@ export const RollLog = {
     list.unshift({ id: uid(), ts: Date.now(), source: "roll", ...entry });
     if (list.length > ROLLLOG_CAP) list.length = ROLLLOG_CAP;
     localStorage.setItem(ROLLLOG, JSON.stringify(list));
+    mirrorToCaseNotes(list[0]);
     return list[0];
   },
   remove(id) { localStorage.setItem(ROLLLOG, JSON.stringify(this.list().filter((e) => e.id !== id))); },
   clear() { localStorage.removeItem(ROLLLOG); },
 };
+
+// With Solo Mode on there is no Game Runner keeping the record, so rolls made
+// OUTSIDE the solo assistant — skill rolls and attacks on the sheet, everything
+// in the combat tracker and a chase — are written into the solo Case Notes as
+// they happen. Oracle rolls are excluded: the solo/GM screens already decide
+// what of their own goes into the notes (pin, or the auto-pin chip).
+const CASE_NOTE_SOURCES = ["sheet", "combat"];
+function mirrorToCaseNotes(entry) {
+  try {
+    if (!Settings.solo() || !CASE_NOTE_SOURCES.includes(entry.source)) return;
+    const st = JSON.parse(localStorage.getItem(SOLO) || "{}") || {};
+    const who = entry.charName ? `${entry.charName} · ` : "";
+    st.scratchpad = appendToNotes(st.scratchpad, `• [${who}${entry.label}] ${entry.text}`);
+    localStorage.setItem(SOLO, JSON.stringify(st));
+  } catch { /* notes are best-effort — never break a roll */ }
+}
 
 // Local combat state (Phase 4). Phase 5 mirrors this to Firebase via sync.js.
 export const Combat = {

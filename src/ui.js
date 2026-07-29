@@ -1,6 +1,6 @@
 // ui.js — themed modal/toast/confirm/prompt primitives. No native alert/confirm.
 // Accessible: focus trap, Escape, aria-modal, focus restore.
-import { el, $, $$, clear } from "./core.js";
+import { el, $, $$, clear, appendToNotes } from "./core.js";
 
 let modalHost = null;
 function host() {
@@ -104,14 +104,8 @@ export function promptModal(message, { title = "Input", value = "", okLabel = "O
   });
 }
 
-// Case notes read top to bottom: the newest entry goes at the END, separated
-// from what came before by a single blank line.
-export function appendToNotes(existing, block) {
-  const body = String(existing || "").replace(/\s+$/, "");
-  const add = String(block || "").replace(/^\s+/, "").replace(/\s+$/, "");
-  if (!add) return body ? body + "\n" : "";
-  return (body ? body + "\n\n" : "") + add + "\n";
-}
+// Re-exported so the note-writing screens keep a single import surface.
+export { appendToNotes };
 
 export function sectionTitle(t) {
   return el("h2", { class: "sheet__section" }, t);
