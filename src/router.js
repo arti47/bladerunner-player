@@ -48,11 +48,19 @@ export function navigate(route) {
   render(route);
 }
 
+// Screens re-render themselves in place (a Solo roll, a sheet edit, a combat
+// turn). Only jump to the top when the ROUTE actually changed — otherwise every
+// in-screen update would yank the page away from whatever you just pressed.
+let lastRoute = null;
 function render(route) {
   const fn = ROUTES[route] || ROUTES.home;
+  const changed = route !== lastRoute;
+  const y = window.scrollY;
   fn(mount());
   updateNav(route);
-  window.scrollTo(0, 0);
+  lastRoute = route;
+  if (changed) window.scrollTo(0, 0);
+  else window.scrollTo(0, y);
 }
 
 function updateNav(active) {

@@ -1178,3 +1178,41 @@ test("every oracle button on Solo and GM shows a result", async (t) => {
   await sweep("solo", "brp:solo", ["case", "shift", "scene"]);
   await sweep("gm", "brp:gm", ["prep", "play", "wrap"]);
 });
+
+// A roll re-renders the whole screen in place. The router used to jump to the
+// top on every render, so on a long panel the new result landed below the fold
+// and looked like nothing had happened.
+test("rolling keeps your place and brings the new result on screen", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "case", log: [], scratchpad: "", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {} }));
+  });
+  await page.goto(`${base}/index.html?scroll#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+
+  const button = page.locator('.btn:text-is("⚡ Generate full briefing")');
+  await button.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(150);
+  const before = await page.evaluate(() => window.scrollY);
+  assert.ok(before > 100, "the button sits well down a long panel");
+
+  await button.click();
+  await page.waitForTimeout(700);
+  const after = await page.evaluate(() => window.scrollY);
+  assert.ok(Math.abs(after - before) < 600, `the page kept its place (was ${before}, now ${after})`);
+
+  const onScreen = await page.evaluate(() => {
+    const s = [...document.querySelectorAll(".result-slot")].pop();
+    if (!s) return false;
+    const r = s.getBoundingClientRect();
+    return r.top < window.innerHeight && r.bottom > 0;
+  });
+  assert.ok(onScreen, "the new result is visible without scrolling");
+
+  // switching tabs still starts at the top
+  await page.click('.segnav__pill:text-is("Scene")');
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => window.scrollY), 0, "a tab switch scrolls to the top");
+});

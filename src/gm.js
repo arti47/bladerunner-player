@@ -49,6 +49,8 @@ function readGmState() {
 function writeGmState(st) { try { localStorage.setItem(GM_KEY, JSON.stringify(st)); } catch (e) {} }
 // Set by btn() on every click so show() knows which card to drop the result in.
 let activeBtn = null;
+// Card key of the result just rolled — scrolled into view once, after paint.
+let freshResult = null;
 const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__section")?.textContent || null;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const archName = (c) => (c.archetype ? (archetype(c.archetype)?.name || c.archetype) : "No archetype");
@@ -83,6 +85,7 @@ export function renderGm(mount, rerender) {
       writeGmState(st);
     }
     if (st.autoPin && pinLine && !skipAutoPin) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
+    freshResult = key;
     record(label, text, pinLine);   // record() rerenders, painting the slot
   };
 
@@ -95,7 +98,9 @@ export function renderGm(mount, rerender) {
       "aria-pressed": st.autoPin ? "true" : "false",
       onClick: () => { st.autoPin = !st.autoPin; writeGmState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
     }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)));
-  mount.append(segmentNav({ segments: SEGMENTS, active: st.panel, onSelect: (k) => { st.panel = k; writeGmState(st); rerender(); } }));
+  mount.append(segmentNav({ segments: SEGMENTS, active: st.panel,
+    // Switching tabs starts at the top; an in-panel roll keeps your place.
+    onSelect: (k) => { st.panel = k; writeGmState(st); rerender(); window.scrollTo(0, 0); } }));
 
   const panel = el("div", { class: "panel" });
   ({ prep: panelPrep, play: panelPlay, fight: panelFight, wrap: panelWrap, notes: panelNotes }[st.panel] || panelPrep)(panel);
@@ -135,6 +140,16 @@ export function renderGm(mount, rerender) {
           writeGmState(st); rerender();
         },
       })));
+    }
+    // Bring the result you just rolled into view: the panel re-renders in place,
+    // and a long panel can push a new slot below the fold.
+    if (freshResult) {
+      const fresh = freshResult; freshResult = null;
+      requestAnimationFrame(() => {
+        const host = [...panelEl.querySelectorAll(".card")].find((c) => c.querySelector(".sheet__section")?.textContent === fresh) || panelEl;
+        const slotEls = host.querySelectorAll(":scope > .result-slot");
+        slotEls[slotEls.length - 1]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
     }
     // Results with no owning card hang at the end of the panel.
     for (const r of resultList(LOOSE)) {

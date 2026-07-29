@@ -56,6 +56,8 @@ function readSoloState() {
 function writeSoloState(st) { try { localStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch (e) {} }
 // Set by btn() on every click so show() knows which card to drop the result in.
 let activeBtn = null;
+// Card key of the result just rolled — scrolled into view once, after paint.
+let freshResult = null;
 const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__section")?.textContent || null;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -116,6 +118,7 @@ export function renderSolo(mount, rerender) {
       writeSoloState(st);
     }
     if (st.autoPin && pinLine && !skipAutoPin) st.scratchpad = appendToNotes(st.scratchpad, `• ${pinLine}`);
+    freshResult = key;
     record(label, text, pinLine);   // record() rerenders, painting the slot
   };
   // Hypothesis Check (Solo Mode): roll the hypothesis's rating dice as Base Dice
@@ -146,7 +149,9 @@ export function renderSolo(mount, rerender) {
       "aria-pressed": st.autoPin ? "true" : "false",
       onClick: () => { st.autoPin = !st.autoPin; writeSoloState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
     }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)));
-  mount.append(segmentNav({ segments: SEGMENTS, active: st.panel, onSelect: (k) => { st.panel = k; writeSoloState(st); rerender(); } }));
+  mount.append(segmentNav({ segments: SEGMENTS, active: st.panel,
+    // Switching tabs starts at the top; an in-panel roll keeps your place.
+    onSelect: (k) => { st.panel = k; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
 
   // A card headed with its place in the Investigation Procedure (Solo Mode p.005).
   function stepCard(step, title, sub, ...children) {
@@ -202,6 +207,16 @@ export function renderSolo(mount, rerender) {
           writeSoloState(st); rerender();
         },
       })));
+    }
+    // Bring the result you just rolled into view: the panel re-renders in place,
+    // and a long panel can push a new slot below the fold.
+    if (freshResult) {
+      const fresh = freshResult; freshResult = null;
+      requestAnimationFrame(() => {
+        const host = [...panelEl.querySelectorAll(".card")].find((c) => c.querySelector(".sheet__section")?.textContent === fresh) || panelEl;
+        const slotEls = host.querySelectorAll(":scope > .result-slot");
+        slotEls[slotEls.length - 1]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
     }
     // Results with no owning card hang at the end of the panel.
     for (const r of resultList(LOOSE)) {
