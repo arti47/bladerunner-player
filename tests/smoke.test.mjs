@@ -785,53 +785,87 @@ test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
   assert.match(text, /Session Awards/, "the award checklists are on the Wrap panel");
 });
 
-test("solo case notes can be cleared, and the whole assistant reset", async (t) => {
+// "Start a fresh case" is the ONE reset (owner ruling): it wipes every solo tab,
+// all inline results, all pinned notes, BOTH roll logs, the Case Board, and any
+// fight or chase left open — and it must not touch a character.
+test("Start a fresh case wipes the whole case and nothing on the sheet", async (t) => {
   if (unavailable) return t.skip(unavailable);
-  const seed = async () => {
-    await page.evaluate(() => {
-      localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
-      localStorage.setItem("brp:solo", JSON.stringify({
-        panel: "notes", scratchpad: "• [Clue] a bloody origami bird\n",
-        log: [{ id: "l1", label: "Seed", text: "x", pin: "[Seed] x", ts: Date.now() }],
-        hypotheses: [{ id: "h1", text: "The doll knows", die: "D10" }],
-        humanityChecks: { 0: true }, promoGainChecks: {}, promoLoseChecks: {}, timerDie: "D12",
-      }));
-    });
-  };
-  const state = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
-
-  // 1 — "Clear notes" empties the scratchpad and leaves everything else alone
   await page.goto(`${base}/index.html?notes#solo`, { waitUntil: "load" });
-  await seed();
+  const charId = await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    // Solo state on every tab: notes, oracle log, inline results, leads,
+    // checklists, timer, Shift counter.
+    localStorage.setItem("brp:solo", JSON.stringify({
+      panel: "notes", scratchpad: "• [Clue] a bloody origami bird\n",
+      log: [{ id: "l1", label: "Seed", text: "x", pin: "[Seed] x", ts: Date.now() }],
+      results: { "Oracle": [{ id: "r1", title: "Scene Check", html: "<p>x</p>", pinLine: "[Scene] x", ts: Date.now() }] },
+      hypotheses: [{ id: "h1", text: "The doll knows", die: "D10" }],
+      humanityChecks: { 0: true }, promoGainChecks: {}, promoLoseChecks: {}, timerDie: "D12",
+      shiftNo: 4, shiftFlags: { countdown: true }, autoPin: true, logScope: "all",
+    }));
+    // The board, a fight, a chase, and the global roll log.
+    localStorage.setItem("brp:board", JSON.stringify({ boxes: [{ id: "b1", n: 1, kind: "clue", name: "casing", detail: "", links: [] }], nextN: 2, checks: 2, solvedId: null }));
+    const { Store, Combat, RollLog } = await import("/src/store.js");
+    const { Chase } = await import("/src/chase.js");
+    Combat.save({ active: true, round: 3, turnIndex: 0, combatants: [{ id: "n1", kind: "npc", npcKey: "street_thug", name: "Thug", nature: "human", health: 2, maxHealth: 4, card: 1 }] });
+    Chase.save({ active: true, env: "foot", round: 2, distIdx: 1, obstacle: null, prey: null, pursuer: null, log: ["x"] });
+    RollLog.add({ label: "Firearms", text: "Success", source: "sheet", charName: "Runner" });
+    // A character with data that must survive untouched.
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Untouched", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
+    ch.state.health = 3; ch.state.promotionPoints = 5; ch.state.shiftsSinceDowntime = 2;
+    ch.journal = [{ id: "j1", ts: Date.now(), text: "[Firearms] Success" }];
+    const saved = Store.save(ch); Store.setActiveId(saved.id);
+    return saved.id;
+  });
+
   await page.goto(`${base}/index.html?notes2#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  await page.getByRole("button", { name: "✕ Clear notes" }).first().click();
-  await page.waitForTimeout(150);
-  await page.getByRole("button", { name: "Clear notes" }).last().click();
-  await page.waitForTimeout(250);
-  let st = await state();
-  assert.equal(st.scratchpad, "", "notes are emptied");
-  assert.equal(st.log.length, 1, "the roll log survives");
-  assert.equal(st.hypotheses.length, 1, "hypotheses survive");
-  assert.equal(st.timerDie, "D12", "the timer survives");
-  assert.equal(await page.$eval(".notes-area", (e) => e.value), "", "and the textarea is empty");
+  // The old "Clear notes" action is gone — one button, one meaning.
+  const actions = await page.$$eval(".panel .btn", (e) => e.map((x) => x.textContent.trim()));
+  assert.ok(!actions.some((a) => /Clear notes/.test(a)), `no Clear-notes button any more: ${actions}`);
 
-  // 2 — "Start a fresh case" wipes the lot
-  await page.goto(`${base}/index.html?notes3#solo`, { waitUntil: "load" });
-  await seed();
-  await page.goto(`${base}/index.html?notes4#solo`, { waitUntil: "load" });
-  await page.waitForTimeout(250);
   await page.getByRole("button", { name: "⟲ Start a fresh case" }).first().click();
   await page.waitForTimeout(150);
   await page.getByRole("button", { name: "Wipe everything" }).last().click();
-  await page.waitForTimeout(250);
-  st = await state();
-  assert.equal(st.scratchpad, "");
-  assert.deepEqual(st.log, []);
-  assert.deepEqual(st.hypotheses, []);
-  assert.deepEqual(st.humanityChecks, {});
+  await page.waitForTimeout(400);
+
+  const after = await page.evaluate(async (id) => {
+    const { Store, Combat, RollLog } = await import("/src/store.js");
+    const { Chase } = await import("/src/chase.js");
+    return {
+      solo: JSON.parse(localStorage.getItem("brp:solo")),
+      board: JSON.parse(localStorage.getItem("brp:board")),
+      combat: Combat.get(), chase: Chase.get(), rolls: RollLog.list().length,
+      ch: Store.get(id),
+    };
+  }, charId);
+
   const firstStep = await page.evaluate(async () => (await import("/data-solo.js")).ESCALATION_STEPS[0]);
-  assert.equal(st.timerDie, firstStep, "the Countdown Timer resets to its starting die");
+  // Every solo tab
+  assert.equal(after.solo.scratchpad, "", "notes gone");
+  assert.deepEqual(after.solo.log, [], "oracle log gone");
+  assert.deepEqual(after.solo.results, {}, "every tab's inline results gone");
+  assert.deepEqual(after.solo.hypotheses, [], "leads gone");
+  assert.deepEqual(after.solo.humanityChecks, {}, "checklists gone");
+  assert.equal(after.solo.timerDie, firstStep, "the timer is back to its starting die");
+  assert.equal(after.solo.shiftNo, 1, "the Shift counter restarts");
+  assert.deepEqual(after.solo.shiftFlags, {}, "and its once-per-Shift markers");
+  assert.equal(after.solo.panel, "case", "a new case opens on the Case tab");
+  assert.equal(after.solo.autoPin, true, "preferences are not case data");
+  // Everything the case wrote elsewhere
+  assert.deepEqual(after.board.boxes, [], "the Case Board is wiped");
+  assert.equal(after.board.checks, 0, "including banked Discovery Checks");
+  assert.equal(after.rolls, 0, "the global roll log is wiped too");
+  assert.equal(after.combat.active, false, "no fight left open");
+  assert.deepEqual(after.combat.combatants, [], "and no combatants");
+  assert.equal(after.chase.active, false, "no chase left open");
+  // …and nothing on the character
+  assert.equal(after.ch.state.health, 3, "Health untouched");
+  assert.equal(after.ch.state.promotionPoints, 5, "Promotion Points untouched");
+  assert.equal(after.ch.state.shiftsSinceDowntime, 2, "the sheet's Downtime cadence untouched");
+  assert.equal(after.ch.journal.length, 1, "journal entries untouched");
+  assert.equal(after.ch.name, "Untouched");
 });
 
 test("the bottom nav stays pinned to the viewport bottom while scrolling", async (t) => {
@@ -1209,26 +1243,6 @@ test("a Discovery Check is earned on the sheet, and only by investigative rolls 
   const off = await rollSkill("3", "Observation", false);
   assert.ok(!off.some((x) => /Earn a Discovery Check/.test(x)), `nothing offered with Solo Mode off: ${off}`);
   await page.keyboard.press("Escape");
-});
-
-test("Start a fresh case wipes the Case Board too [house aid]", async (t) => {
-  if (unavailable) return t.skip(unavailable);
-  await page.goto(`${base}/index.html?bwipe1#solo`, { waitUntil: "load" });
-  await page.evaluate(() => {
-    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
-    localStorage.setItem("brp:solo", JSON.stringify({ panel: "notes", hypotheses: [{ id: "h", text: "t", die: "D6" }], log: [], scratchpad: "notes here", results: {} }));
-    localStorage.setItem("brp:board", JSON.stringify({ boxes: [{ id: "x", n: 1, kind: "clue", name: "print", detail: "", links: [] }], nextN: 2, checks: 3, solvedId: null }));
-  });
-  await page.goto(`${base}/index.html?bwipe2#solo`, { waitUntil: "load" });
-  await page.waitForTimeout(250);
-  await page.getByRole("button", { name: /Start a fresh case/ }).click();
-  await page.waitForTimeout(150);
-  await page.getByRole("button", { name: "Wipe everything" }).click();
-  await page.waitForTimeout(250);
-  const b = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:board")));
-  assert.deepEqual(b.boxes, [], "the board is cleared");
-  assert.equal(b.checks, 0, "banked checks are cleared");
-  assert.equal(b.nextN, 1, "numbering restarts");
 });
 
 test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.005]", async (t) => {

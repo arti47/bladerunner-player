@@ -21,10 +21,11 @@ import * as D from "../data.js";
 import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
 import { rollDie, successesFor, uid, clear, TUTORIAL_KEY } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
-import { RollLog, Store } from "./store.js";
+import { RollLog, Store, Combat } from "./store.js";
 import { applyInvestigationShift, applyDowntimeShift, downtimeLimitFor, maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
 import { Board, renderBoardPanel } from "./board.js";
+import { Chase } from "./chase.js";
 
 const SOLO_KEY = "brp:solo";
 const LOG_CAP = 50;
@@ -697,29 +698,32 @@ export function renderSolo(mount, rerender) {
     ta.addEventListener("blur", () => { st.scratchpad = ta.value; writeSoloState(st); showToast("Notes saved."); });
     c.append(ta);
     c.append(el("div", { class: "btn-row" },
-      btn("✕ Clear notes", async () => {
-        if (!(st.scratchpad || "").trim()) { showToast("The notes are already empty."); return; }
-        const ok = await confirmModal("Erase everything in the Solo Case Notes? The roll log, hypotheses, and timer are left alone.",
-          { title: "Clear case notes", okLabel: "Clear notes", danger: true });
-        if (!ok) return;
-        st.scratchpad = "";
-        writeSoloState(st);
-        showToast("Case notes cleared.");
-        rerender();
-      }, "sm ghost"),
+      // One action, and it wipes the whole case (owner ruling): every solo tab,
+      // every inline result, both roll logs, the Case Board, and any fight or
+      // chase left over from the old case. Characters are NOT touched — vitals,
+      // points, inventory, injuries and journal entries all live on the sheet.
       btn("⟲ Start a fresh case", async () => {
-        const ok = await confirmModal("Wipe the whole solo assistant — case notes, roll log, hypotheses, the Case Board, milestone checklists, and the Countdown Timer — and start a new case from scratch?",
+        const ok = await confirmModal(
+          "Wipe the whole case: every solo tab, all roll results, all pinned notes, both roll logs, the Case Board, and any fight or chase still open. Your characters are not touched — vitals, points, inventory and journal entries stay exactly as they are.",
           { title: "Start a fresh case", okLabel: "Wipe everything", danger: true });
         if (!ok) return;
+        // Solo's own state: notes, oracle log, inline results on every tab,
+        // leads, checklists, the timer, and the Shift counter.
         st.scratchpad = "";
         st.log = [];
+        st.results = {};
         st.hypotheses = [];
         st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
         st.timerDie = S.ESCALATION_STEPS[0];
         st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null;
+        st.panel = "case";              // a new case starts on the Case tab
+        // Everything else this case wrote outside the solo screen.
+        RollLog.clear();                // the global log, shown here, on the sheet and on Home
         Board.clear();
+        Combat.clear();                 // the combatant list and initiative, not anyone's Health
+        Chase.clear();
         writeSoloState(st);
-        showToast("Solo assistant reset — new case, clean slate.");
+        showToast("Fresh case — everything cleared. Your characters are untouched.");
         rerender();
       }, "sm ghost")));
     root.append(c);
