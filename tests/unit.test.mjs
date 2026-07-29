@@ -408,6 +408,21 @@ test("NPC nature table: D10 1 Replicant / 2–9 human / 10 ambiguous [Solo p.019
   for (let d = 1; d <= 10; d++) assert.ok(R.lookupRange(SO.NPC_NATURE, d), `D10=${d} resolves`);
 });
 
+test("the Investigation Procedure is 7 numbered steps, and the app reads them [Solo p.005]", () => {
+  assert.equal(SO.SOLO_SEQUENCE.length, 7);
+  assert.deepEqual(SO.SOLO_SEQUENCE.map((s) => s.step), [1, 2, 3, 4, 5, 6, 7]);
+  for (const s of SO.SOLO_SEQUENCE) assert.ok(s.title && s.text.length > 20 && s.where, `step ${s.step} is complete`);
+  // Steps 1-2 are the location and the Countdown Event Check, and both open a Shift.
+  assert.match(SO.SOLO_SEQUENCE[1].title, /Countdown/);
+  assert.deepEqual(SO.SOLO_SEQUENCE.map((s) => s.where),
+    ["Shift", "Shift", "Scene", "Scene", "Leads", "Leads", "Wrap"], "each step names the tab that serves it");
+  // It was dead data before this; solo.js must actually read it (§10.2) and must
+  // not restate the step numbers it labels its cards with.
+  const solo = readFileSync(new URL("../src/solo.js", import.meta.url), "utf8");
+  assert.ok(solo.includes("SOLO_SEQUENCE"), "solo.js reads the procedure");
+  assert.ok(!/stepCard\("Step /.test(solo), "no hardcoded 'Step n' eyebrows left in solo.js");
+});
+
 test("four official ways to open a case [Solo p.004]", () => {
   assert.deepEqual(SO.CASE_START_METHODS.map((m) => m.key), ["gut", "thread", "generator", "inspiration"]);
   for (const m of SO.CASE_START_METHODS) assert.ok(m.name && m.text.length > 20);

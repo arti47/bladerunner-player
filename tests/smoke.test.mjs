@@ -1016,6 +1016,15 @@ test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.
   const titles = await page.$$eval(".panel .sheet__section", (els) => els.map((e) => e.textContent.trim()));
   assert.ok(titles.indexOf("Proceed to a location") < titles.indexOf("Countdown Event Check"),
     "the location comes before the Countdown check");
+
+  // The whole loop is on the page, rendered from the data layer in step order.
+  const printed = await page.evaluate(async () => (await import("/data-solo.js")).SOLO_SEQUENCE);
+  const proc = await page.$$eval(".solo-proc__list li", (ls) => ls.map((l) => l.textContent));
+  assert.equal(proc.length, printed.length, "every procedure step is listed");
+  printed.forEach((s, i) => {
+    assert.ok(proc[i].startsWith(s.title), `step ${s.step} rendered in order: ${proc[i].slice(0, 40)}`);
+    assert.ok(proc[i].includes(`${s.where} tab`), `step ${s.step} names the tab that serves it`);
+  });
 });
 
 // The GM screen is laid out in the order a session runs. This pins the pill

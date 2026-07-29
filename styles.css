@@ -551,6 +551,10 @@ textarea.input { resize: vertical; font-family: inherit; }
 .solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
 .solo-method:first-of-type { border-top: 0; }
 .rolllog__scope { padding: .1rem .6rem .4rem; }
+/* Solo: the printed Investigation Procedure, collapsed on the Shift panel. */
+.solo-proc { margin-top: .6rem; }
+.solo-proc__list { margin: .4rem 0 0; padding-left: 1.2rem; display: grid; gap: .4rem; }
+.solo-proc__list li { line-height: 1.4; }
 
 /* ---- Solo: procedure-ordered panels --------------------------------------- */
 .step-eyebrow { margin-top: 0; color: var(--cyan); font-weight: 700; }

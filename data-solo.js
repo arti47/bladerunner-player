@@ -323,12 +323,18 @@ export const COUNTDOWN_EVENT = [
   { name: "Threat", examples: "Cryptic message; home or vehicle ransacked; warned off the case." },
 ];
 
+// The printed Investigation Procedure, step by step  [Solo Mode p.005].
+// `where` names the tab that serves each step. solo.js labels its step cards
+// from this list and renders it as the Shift panel's procedure reference, so
+// the sequence of play is stated once, in the data layer (§10.2).
 export const SOLO_SEQUENCE = [
-  "Start a case (trust your gut / follow a thread / Case File Generator / Case Briefing tables).",
-  "Play scenes: use a Scene Check when unsure; Question Checks for yes/no; Cipher & tables for open questions.",
-  "Gather clues, follow leads, and track Hypotheses (die-rated) — review at each Shift's end.",
-  "Advance the Countdown Timer; on a triggered event roll the Countdown Event Table.",
-  "Award Promotion & Humanity Points at milestones via the checklists.",
+  { step: 1, title: "Proceed to a location", text: "Choose where the leads point. Travelling there takes the Shift.", where: "Shift" },
+  { step: 2, title: "Countdown Event Check", text: "Roll the timer as you set off. Any success fires an event and resets the timer; no success means no event, but the timer escalates.", where: "Shift" },
+  { step: 3, title: "Play out the scenes", text: "Each activity at the location is its own scene. Make a Scene Check when you want the oracle to set its complexity and danger.", where: "Scene" },
+  { step: 4, title: "Roll, ask, and gather", text: "Skill rolls for risky moments; Question Checks and the case tables to reveal detail; the clue tables for the evidence itself.", where: "Scene" },
+  { step: 5, title: "Review once the location is done", text: "Weigh what you learned, write up the case log, and update your hypotheses.", where: "Leads" },
+  { step: 6, title: "Hypothesis Check", text: "When an action or circumstance would conclusively prove or disprove a theory, test it.", where: "Leads" },
+  { step: 7, title: "Close the Shift", text: "If the check ends the case, wrap up and take the Promotion Points. Otherwise the Shift is over — go back to step 1.", where: "Wrap" },
 ];
 
 // Is an NPC human or Replicant?  [Solo Mode p.019] — roll a D10 Base Die.

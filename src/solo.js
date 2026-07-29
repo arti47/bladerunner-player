@@ -232,10 +232,23 @@ export function renderSolo(mount, rerender) {
     onSelect: (k) => { st.panel = k; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
 
   // A card headed with its place in the Investigation Procedure (Solo Mode p.005).
+  // Pass the step NUMBER and the eyebrow is built from S.SOLO_SEQUENCE, so the
+  // sequence of play is stated once, in the data layer (§10.2); pass a string
+  // for the cards that sit outside the numbered loop ("Before you start").
   function stepCard(step, title, sub, ...children) {
     const c = card(title, sub, ...children);
-    c.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, step));
+    c.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, typeof step === "number" ? `Step ${procStep(step).step}` : step));
     return c;
+  }
+  const procStep = (n) => S.SOLO_SEQUENCE.find((s) => s.step === n) || { step: n, title: "", text: "" };
+  // The whole loop, collapsed, so you can see where the current tab sits in it.
+  function procedureCard() {
+    const d = el("details", { class: "rules__group solo-proc" }, el("summary", {}, "The Investigation Procedure — the whole loop"));
+    const list = el("ol", { class: "solo-proc__list" });
+    for (const s of S.SOLO_SEQUENCE)
+      list.append(el("li", {}, el("strong", {}, s.title), " — ", el("span", {}, s.text), " ", el("span", { class: "muted small" }, `(${s.where} tab)`)));
+    d.append(list);
+    return d;
   }
   // Soft gating (owner ruling): once-per-Shift actions are marked, not blocked —
   // a second roll only asks for confirmation.
@@ -416,14 +429,15 @@ export function renderSolo(mount, rerender) {
       head.append(el("p", { class: "roll-result--warn" }, "At the Downtime limit — another investigation Shift costs you 1 stress."));
     }
     head.append(el("div", { class: "btn-row" }, btn(ch ? "Open sheet →" : "Create a character →", () => navigate(ch ? "sheet" : "wizard"), "sm ghost")));
+    head.append(procedureCard());
     root.append(head);
 
-    root.append(stepCard("Step 1", "Proceed to a location",
+    root.append(stepCard(1, "Proceed to a location",
       "Decide where the leads point, then roll if you want the place itself generated. Travelling takes the Shift.",
       grid(btn("🎲 Location", () => { const e = rollColumn(S.LOCATION_ENVIRONMENT), p = rollColumn(S.LOCATION_PLACE); show({ label: "Location", text: `${e.entry} ${p.entry}`, pin: `[Location] ${e.entry} ${p.entry}`, title: "Location Generator", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${e.entry} ${p.entry}`), el("p", { class: "muted roll-center" }, `Environment D6=${e.d6}/D12=${e.d}  |  Place D6=${p.d6}/D12=${p.d}`)) }); }))));
 
     // Countdown Event Check — once per Shift, when you head to a new location.
-    const timerCard = stepCard("Step 2", "Countdown Event Check", S.COUNTDOWN_TIMER.note);
+    const timerCard = stepCard(2, "Countdown Event Check", S.COUNTDOWN_TIMER.note);
     const chip = doneChip("countdown");
     if (chip) timerCard.append(el("div", { class: "chips" }, chip));
     timerCard.append(el("div", { class: "timer-display" }, el("span", { class: "timer-display__label" }, "Current Timer Die:"), el("span", { class: "timer-display__die" }, st.timerDie)));
@@ -462,13 +476,13 @@ export function renderSolo(mount, rerender) {
       el("option", { value: "low" }, "Low prob (2D10 keep lowest)"));
 
     // Step 3 - set the shape of the situation before you touch a skill.
-    root.append(stepCard("Step 3", "Frame the scene",
+    root.append(stepCard(3, "Frame the scene",
       "Check only when you are unsure how hard a situation is. Stuck for a scene at all? Roll a category.",
       grid(btn("🎲 Scene Check (D8)", () => { const roll = rollDie(8); const res = lookupRange(S.SCENE_CHECK, roll); show({ label: "Scene Check", text: `D8→${roll} · ${res.result}`, pin: `[Scene Check] ${res.result}`, title: `Scene Check — ${roll} (D8)`, render: (b) => { b.append(el("h3", { class: "roll-result" }, res.result)); if (res.detail) b.append(el("p", { class: "muted" }, res.detail)); } }); }),
         btn("🎲 Scene Category (D12)", () => { const roll = rollDie(12); const res = S.SCENE_CATEGORIES[roll - 1]; show({ label: "Scene Category", text: res.name, pin: `[Scene Category] ${res.name} — ${res.detail}`, title: `Scene Category — ${roll} (D12)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res.name), el("p", {}, res.detail), el("div", { class: "roll-eyebrow" }, "Suggested Skills"), el("p", { class: "muted" }, res.skills.join(", "))) }); }))));
 
     // Step 4a - resolving the action itself.
-    root.append(stepCard("Step 4", "Roll it out",
+    root.append(stepCard(4, "Roll it out",
       "Skill rolls happen on your character sheet. These answer the questions around the roll.",
       grid(btn("🎲 Question Check", () => {
           const odds = oddsSelect.value; let roll = rollDie(10); let d = `${roll}`;
@@ -484,7 +498,7 @@ export function renderSolo(mount, rerender) {
       el("div", { class: "btn-row" }, btn("Open sheet to roll \u2192", () => navigate("sheet"), "sm ghost"))));
 
     // Step 4b - what you find.
-    root.append(stepCard("Step 4", "Gather clues", "Assemble a clue: what it means, and the evidence itself.",
+    root.append(stepCard(4, "Gather clues", "Assemble a clue: what it means, and the evidence itself.",
       grid(btn("🎲 Meaning (D8)", () => { const r = rollDie(8); const t = S.CLUE_MEANING[r - 1]; show({ label: "Clue Meaning", text: t, pin: `[Meaning] ${t}`, title: `Clue Meaning — ${r} (D8)`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) }); }),
         btn("🎲 Evidence Descriptor", () => { const g = rollGrouped(S.CLUE_EVIDENCE_DESCRIPTOR); const e = g.entry; show({ label: "Evidence Descriptor", text: `${e.result} — ${e.detail}`, pin: `[Evidence] ${e.result}: ${e.detail}`, title: `Evidence Descriptor — D6=${g.d6}/D10=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, e.result), el("p", { class: "muted" }, e.detail)) }); }),
         btn("🎲 Evidence Type", () => { const g = rollGrouped(S.CLUE_EVIDENCE_TYPE); show({ label: "Evidence Type", text: g.entry, pin: `[Evidence Type] ${g.entry}`, title: `Evidence Type — D6=${g.d6}/D12=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
@@ -496,7 +510,7 @@ export function renderSolo(mount, rerender) {
         }, "primary"))));
 
     // Step 4c - who you meet. Skill Level sits with the other NPC rolls.
-    root.append(stepCard("Step 4", "People you meet", "Generate an NPC: sphere of life, a defining trait, and how good they are.",
+    root.append(stepCard(4, "People you meet", "Generate an NPC: sphere of life, a defining trait, and how good they are.",
       grid(btn("🎲 Sphere", () => { const g = rollGrouped(S.CHARACTER_SPHERE); show({ label: "Sphere", text: g.entry, pin: `[Sphere] ${g.entry}`, title: `Character Sphere — D6=${g.d6}/D8=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
         btn("🎲 Trait", () => { const g = rollGrouped(S.CHARACTER_TRAIT); show({ label: "Trait", text: g.entry, pin: `[Trait] ${g.entry}`, title: `Character Trait — D6=${g.d6}/D12=${g.d}`, render: (b) => b.append(el("h3", { class: "roll-result" }, g.entry)) }); }),
         btn("🎲 Human or Replicant (D10)", () => {
@@ -514,7 +528,7 @@ export function renderSolo(mount, rerender) {
       el("p", { class: "muted roll-note" }, "Roll for an NPC only when they are pitted directly against you \u2014 and never push an NPC's roll.")));
 
     // Step 4d - when it turns violent.
-    root.append(stepCard("Step 4", "Combat & chases", "Direct the opposition, then run the fight in the tracker.",
+    root.append(stepCard(4, "Combat & chases", "Direct the opposition, then run the fight in the tracker.",
       grid(btn("🎲 NPC Tactics (D8)", () => { const r = rollDie(8); const t = lookupRange(S.NPC_TACTICS, r); show({ label: "NPC Tactics", text: t.name, pin: `[NPC Tactics] ${t.name} — ${t.behavior}`, title: `NPC Tactics — ${r} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, t.name), el("p", { class: "muted" }, t.behavior)) }); }),
         btn("🎲 NPC Chase Maneuver (D8)", () => { const r = rollDie(8); const m = lookupRange(S.NPC_CHASE_MANEUVERS, r); show({ label: "NPC Chase Maneuver", text: `Pursuer: ${m.pursuer} · Prey: ${m.prey}`, pin: `[Chase] Pursuer: ${m.pursuer} / Prey: ${m.prey}`, title: `NPC Chase Maneuver — ${r} (D8)`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "If the NPC is the Pursuer"), el("p", {}, m.pursuer), el("div", { class: "roll-eyebrow" }, "If the NPC is the Prey"), el("p", {}, m.prey)) }); })),
       el("div", { class: "btn-row" }, btn("Combat Tracker \u2192", () => navigate("combat"), "sm ghost"))));
@@ -524,7 +538,7 @@ export function renderSolo(mount, rerender) {
 
   // ---- LEADS: steps 5-6 ---------------------------------------------------
   function panelLeads(root) {
-    const review = stepCard("Step 5", "Review your hypotheses",
+    const review = stepCard(5, "Review your hypotheses",
       "Once per Shift, when the location's scenes are resolved: add a theory at D6, upgrade or downgrade whatever the evidence moved.");
     const chip = doneChip("review");
     if (chip) review.append(el("div", { class: "chips" }, chip));
@@ -540,7 +554,7 @@ export function renderSolo(mount, rerender) {
     review.append(hypList, btn("＋ Add Hypothesis", async () => { const t = await promptModal("Hypothesis theory / lead", { title: "Add Hypothesis", okLabel: "Add" }); if (t && t.trim()) { st.hypotheses.push({ id: uid(), text: t.trim(), die: S.HYPOTHESIS.newRating }); setFlag("review"); writeSoloState(st); rerender(); } }, "sm"));
     root.append(review);
 
-    root.append(stepCard("Step 6", "Hypothesis Check",
+    root.append(stepCard(6, "Hypothesis Check",
       "When an action or circumstance will conclusively prove or disprove a theory, press the Check button on its row above. It rolls the rating as Base Dice and cannot be pushed.",
       el("p", { class: "muted small" }, `${S.HYPOTHESIS_CHECK.crit.name}: ${S.HYPOTHESIS_CHECK.crit.pp > 0 ? "+" : ""}${S.HYPOTHESIS_CHECK.crit.pp} PP \u00b7 ${S.HYPOTHESIS_CHECK.success.name}: +${S.HYPOTHESIS_CHECK.success.pp} PP \u00b7 ${S.HYPOTHESIS_CHECK.failure.name}: ${S.HYPOTHESIS_CHECK.failure.pp} PP`)));
 
@@ -550,7 +564,7 @@ export function renderSolo(mount, rerender) {
   // ---- WRAP: step 7 -------------------------------------------------------
   function panelWrap(root) {
     const ch = Store.getActive();
-    const endCard = stepCard("Step 7", "End the Shift",
+    const endCard = stepCard(7, "End the Shift",
       ch ? `${ch.name} \u2014 ${ch.state.shiftsSinceDowntime || 0}/${downtimeLimitFor(ch)} Shifts since Downtime.`
          : "No active character \u2014 the Shift counter lives on a character sheet.");
     endCard.append(el("div", { class: "btn-row" },
@@ -583,10 +597,10 @@ export function renderSolo(mount, rerender) {
     endCard.append(el("p", { class: "muted small" }, "No Countdown Event Check on a Downtime Shift."));
     root.append(endCard);
 
-    root.append(stepCard("Step 7", "Downtime scene", "Roll how the off-hours go.",
+    root.append(stepCard(7, "Downtime scene", "Roll how the off-hours go.",
       grid(btn("🎲 Downtime Event (D12)", () => { const roll = rollDie(12); const ev = S.DOWNTIME_EVENT[roll - 1]; show({ label: "Downtime Event", text: `D12→${roll}`, pin: `[Downtime] Home: ${ev.home} / Street: ${ev.street}`, title: `Downtime Event — ${roll} (D12)`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "At Home"), el("p", {}, ev.home), el("div", { class: "roll-eyebrow" }, "On the Street"), el("p", {}, ev.street)) }); }))));
 
-    const c = stepCard("Step 7", "Award your points", "Tick these as they happen; count them at the end of the case or session and move the totals onto your sheet.");
+    const c = stepCard(7, "Award your points", "Tick these as they happen; count them at the end of the case or session and move the totals onto your sheet.");
     const mk = (title, items, map, keyName) => {
       const box = el("details", { class: "rules__group" });
       box.append(el("summary", {}, `${title} (${Object.values(map).filter(Boolean).length}/${items.length})`));
