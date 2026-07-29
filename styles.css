@@ -580,3 +580,14 @@ textarea.input { resize: vertical; font-family: inherit; }
 .roll-next p { margin: 0; font-size: .88rem; }
 .roll-next .btn { align-self: flex-start; }
 .roll-next__crit { border-top: 1px solid var(--line); padding-top: .4rem; }
+
+/* ---- Actionable toast (app update) ---------------------------------------- */
+/* The toast region is pointer-events:none so toasts never block the app; an
+   actionable toast has to take clicks back for itself. */
+.toast--action { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; pointer-events: auto; }
+.toast__msg { flex: 1 1 auto; min-width: 0; }
+.toast__btn { flex: 0 0 auto; font: inherit; font-weight: 700; font-size: .85rem; cursor: pointer;
+  padding: .35rem .7rem; border-radius: .4rem; border: 1px solid var(--amber-dim);
+  background: linear-gradient(180deg, var(--amber), var(--amber-dim)); color: #180f00; }
+.toast__close { flex: 0 0 auto; font: inherit; cursor: pointer; background: none; border: 0; color: var(--muted); padding: .2rem .3rem; }
+.toast__close:hover { color: var(--text); }

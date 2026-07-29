@@ -1,6 +1,7 @@
 // service-worker.js — network-first, caches the app shell + all data files.
-// Bump CACHE_VERSION on ANY shipped-file change (CLAUDE.md §10.6).
-const CACHE_VERSION = "brp-v47";
+// Bump CACHE_VERSION on ANY shipped-file change (CLAUDE.md §10.6) — that bump is
+// what makes an installed app see a new deploy and offer the update toast.
+const CACHE_VERSION = "brp-v48";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -12,6 +13,7 @@ const APP_SHELL = [
   "./data-solo.js",
   "./data-gm.js",
   "./src/main.js",
+  "./src/update.js",
   "./src/core.js",
   "./src/ui.js",
   "./src/rules.js",
@@ -32,8 +34,15 @@ const APP_SHELL = [
   "./firebase-config.js",
 ];
 
+// A new worker installs and then WAITS: the running app keeps its current code
+// until the player presses "Update now" on the toast (which posts SKIP_WAITING).
+// Without the wait, a mid-session deploy would swap modules under their feet.
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_VERSION).then((c) => c.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE_VERSION).then((c) => c.addAll(APP_SHELL)));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

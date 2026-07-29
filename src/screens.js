@@ -9,6 +9,7 @@ import { showToast, promptModal, confirmModal, rollLogCard } from "./ui.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
 import { Sync, linkGoogle, createCampaign, joinCampaign, leaveCampaign, accountLabel } from "./sync.js";
+import { checkForUpdates, applyUpdate } from "./update.js";
 
 function screen(title, ...blocks) {
   return el("section", { class: "screen" }, el("h1", { class: "screen__title" }, title), ...blocks);
@@ -187,6 +188,17 @@ export function renderSettings(mount) {
   mount.append(screen("Settings & About",
     accountSection(),
     rows,
+    el("div", { class: "card" },
+      el("div", { class: "card__title" }, "App version"),
+      el("p", { class: "muted" }, "The app updates itself from GitHub when a new version is deployed — you get a toast with an Update button. Check by hand here."),
+      el("button", { class: "btn btn--ghost", onClick: async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true; b.textContent = "Checking…";
+        const waiting = await checkForUpdates();
+        b.disabled = false; b.textContent = "Check for updates";
+        if (waiting) showToast("A new version is ready.", { timeout: 0, action: { label: "Update now", onClick: applyUpdate } });
+        else showToast("You're on the latest version.");
+      } }, "Check for updates")),
     el("div", { class: "card" },
       el("div", { class: "card__title" }, "How to Play"),
       el("p", { class: "muted" }, "Step-by-step walkthroughs for running a case solo or at a table, plus a cheat sheet."),

@@ -11,16 +11,26 @@ function host() {
   return modalHost;
 }
 
-export function showToast(message, { kind = "info", timeout = 2600 } = {}) {
+// `action: { label, onClick }` adds a button to the toast (used by the
+// "new version" prompt). `timeout: 0` keeps the toast up until it is dismissed
+// — an actionable toast must not vanish before it can be pressed.
+export function showToast(message, { kind = "info", timeout = 2600, action = null } = {}) {
   let region = $("#toast-region");
   if (!region) {
     region = el("div", { id: "toast-region", "aria-live": "polite", "aria-atomic": "true" });
     document.body.append(region);
   }
-  const t = el("div", { class: `toast toast--${kind}`, role: "status" }, message);
+  const t = el("div", { class: `toast toast--${kind}`, role: "status" }, el("span", { class: "toast__msg" }, message));
+  const dismiss = () => { t.classList.remove("toast--in"); setTimeout(() => t.remove(), 200); };
+  if (action?.label) {
+    t.classList.add("toast--action");
+    t.append(el("button", { class: "toast__btn", onClick: () => { dismiss(); action.onClick?.(); } }, action.label));
+    t.append(el("button", { class: "toast__close", "aria-label": "Dismiss", onClick: dismiss }, "\u2715"));
+  }
   region.append(t);
   requestAnimationFrame(() => t.classList.add("toast--in"));
-  setTimeout(() => { t.classList.remove("toast--in"); setTimeout(() => t.remove(), 200); }, timeout);
+  if (timeout > 0) setTimeout(dismiss, timeout);
+  return { dismiss };
 }
 
 // Core modal. Returns { close }. `render(body, close)` fills the body.
