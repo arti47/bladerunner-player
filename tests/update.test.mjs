@@ -89,9 +89,13 @@ test("a new deploy offers an Update button that swaps the app and reloads", asyn
   assert.ok(before.caches.includes("brp-vNEXT") && before.caches.length === 2, `both versions cached: ${before.caches}`);
 
   // Press it: the new worker takes over, the stale cache is dropped, page reloads.
+  // The reload is the point of the feature, so wait for it explicitly — asserting
+  // against the old execution context races the navigation away.
+  const reloaded = page.waitForNavigation({ waitUntil: "load", timeout: 20000 }).catch(() => null);
   await page.click(".toast__btn");
   await page.waitForFunction(async () => (await caches.keys()).join() === "brp-vNEXT", { timeout: 20000 });
-  await page.waitForTimeout(500);
+  await reloaded;
+  await page.waitForFunction(() => document.readyState === "complete" && !!document.querySelector("#screen"), { timeout: 20000 });
   assert.equal((await page.$$(".toast--action")).length, 0, "the toast is gone after updating");
   assert.ok(await page.$eval("#screen", (e) => e.children.length > 0), "the app still renders after the swap");
   assert.deepEqual(errors, [], errors.join("\n"));
