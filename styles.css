@@ -551,6 +551,19 @@ textarea.input { resize: vertical; font-family: inherit; }
 .solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
 .solo-method:first-of-type { border-top: 0; }
 .rolllog__scope { padding: .1rem .6rem .4rem; }
+/* Solo: the status strip above the sub-nav — vitals, Shift, timer, banked checks. */
+.solo-status { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: baseline; padding: .4rem .6rem; margin-bottom: .5rem;
+  border: 1px solid var(--line); border-radius: 8px; font-size: .85rem; }
+.solo-status__cell { color: var(--muted); white-space: nowrap; }
+.solo-status__name { color: var(--text); font-weight: 600; }
+.solo-status .warn { color: var(--warn, var(--accent)); }
+.solo-status__link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+/* Solo: roll a skill without leaving the Scene panel. */
+.solo-roll { flex-wrap: wrap; gap: .4rem; }
+.solo-roll .roll-select { flex: 1 1 8rem; min-width: 0; }
+/* The way back to the solo case from the sheet and the tracker. */
+.solo-return { margin-bottom: .5rem; }
+
 /* Case Board (house aid): boxes, connections and the pick list. */
 .board__group { margin: .6rem 0; }
 .board__box { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; margin: .4rem 0; background: var(--surface-2, transparent); }

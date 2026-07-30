@@ -19,15 +19,15 @@ import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
 import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
-import { rollDie, successesFor, uid, clear, TUTORIAL_KEY } from "./core.js";
+import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
 import { applyInvestigationShift, applyDowntimeShift, downtimeLimitFor, maxHealth, maxResolve } from "./derived.js";
+import { openSkillRoll, openWeaponPicker, openOpposedSkillRoll } from "./roller.js";
 import { navigate } from "./router.js";
 import { Board, renderBoardPanel } from "./board.js";
 import { Chase } from "./chase.js";
 
-const SOLO_KEY = "brp:solo";
 const LOG_CAP = 50;
 const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
 const LOOSE = "__panel";    // bucket for rolls fired outside any card
@@ -45,7 +45,8 @@ const LEGACY_PANELS = { start: "case", track: "leads", session: "wrap" };
 
 function readSoloState() {
   const base = { timerDie: "D6", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {},
-    log: [], panel: "case", scratchpad: "", shiftNo: 1, shiftFlags: {}, selectedTheme: null };
+    log: [], panel: "case", scratchpad: "", shiftNo: 1, shiftFlags: {}, selectedTheme: null,
+    pendingEvent: null, lastSkill: null };
   try {
     const raw = localStorage.getItem(SOLO_KEY);
     if (raw) {
@@ -219,7 +220,30 @@ export function renderSolo(mount, rerender) {
       el("h3", { class: "roll-result " + (out.pp > 0 ? "roll-result--ok" : "roll-result--warn") }, `${out.name} — ${ppTxt} (if this ends the case)`),
       el("p", {}, out.text),
       el("p", { class: "muted small" }, "Cannot be pushed. " + S.HYPOTHESIS_CHECK.convincing)) });
+    // The award lands only if the check ends the case (Solo Mode), so ask — one
+    // tap — instead of leaving the player to mirror the number onto the sheet.
+    offerPoints(out.pp, `Hypothesis Check — ${h.text}`);
   };
+  // Apply a Promotion Point swing to the active character, on confirmation.
+  async function offerPoints(pp, why) {
+    const ch = Store.getActive();
+    if (!pp || !ch) return;
+    const sign = pp > 0 ? `+${pp}` : `${pp}`;
+    const ok = await confirmModal(
+      `Did that end the case? If so ${ch.name} takes ${sign} Promotion Point${Math.abs(pp) === 1 ? "" : "s"} now. Otherwise skip it and apply it when the case closes.`,
+      { title: `${sign} Promotion Points`, okLabel: `Apply ${sign} PP`, cancelLabel: "Not yet" });
+    if (!ok) return;
+    applyPoints(ch, { pp });
+    record("Promotion", `${sign} PP · ${ch.name}`, `[Promotion] ${sign} PP — ${why}`);
+    showToast(`${ch.name}: ${sign} Promotion Points (now ${ch.state.promotionPoints}).`);
+  }
+  // Points never go below zero (§3.10). Saves the character.
+  function applyPoints(ch, { pp = 0, humanity = 0 }) {
+    ch.state.promotionPoints = Math.max(0, (ch.state.promotionPoints || 0) + pp);
+    ch.state.humanityPoints = Math.max(0, (ch.state.humanityPoints || 0) + humanity);
+    Store.save(ch);
+    return ch;
+  }
 
   // header + segmented nav
   mount.append(el("div", { class: "card screen-head" },
@@ -231,9 +255,62 @@ export function renderSolo(mount, rerender) {
       "aria-pressed": st.autoPin ? "true" : "false",
       onClick: () => { st.autoPin = !st.autoPin; writeSoloState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
     }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)));
+  mount.append(statusStrip());
   mount.append(segmentNav({ segments: SEGMENTS, active: st.panel,
     // Switching tabs starts at the top; an in-panel roll keeps your place.
     onSelect: (k) => { st.panel = k; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
+
+  // Step 4's actual dice. openSkillRoll/openWeaponPicker/openOpposedSkillRoll are
+  // standalone modals (the sheet calls them the same way), so a scene never has to
+  // leave the Solo screen to roll — which used to cost a round trip and your place
+  // on the page.
+  function rollHere() {
+    const ch = Store.getActive();
+    if (!ch) return el("div", { class: "btn-row" }, btn("Create a character to roll →", () => navigate("wizard"), "sm ghost"));
+    const pick = el("select", { class: "input roll-select", "aria-label": "Skill to roll" });
+    for (const sk of D.SKILLS) pick.append(el("option", { value: sk.key }, `${sk.name} (${ch.skills[sk.key] || "D"})`));
+    if (st.lastSkill && D.SKILLS.some((x) => x.key === st.lastSkill)) pick.value = st.lastSkill;
+    const roll = () => {
+      st.lastSkill = pick.value; writeSoloState(st);
+      openSkillRoll(ch, pick.value, rerender);
+    };
+    return el("div", { class: "roll-row solo-roll" },
+      pick,
+      btn("⚄ Roll", roll, "primary"),
+      btn("⚔ Attack", () => openWeaponPicker(ch, rerender), "sm"),
+      btn("⚖ Opposed", () => openOpposedSkillRoll(ch, rerender), "sm"),
+      btn("Sheet →", () => navigate("sheet"), "sm ghost"));
+  }
+
+  // Vitals, the Shift, the timer and any banked Discovery Check, on EVERY panel —
+  // damage and stress land during a scene, which is not the tab that used to show
+  // them. Numbers only; the sheet is one tap away from the Shift tab.
+  function statusStrip() {
+    const ch = Store.getActive();
+    const wrap = el("div", { class: "solo-status" });
+    if (!ch) {
+      wrap.append(el("span", { class: "solo-status__cell muted" }, "No active character"),
+        btn("Create one →", () => navigate("wizard"), "sm ghost"));
+      return wrap;
+    }
+    const limit = downtimeLimitFor(ch), used = ch.state.shiftsSinceDowntime || 0;
+    const atLimit = used >= limit;
+    const cell = (text, cls = "") => el("span", { class: "solo-status__cell " + cls }, text);
+    wrap.append(
+      cell(ch.name, "solo-status__name"),
+      cell(`♥ ${ch.state.health}/${maxHealth(ch)}`, ch.state.health <= 0 ? "warn" : ""),
+      cell(`◈ ${ch.state.resolve}/${maxResolve(ch)}`, ch.state.resolve <= 0 ? "warn" : ""),
+      cell(`Shift ${st.shiftNo || 1}`),
+      cell(`${used}/${limit} to Downtime`, atLimit ? "warn" : ""),
+      cell(`⏱ ${st.timerDie}`),
+    );
+    const banked = Board.checks();
+    if (banked) wrap.append(el("button", {
+      class: "solo-status__cell solo-status__link",
+      onClick: () => { st.panel = "board"; writeSoloState(st); rerender(); window.scrollTo(0, 0); },
+    }, `🔍 ${banked}`));
+    return wrap;
+  }
 
   // A card headed with its place in the Investigation Procedure (Solo Mode p.005).
   // Pass the step NUMBER and the eyebrow is built from S.SOLO_SEQUENCE, so the
@@ -457,6 +534,7 @@ export function renderSolo(mount, rerender) {
         setFlag("countdown");
         if (successes > 0) {
           const evRoll = rollDie(12); const ev = S.COUNTDOWN_EVENT[evRoll - 1]; st.timerDie = S.ESCALATION_STEPS[0];
+          st.pendingEvent = { name: ev.name, examples: ev.examples, shift: st.shiftNo || 1 };
           show({ label: "Countdown Event", text: `Triggered · ${ev.name}`, pin: `[Countdown] TRIGGERED — ${ev.name}: ${ev.examples}`,
             title: "⚠️ Countdown Event Triggered!", render: (b) => b.append(el("p", { class: "roll-result--warn" }, `Rolled ${rr.join(", ")} (${successes} success${successes > 1 ? "es" : ""}) — the event fires. Timer resets to ${S.ESCALATION_STEPS[0]}.`), el("div", { class: "roll-eyebrow" }, `Event #${evRoll} — ${ev.name}`), el("p", { class: "roll-prose" }, ev.examples)) });
         } else {
@@ -479,11 +557,25 @@ export function renderSolo(mount, rerender) {
       }, "sm ghost")));
     root.append(timerCard);
 
-    root.append(el("div", { class: "btn-row" }, btn("At the location — play the scenes →", () => { st.panel = "scene"; writeSoloState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row" }, btn(
+      st.pendingEvent ? "The event interrupts — play it out →" : "At the location — play the scenes →",
+      () => { st.panel = "scene"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
   }
 
   // ---- SCENE: steps 3-4 ---------------------------------------------------
   function panelScene(root) {
+    // A triggered Countdown Event follows you here — it is a scene, and the loop
+    // used to hand you the prose and stop.
+    if (st.pendingEvent) {
+      const ev = st.pendingEvent;
+      const card2 = card(`Interruption — ${ev.name}`, "A Countdown Event fired. Frame it as a scene: as you set off, or waiting for you at the location.");
+      card2.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "Play this first"));
+      card2.append(el("p", { class: "roll-prose" }, ev.examples),
+        el("div", { class: "btn-row" },
+          btn("✓ Played it out", () => { st.pendingEvent = null; writeSoloState(st); showToast("Interruption resolved — carry on with the location."); rerender(); }, "sm"),
+          btn("📌 Pin it to the notes", () => pinNote(`[Countdown] ${ev.name}: ${ev.examples}`), "sm ghost")));
+      root.append(card2);
+    }
     const oddsSelect = el("select", { class: "input roll-select" },
       el("option", { value: "normal" }, "Normal odds (1D10)"),
       el("option", { value: "high" }, "High prob (2D10 keep highest)"),
@@ -509,7 +601,7 @@ export function renderSolo(mount, rerender) {
         btn("🎲 Cipher", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher Oracle", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })),
       el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Question odds:"), oddsSelect),
       el("p", { class: "muted roll-note" }, S.QUESTION_ODDS_NOTE),
-      el("div", { class: "btn-row" }, btn("Open sheet to roll \u2192", () => navigate("sheet"), "sm ghost"))));
+      rollHere()));
 
     // Step 4b - what you find.
     root.append(stepCard(4, "Gather clues", "Assemble a clue: what it means, and the evidence itself.",
@@ -606,6 +698,7 @@ export function renderSolo(mount, rerender) {
         const closed = st.shiftNo || 1;
         st.shiftNo = closed + 1;
         st.shiftFlags = {};
+        st.pendingEvent = null;
         writeSoloState(st);
         if (!ch) { showToast(`Shift ${closed} closed. No active character to log it against.`, { kind: "warn" }); rerender(); return; }
         const r = applyInvestigationShift(ch);
@@ -624,6 +717,7 @@ export function renderSolo(mount, rerender) {
         Store.save(ch);
         st.shiftNo = (st.shiftNo || 1) + 1;
         st.shiftFlags = {};
+        st.pendingEvent = null;
         writeSoloState(st);
         record("Downtime", `+${r.health} Health, +${r.resolve} Resolve \u00b7 counter reset`, `[Downtime] +${r.health} Health, +${r.resolve} Resolve`);
         showToast(`Downtime Shift: +${r.health} Health, +${r.resolve} Resolve.`);
@@ -634,7 +728,7 @@ export function renderSolo(mount, rerender) {
     root.append(stepCard(7, "Downtime scene", "Roll how the off-hours go.",
       grid(btn("🎲 Downtime Event (D12)", () => { const roll = rollDie(12); const ev = S.DOWNTIME_EVENT[roll - 1]; show({ label: "Downtime Event", text: `D12→${roll}`, pin: `[Downtime] Home: ${ev.home} / Street: ${ev.street}`, title: `Downtime Event — ${roll} (D12)`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "At Home"), el("p", {}, ev.home), el("div", { class: "roll-eyebrow" }, "On the Street"), el("p", {}, ev.street)) }); }))));
 
-    const c = stepCard(7, "Award your points", "Tick these as they happen; count them at the end of the case or session and move the totals onto your sheet.");
+    const c = stepCard(7, "Award your points", "Tick these as they happen, then apply the total — the app does the counting.");
     const mk = (title, items, map, keyName) => {
       const box = el("details", { class: "rules__group" });
       box.append(el("summary", {}, `${title} (${Object.values(map).filter(Boolean).length}/${items.length})`));
@@ -650,7 +744,32 @@ export function renderSolo(mount, rerender) {
       mk("Promotion Gain (+1 PP each)", S.PROMOTION_GAIN, st.promoGainChecks, "promoGainChecks"),
       mk("Promotion Loss (−1 PP each)", S.PROMOTION_LOSE, st.promoLoseChecks, "promoLoseChecks"),
       btn("✕ Reset Checklists", async () => { const ok = await confirmModal("Reset all milestone checklists for a new session/milestone?", { title: "Reset Checklists", danger: true }); if (ok) { st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {}; writeSoloState(st); rerender(); } }, "sm ghost"));
-    c.append(el("div", { class: "btn-row" }, btn("Open sheet to spend them →", () => navigate("sheet"), "sm ghost")));
+
+    // The totals are fully derivable — Humanity is one per tick, Promotion is
+    // gains minus losses — so the player should never be doing this arithmetic.
+    const ticked = (m) => Object.values(m).filter(Boolean).length;
+    const hum = ticked(st.humanityChecks), gain = ticked(st.promoGainChecks), lose = ticked(st.promoLoseChecks);
+    const ppTotal = gain - lose;
+    c.append(el("p", { class: "muted small" },
+      `Ticked: Humanity +${hum} · Promotion +${gain} −${lose} = ${ppTotal >= 0 ? "+" : ""}${ppTotal}.`));
+    if (hum || gain || lose) {
+      c.append(el("div", { class: "btn-row" },
+        btn(`✔ Apply to ${ch ? ch.name : "your character"}`, async () => {
+          if (!ch) { showToast("No active character.", { kind: "warn" }); return; }
+          const bits = [hum ? `+${hum} Humanity` : null, ppTotal ? `${ppTotal > 0 ? "+" : ""}${ppTotal} Promotion` : null].filter(Boolean).join(" and ");
+          if (!bits) { showToast("Nothing to apply — the gains and losses cancel out."); return; }
+          const ok = await confirmModal(`Give ${ch.name} ${bits}, and clear the checklists?`,
+            { title: "Apply your awards", okLabel: "Apply" });
+          if (!ok) return;
+          applyPoints(ch, { pp: ppTotal, humanity: hum });
+          st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
+          record("Awards", bits, `[Awards] ${ch.name}: ${bits}`);
+          showToast(`${ch.name}: ${bits}. Promotion ${ch.state.promotionPoints}, Humanity ${ch.state.humanityPoints}.`);
+        }, "primary"),
+        btn("Open sheet to spend them →", () => navigate("sheet"), "sm ghost")));
+    } else {
+      c.append(el("div", { class: "btn-row" }, btn("Open sheet to spend them →", () => navigate("sheet"), "sm ghost")));
+    }
     root.append(c);
 
     root.append(el("div", { class: "btn-row" }, btn("New Shift \u2014 back to the streets \u2192", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
@@ -715,7 +834,7 @@ export function renderSolo(mount, rerender) {
         st.hypotheses = [];
         st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
         st.timerDie = S.ESCALATION_STEPS[0];
-        st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null;
+        st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null; st.pendingEvent = null;
         st.panel = "case";              // a new case starts on the Case tab
         // Everything else this case wrote outside the solo screen.
         RollLog.clear();                // the global log, shown here, on the sheet and on Home
@@ -727,6 +846,7 @@ export function renderSolo(mount, rerender) {
         rerender();
       }, "sm ghost")));
     root.append(c);
+    root.append(el("div", { class: "btn-row" }, btn("Back to the case \u2014 next Shift \u2192", () => { st.panel = "shift"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
   }
 }
 

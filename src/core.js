@@ -6,6 +6,9 @@ export const STORAGE_PREFIX = "brp:"; // localStorage key namespace
 // The tutorial remembers its open panel here. Shared so a feature screen can
 // deep-link straight to the panel that documents it.
 export const TUTORIAL_KEY = "brp:tutorial";
+// The solo assistant's state, including which panel is open. Shared so the
+// sheet can send you to a specific solo tab.
+export const SOLO_KEY = "brp:solo";
 
 // ---- DOM helpers ----------------------------------------------------------
 export function el(tag, attrs = {}, ...children) {

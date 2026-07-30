@@ -1027,6 +1027,121 @@ test("roll logs read top to bottom too — newest entry is last", async (t) => {
 // Scene -> Leads -> Wrap -> Notes, and the two things that OPEN a Shift
 // (proceed to a location, then the Countdown Event Check) sit together on the
 // Shift panel, in that order.
+// The solo-flow audit found eight seams; these pin the fixes. The loop must not
+// need the bottom nav, must not make the player the app's clipboard, and must
+// show vitals where damage actually lands.
+test("the solo loop rolls, applies and reports without leaving the screen", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  let n = 0;
+  const go = async () => { await page.goto(`${base}/index.html?flowfix${++n}#solo`, { waitUntil: "load" }); await page.waitForTimeout(280); };
+  const solo = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  const chr = () => page.evaluate(async () => { const { Store } = await import("/src/store.js"); const c = Store.getActive(); return { pp: c.state.promotionPoints, hum: c.state.humanityPoints }; });
+  const setSolo = (patch) => page.evaluate((p) => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); localStorage.setItem("brp:solo", JSON.stringify({ ...s, ...p })); }, patch);
+
+  await go();
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: false }));
+    localStorage.removeItem("brp:board");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Kaz", nature: "human", archetype: "analyst", years: "seasoned", attributes: { STR: "C", AGI: "C", INT: "A", EMP: "B" } });
+    ch.state.promotionPoints = 2;
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "scene", hypotheses: [], log: [], scratchpad: "", results: {}, shiftNo: 2, shiftFlags: {}, timerDie: "D8" }));
+  });
+  await go();
+
+  // (5) the status strip is on every panel, with the numbers that matter
+  const strip = await page.$eval(".solo-status", (e) => e.textContent.replace(/\s+/g, " "));
+  for (const probe of ["Kaz", "♥", "◈", "Shift 2", "to Downtime", "⏱ D8"]) assert.ok(strip.includes(probe), `strip shows ${probe}: ${strip}`);
+  for (const p of ["case", "shift", "scene", "board", "leads", "wrap", "notes"]) {
+    await setSolo({ panel: p }); await go();
+    assert.equal((await page.$$(".solo-status")).length, 1, `${p} shows the status strip`);
+  }
+
+  // (1) a scene rolls in place — no navigation
+  await setSolo({ panel: "scene" }); await go();
+  const surface = await page.$$eval(".solo-roll .btn", (e) => e.map((x) => x.textContent.trim()));
+  assert.deepEqual(surface, ["⚄ Roll", "⚔ Attack", "⚖ Opposed", "Sheet →"], "skill, attack and opposed rolls are all here");
+  assert.equal(await page.$$eval(".solo-roll select option", (e) => e.length), 13, "every skill is selectable");
+  await page.selectOption(".solo-roll select", "observation");
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: "⚄ Roll" }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => location.hash), "#solo", "rolling never left the solo screen");
+  await page.locator(".modal").getByRole("button", { name: "⚄ Roll" }).click();
+  await page.waitForTimeout(220);
+
+  // (6) a banked Discovery Check offers the jump to the Board
+  await page.getByRole("button", { name: /Earn a Discovery Check/ }).click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: /Spend it on the Board/ }).click();
+  await page.waitForTimeout(320);
+  assert.equal(await page.evaluate(() => location.hash), "#solo");
+  assert.equal((await solo()).panel, "board", "and lands on the Board tab");
+  assert.ok((await page.$eval(".solo-status", (e) => e.textContent)).includes("🔍 1"), "the strip shows the banked check");
+
+  // (2) both screens Solo sends you to offer a way back
+  await page.goto(`${base}/index.html?flowback1#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(280);
+  assert.equal((await page.$$(".solo-return .btn")).length, 1, "the sheet has a back-link");
+  await page.click(".solo-return .btn");
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => location.hash), "#solo");
+  await page.goto(`${base}/index.html?flowback2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(280);
+  assert.equal((await page.$$(".solo-return .btn")).length, 1, "so does the combat tracker");
+
+  // (3) the Hypothesis Check's award reaches the character
+  await setSolo({ panel: "leads", hypotheses: [{ id: "h1", text: "The fixer did it", die: "D12/D12" }] });
+  await go();
+  const before = await chr();
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: "🎲 Check" }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /Apply \+5 PP/ }).click();
+  await page.waitForTimeout(280);
+  assert.equal((await chr()).pp, before.pp + 5, "a crit pays its +5 Promotion Points");
+
+  // (4) the award checklists total and apply
+  await setSolo({ panel: "wrap", humanityChecks: { 0: true, 2: true }, promoGainChecks: { 1: true, 3: true }, promoLoseChecks: { 0: true } });
+  await go();
+  const line = await page.$eval(".panel", (e) => (e.textContent.match(/Ticked:[^.]*\./) || [""])[0]);
+  assert.match(line, /Humanity \+2/);
+  assert.match(line, /Promotion \+2 −1 = \+1/);
+  const mid = await chr();
+  await page.getByRole("button", { name: /Apply to Kaz/ }).click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "Apply" }).last().click();
+  await page.waitForTimeout(300);
+  const done = await chr();
+  assert.equal(done.pp, mid.pp + 1, "gains minus losses");
+  assert.equal(done.hum, mid.hum + 2, "one Humanity per tick");
+  assert.deepEqual((await solo()).humanityChecks, {}, "and the checklists clear");
+
+  // (7) a fired Countdown Event follows you into the scene
+  await setSolo({ panel: "shift", timerDie: "D12/D12", pendingEvent: null });
+  await go();
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: "🎲 Roll the timer" }).click();
+  await page.waitForTimeout(300);
+  assert.ok((await solo()).pendingEvent?.name, "the event is held as pending");
+  assert.match(await page.$eval(".panel > .btn-row .btn--primary", (e) => e.textContent), /event interrupts/);
+  await page.locator(".panel > .btn-row .btn--primary").click();
+  await page.waitForTimeout(250);
+  const first = await page.$eval(".panel .card .sheet__section", (e) => e.textContent.trim());
+  assert.match(first, /^Interruption — /, `the Scene panel opens with it: ${first}`);
+  await page.getByRole("button", { name: "✓ Played it out" }).click();
+  await page.waitForTimeout(250);
+  assert.equal((await solo()).pendingEvent, null, "and it clears once played");
+
+  // (8) Notes is no longer a dead end
+  await setSolo({ panel: "notes" }); await go();
+  assert.match(await page.$eval(".panel > .btn-row .btn--primary", (e) => e.textContent), /next Shift/);
+
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+});
+
 // Resetting the Countdown Timer means undoing this Shift's check. It used to
 // put the die back but leave the "done this Shift" marker standing, so the card
 // went on claiming the check was made and a re-roll asked to confirm.

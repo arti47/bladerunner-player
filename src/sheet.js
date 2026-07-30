@@ -9,6 +9,7 @@ import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStres
 import { Store, RollLog } from "./store.js";
 import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard } from "./ui.js";
 import { navigate } from "./router.js";
+import { Settings } from "./settings.js";
 import { openSkillRoll, openWeaponPicker, proceduralRoll, openOpposedSkillRoll } from "./roller.js";
 import { Sync, watchCharacter, uploadPortrait } from "./sync.js";
 
@@ -54,6 +55,7 @@ export function renderSheet(mount) {
   const y = R.years(ch.years);
   const wrap = el("section", { class: "screen sheet" });
 
+  if (Settings.solo()) wrap.append(backToSolo());
   wrap.append(sheetHeader(ch, arch, y, commit));
   if (ch.state.dead) wrap.append(deceasedBanner());
   wrap.append(vitalsSection(ch, commit));
@@ -411,6 +413,13 @@ function flavorField(label, value, onSave, big = false) {
   if (!big) input.type = "text";
   input.addEventListener("blur", () => { if (input.value !== (value || "")) onSave(input.value); });
   return el("div", { class: "field" }, el("label", { class: "field__label" }, label), input);
+}
+
+// Solo sends you here to roll; this is the way back. Bottom-nav only was a
+// one-way door in the middle of the loop.  [solo-flow audit]
+function backToSolo() {
+  return el("div", { class: "solo-return" },
+    el("button", { class: "btn btn--sm btn--ghost", onClick: () => navigate("solo") }, "← Back to the solo case"));
 }
 
 // ---- Danger zone ----------------------------------------------------------

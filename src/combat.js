@@ -12,6 +12,8 @@ import { modal, showToast, confirmModal } from "./ui.js";
 import { Sync } from "./sync.js";
 import { rollCombatAttack, rollCombatSkill, armorForCombatant as armorFor, rollCritOnCombatant } from "./roller.js";
 import { renderChaseCard } from "./chase.js";
+import { Settings } from "./settings.js";
+import { navigate } from "./router.js";
 
 const INIT_CARDS = D.INITIATIVE_CARDS; // 10
 
@@ -34,6 +36,9 @@ export function renderCombat(mount) {
   clear(mount);
   const commit = (mutate) => { mutate(state); Combat.save(state); renderCombat(mount); };
   const wrap = el("section", { class: "screen" }, el("h1", { class: "screen__title" }, "Combat Tracker"));
+  // The way back to the solo loop, which sent you here.  [solo-flow audit]
+  if (Settings.solo()) wrap.append(el("div", { class: "solo-return" },
+    el("button", { class: "btn btn--sm btn--ghost", onClick: () => navigate("solo") }, "← Back to the solo case")));
 
   // ---- top controls -------------------------------------------------------
   const controls = el("div", { class: "card" });

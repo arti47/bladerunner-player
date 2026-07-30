@@ -5,7 +5,7 @@
 // the net is capped at one (Ch03). Push re-rolls every die not showing a 1; each 1
 // in the final pool inflicts damage (STR/AGI) or stress (INT/EMP), and Replicants
 // always take stress (Ch03/Ch04). All rolls read successes; crit dice read faces.
-import { el, rollDie, successesFor, titleCase, outcomeSummary } from "./core.js";
+import { el, rollDie, successesFor, titleCase, outcomeSummary, SOLO_KEY } from "./core.js";
 import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
 import { CRITICAL_SUCCESS } from "../data-solo.js";
@@ -16,6 +16,7 @@ import { reclampVitals, isBrokenByDamage } from "./derived.js";
 import { Settings } from "./settings.js";
 import * as H from "../data-house.js";
 import { Board } from "./board.js";
+import { navigate } from "./router.js";
 
 const dsize = (lvl) => D.LEVEL_DIE[lvl];
 const MANEUVER_DEFAULT = "C"; // no vehicle context: default Maneuverability for Driving
@@ -326,7 +327,13 @@ function nextSteps(ch, sk, succ, addResult) {
     const earn = el("button", { class: "btn btn--sm btn--ghost", onClick: () => {
       const n = Board.earn(1);
       earn.disabled = true;
-      addResult(el("p", { class: "roll-next__earned muted" }, `Discovery Check banked (${n} waiting) — spend it on Solo ▸ Board. House aid.`));
+      // Naming the tab was not enough — offer the jump.  [solo-flow audit]
+      addResult(el("div", { class: "roll-next__earned" },
+        el("span", { class: "muted" }, `Discovery Check banked (${n} waiting). House aid.`),
+        el("button", { class: "btn btn--sm btn--ghost", onClick: () => {
+          try { const st = JSON.parse(localStorage.getItem(SOLO_KEY) || "{}"); st.panel = "board"; localStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch {}
+          navigate("solo");
+        } }, "Spend it on the Board →")));
     } }, "🔍 Earn a Discovery Check");
     box.append(earn);
   }
