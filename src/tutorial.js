@@ -14,6 +14,7 @@ import { Settings } from "./settings.js";
 import { navigate } from "./router.js";
 
 const SEGMENTS = [
+  { key: "basics", label: "What is this?" },
   { key: "setup", label: "Setup" },
   { key: "solo", label: "Solo" },
   { key: "board", label: "Case Board" },
@@ -21,21 +22,62 @@ const SEGMENTS = [
   { key: "reference", label: "Cheat Sheet" },
 ];
 
-const readPanel = () => { try { return localStorage.getItem(TUTORIAL_KEY) || "setup"; } catch { return "setup"; } };
+// A first-timer starts at "what is this", not at the toggles.
+const readPanel = () => { try { return localStorage.getItem(TUTORIAL_KEY) || "basics"; } catch { return "basics"; } };
 const writePanel = (p) => { try { localStorage.setItem(TUTORIAL_KEY, p); } catch {} };
 
 export function renderTutorial(mount, rerender) {
   clear(mount);
-  const panel = SEGMENTS.some((s) => s.key === readPanel()) ? readPanel() : "setup";
+  const panel = SEGMENTS.some((s) => s.key === readPanel()) ? readPanel() : "basics";
   const body = el("section", { class: "screen" },
     el("h1", { class: "screen__title" }, "How to Play"),
     el("p", { class: "muted" }, "Running a case with this app, step by step. The rules themselves live in the Rules Library — this is the procedure."),
     segmentNav({ segments: SEGMENTS, active: panel, onSelect: (k) => { writePanel(k); rerender(); } }),
   );
   const host = el("div", { class: "panel" });
-  ({ setup: panelSetup, solo: panelSolo, board: panelBoard, table: panelTable, reference: panelReference }[panel])(host, rerender);
+  ({ basics: panelBasics, setup: panelSetup, solo: panelSolo, board: panelBoard, table: panelTable, reference: panelReference }[panel])(host, rerender);
   body.append(host);
   mount.append(body);
+}
+
+// ---- What is this? (no rules, no jargon) -----------------------------------
+// For someone who has never played a roleplaying game at all. Everything else
+// in this tutorial assumes you know what "narrate a scene" means; this panel is
+// where that assumption gets paid for.
+function panelBasics(host, rerender) {
+  const go = (key) => { writePanel(key); rerender(); window.scrollTo(0, 0); };
+  host.append(
+    steps("What a roleplaying game is", "Five sentences, then you can play.", [
+      ["You play one person", "— a blade runner in a rain-soaked Los Angeles. You decide what they say and do, the way you would decide for a character in a film you are making up as you go."],
+      ["You describe, you don't move pieces", "There is no board. You say \"I search the apartment\" or \"I lean on the witness\", and then you work out what happens."],
+      ["Dice settle what is uncertain", "Only when the outcome is genuinely in doubt and something is at stake. Walking through a door needs no roll; picking its lock while a patrol passes does."],
+      ["Nobody wins", "There is no score and no losing side. The point is the story you end up with — a case worked, and what it cost your character."],
+      ["It takes as long as it takes", "A case can run one evening or a dozen. You can stop mid-case and pick it up next week; the app keeps everything."],
+    ]),
+
+    steps("What this app does for you", "It is a tool, not a game that plays itself.", [
+      ["It is your character sheet", "Everything about your blade runner lives here, and it does the arithmetic."],
+      ["It is the dice", "You never need physical dice. Tap what you are attempting; the app builds the right roll and reads the result."],
+      ["Playing alone, it is also the referee", "Normally one person runs the world and answers your questions. On your own, Solo Mode's tables do that job — you ask, the dice answer, and you decide what the answer means."],
+      ["What it will not do", "It will not imagine the scene for you. That part is yours, and it is the fun part."],
+    ]),
+
+    steps("One turn of play, start to finish", "This is the whole loop, in miniature.", [
+      ["1. Picture where you are", "\"The victim's apartment. Rain on the window, the door forced.\""],
+      ["2. Say what you do", "\"I go through the desk for anything the killer missed.\""],
+      ["3. Roll only if it is in doubt", "Searching a wrecked room under time pressure is — so tap Observation on your sheet."],
+      ["4. Read what the dice gave you", "A success means you find something. The app tells you plainly; playing solo, its tables can tell you what the something is."],
+      ["5. Say what that looks like", "\"Taped under the drawer: a transit chit, stamped Sector 4.\" Write it in your notes — that is your next lead."],
+      ["6. Repeat", "New scene, new question. That is the game."],
+    ]),
+
+    steps("If you are playing on your own", "The bit that trips up newcomers most.", [
+      ["You are both sides of the table", "You play your blade runner, and you also decide what the world does back. That sounds impossible and turns out to be the point."],
+      ["Ask the dice when you do not know", "\"Is the informant lying?\" is a Question Check. \"How bad is this situation?\" is a Scene Check. Do not ask about things you have already decided."],
+      ["Say yes to what you roll", "The oracle's answer is the world talking back. Interpreting a strange answer into something that fits is the craft of solo play."],
+      ["Write everything down", "Your notes are the case. The app pins every roll into them for you."],
+    ], [["Next: set the app up", () => go("setup")], ["Then: the solo loop", () => go("solo")]]),
+  );
 }
 
 // ---- Setup (both modes) ---------------------------------------------------

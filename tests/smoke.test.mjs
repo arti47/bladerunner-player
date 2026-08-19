@@ -1438,7 +1438,7 @@ test("the Case Board tutorial walks the whole feature, with live numbers [house 
   await page.waitForTimeout(250);
 
   const pills = await page.$$eval(".segnav__pill", (e) => e.map((x) => x.textContent.trim()));
-  assert.deepEqual(pills, ["Setup", "Solo", "Case Board", "At the Table", "Cheat Sheet"]);
+  assert.deepEqual(pills, ["What is this?", "Setup", "Solo", "Case Board", "At the Table", "Cheat Sheet"]);
   assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Case Board");
 
   // A numbered walkthrough, in order, with no gaps.
@@ -1869,4 +1869,35 @@ test("every control-heavy screen explains itself", async (t) => {
     return hit?.querySelector(".rules__desc")?.textContent || "";
   });
   assert.match(push, /re-roll|reroll/i, "searching the glossary for Push explains pushing");
+});
+
+// Before "how to play this game" there has to be "what a roleplaying game is" —
+// the tutorial opens on that, for someone who has never played one at all.
+test("the tutorial opens on a no-jargon explanation of what you actually do", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?basics`, { waitUntil: "load" });
+  await page.evaluate(() => localStorage.removeItem("brp:tutorial"));
+  await page.goto(`${base}/index.html?basics2#tutorial`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+
+  const pills = await page.$$eval(".segnav__pill", (els) => els.map((e) => e.textContent.trim()));
+  assert.equal(pills[0], "What is this?", `the basics panel leads: ${pills.join(" | ")}`);
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "What is this?",
+    "and it is where a first-timer lands by default");
+
+  const cards = await page.$$eval(".panel .card__title", (els) => els.map((e) => e.textContent));
+  assert.equal(cards.length, 4, cards.join(" | "));
+  assert.match(cards[0], /roleplaying game is/i);
+  assert.match(cards[2], /turn of play/i);
+
+  // No rules vocabulary in the panel that exists to precede the vocabulary.
+  const text = await page.$eval(".panel", (n) => n.textContent);
+  for (const term of ["Base Dice", "Promotion Point", "Resolve", "Countdown", "Hypothesis", "Broken"]) {
+    assert.ok(!text.includes(term), `"${term}" is jargon this panel must not use`);
+  }
+
+  // It hands off to the rest of the tutorial.
+  await page.click('.btn:text-is("Next: set the app up →")');
+  await page.waitForTimeout(250);
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Setup");
 });
