@@ -88,8 +88,77 @@ function onEnter() {
   if (STEPS[draft.step].key === "years" && draft.nature === "replicant") draft.years = "rookie";
 }
 
+// ---- Quick build: roll a whole legal Blade Runner --------------------------
+// A newcomer has no basis for choosing an archetype or spending an attribute
+// budget. This fills every step the way the book says to roll it, keeps the
+// result legal by construction (key attribute B+, key skills C+, exact budgets),
+// and drops you on the Review step so nothing is saved behind your back.
+function quickBuild() {
+  draft = newDraft();
+
+  // ① nature ② archetype ③ years — all straight off the book's tables.
+  draft.nature = R.lookupRange(D.NATURE_TABLE, rollDie(6)).nature;
+  draft.archetype = R.lookupRange(D.ARCHETYPE_TABLE[draft.nature], rollDie(12)).key;
+  draft.years = draft.nature === "replicant"
+    ? "rookie"
+    : R.lookupRange(D.YEARS_ON_FORCE.map((y) => ({ min: y.d12[0], max: y.d12[1], key: y.key })), rollDie(12)).key;
+
+  const arch = R.archetype(draft.archetype);
+
+  // ④ attributes: the key attribute has to reach B; a Replicant's bonus step has
+  // to go into Strength or Agility. Everything left over goes to the attributes
+  // this archetype actually rolls, best first.
+  const attrOrder = [arch.keyAttr,
+    ...(draft.nature === "replicant" ? ["STR", "AGI"] : []),
+    ...arch.keySkills.map((k) => R.skill(k)?.attr).filter((a) => a && a !== "MANEUVER"),
+    ...D.ATTRIBUTES.map((a) => a.key)];
+  let attrLeft = R.attrBudget(draft.years, draft.nature);
+  // The mandatory step first, then spread — never below C, never past A.
+  const raiseAttr = (key) => {
+    if (attrLeft <= 0 || R.levelValue(draft.attributes[key]) >= R.levelValue("A")) return false;
+    draft.attributes[key] = R.stepLevel(draft.attributes[key], +1); attrLeft--; return true;
+  };
+  raiseAttr(arch.keyAttr);
+  if (draft.nature === "replicant" && R.levelValue(draft.attributes.STR) === R.levelValue("C") && R.levelValue(draft.attributes.AGI) === R.levelValue("C")) raiseAttr("STR");
+  for (const key of attrOrder) { while (raiseAttr(key)) if (attrLeft <= 0) break; if (attrLeft <= 0) break; }
+
+  // ⑤ skills: every key skill to C first, then deepen the key skills, then the rest.
+  let skillLeft = R.skillBudget(draft.years);
+  const raiseSkill = (key) => {
+    if (skillLeft <= 0 || !draft.skills[key] || R.levelValue(draft.skills[key]) >= R.levelValue("A")) return false;
+    draft.skills[key] = R.stepLevel(draft.skills[key], +1); skillLeft--; return true;
+  };
+  for (const k of arch.keySkills) raiseSkill(k);                       // D → C, the legal floor
+  for (const k of arch.keySkills) { raiseSkill(k); raiseSkill(k); }    // deepen what you are for
+  for (const s of D.SKILLS) while (raiseSkill(s.key)) if (skillLeft <= 0) break;
+
+  // ⑥ specialties: as many as the years give, archetype suggestions first.
+  const need = R.years(draft.years)?.specialties ?? 0;
+  const pool = [...(arch.specialtyOptions || []), ...D.SPECIALTIES.map((sp) => sp.key)];
+  for (const k of pool) { if (draft.specialties.length >= need) break; if (!draft.specialties.includes(k)) draft.specialties.push(k); }
+
+  // ⑦–⑨ memory, relationship, identity — the flavor tables, rolled.
+  draft.memory = { when: D.MEMORY_WHEN[rollDie(6) - 1], where: D.MEMORY_WHERE[rollDie(12) - 1],
+    who: D.MEMORY_WHO[rollDie(12) - 1], what: D.MEMORY_WHAT[rollDie(12) - 1], feel: D.MEMORY_FEEL[rollDie(12) - 1] };
+  syncMemory();
+  draft.relationship = { who: D.RELATIONSHIP_WHO[rollDie(12) - 1], like: D.RELATIONSHIP_LIKE[rollDie(12) - 1], going: D.RELATIONSHIP_GOING_ON[rollDie(12) - 1] };
+  syncRelationship();
+  const names = (arch.names || []).filter(Boolean);
+  draft.identity.name = names.length ? pick(names) : "Unnamed Blade Runner";
+  if (arch.appearance?.length) draft.identity.appearance = arch.appearance[d3() - 1];
+  draft.identity.signatureItem = D.SIGNATURE_ITEMS[rollDie(12) - 1];
+  draft.identity.home = R.lookupRange(D.HOME_TABLE, rollDie(12)).text;
+
+  draft.step = STEPS.length - 1;   // land on Review — you still press Finish
+}
+
 // ---- Step 1: Nature -------------------------------------------------------
 function stepNature(body, rerender) {
+  // The escape hatch for anyone who does not yet know what any of this means.
+  body.append(el("div", { class: "card quickbuild" },
+    el("div", { class: "card__title" }, "Never played before?"),
+    el("p", { class: "muted" }, "Let the dice make every choice. You land on the review screen and can still change anything, or start over."),
+    el("button", { class: "btn btn--primary", onClick: () => { quickBuild(); showToast("Rolled a complete Blade Runner — check it over and press Finish."); rerender(); } }, "⚄ Roll me a whole Blade Runner")));
   body.append(el("p", { class: "muted" }, "Replicants are stronger and tougher (+2 Health) but less stable (−2 Resolve), all rookies, and start with fewer points. Humans are the baseline."));
   for (const key of ["human", "replicant"]) {
     const n = D.NATURES[key];

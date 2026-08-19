@@ -1774,3 +1774,99 @@ test("cards explain when to press them, and a roll says what comes next", async 
   assert.match(await page.$eval(".roll-next", (n) => n.textContent), /Failed/);
   await page.keyboard.press("Escape");
 });
+
+// Someone who has never read the rulebook and has never played a solo RPG has
+// to be able to get from a cold launch to playing. These are the surfaces that
+// carry them: the first-run path, a character they did not have to design, and
+// a "how to use this" note on every screen full of controls.
+test("a first-timer is walked from a cold launch to a playable character", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?newbie`, { waitUntil: "load" });
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(`${base}/index.html?newbie2#home`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+
+  // 1 — the Start-here card, with its steps in order
+  const steps = await page.$$eval(".start__step .start__title", (els) => els.map((e) => e.textContent));
+  assert.equal(steps.length, 3, `expected three first-run steps, got ${steps.join(" | ")}`);
+  assert.match(steps[0], /walkthrough|How to Play/i);
+  assert.match(steps[1], /Solo Mode/i);
+  assert.match(steps[2], /Create/i);
+
+  // 2 — pressing step 2 turns Solo Mode on AND surfaces the Solo tab
+  await page.click(".start__step:nth-child(2) .btn");
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:settings")).solo), true);
+  const tabs = await page.$$eval("#nav .nav__btn", (els) => els.map((e) => e.getAttribute("aria-label")));
+  assert.ok(tabs.includes("Solo"), `the Solo tab appears straight away: ${tabs.join(",")}`);
+
+  // 3 — the wizard can build the whole character for you, legally
+  await page.click(".start__step:nth-child(3) .btn");
+  await page.waitForTimeout(300);
+  await page.click(".quickbuild .btn");
+  await page.waitForTimeout(400);
+  assert.match(await page.$eval(".wiz__count", (e) => e.textContent), /Step 10 of 10/, "quick build lands on Review");
+  await page.click('.btn:text-is("Create Blade Runner")');
+  await page.waitForTimeout(500);
+  const built = await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { validateAttributes, validateSkills } = await import("/src/rules.js");
+    const ch = Store.getActive();
+    if (!ch) return null;
+    return {
+      name: ch.name, attrs: validateAttributes(ch).ok, skills: validateSkills(ch).ok,
+      health: ch.state.health > 0, gear: (ch.inventory.items || []).length > 0,
+      memory: !!ch.identity.keyMemory, relationship: !!ch.identity.keyRelationship,
+    };
+  });
+  assert.ok(built, "the rolled character was saved and made active");
+  assert.ok(built.attrs && built.skills, "the rolled character is legal on both budgets");
+  assert.ok(built.health && built.gear, "it has vitals and starting gear");
+  assert.ok(built.memory && built.relationship, "and the flavor tables were rolled too");
+
+  // 4 — the Start-here card retires once you have a character
+  await page.goto(`${base}/index.html?newbie3#home`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  assert.equal((await page.$$(".start")).length, 0, "the first-run card steps aside once you are set up");
+
+  // This test wipes storage, so put the suite's shared fixture back.
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true, advanced: false }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Test Runner", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+});
+
+test("every control-heavy screen explains itself", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  // The sheet: one "how to use this" per section.
+  await page.goto(`${base}/index.html?guide1#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(350);
+  const sheet = await page.$$eval(".card", (els) => els
+    .filter((c) => c.querySelector(".sheet__section"))
+    .map((c) => ({ title: c.querySelector(".sheet__section").textContent, how: c.querySelectorAll(".how__line").length })));
+  assert.ok(sheet.length >= 10, "the sheet rendered its sections");
+  for (const s of sheet) assert.ok(s.how > 0, `sheet section "${s.title}" has no guidance`);
+
+  // The combat tracker and the chase card.
+  await page.goto(`${base}/index.html?guide2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  assert.ok((await page.$$(".how--card")).length === 1, "the tracker says how a fight runs");
+  const chaseHow = await page.$eval(".how--card ~ *, .card .how", (n) => n.textContent).catch(() => "");
+  assert.ok(chaseHow.length > 0, "the chase card explains prey and pursuer");
+
+  // The Rules Library leads with the glossary, expanded.
+  await page.goto(`${base}/index.html?guide3#rules`, { waitUntil: "load" });
+  await page.waitForTimeout(350);
+  const groups = await page.$$eval(".rules__group summary", (els) => els.map((e) => e.textContent));
+  assert.match(groups[0], /^Glossary/, `glossary comes first: ${groups.slice(0, 3).join(" | ")}`);
+  assert.equal(await page.$eval(".rules__group", (n) => n.open), true, "and is open without being asked");
+  const push = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".rules__item")];
+    const hit = rows.find((r) => r.querySelector(".rules__name")?.textContent === "Push");
+    return hit?.querySelector(".rules__desc")?.textContent || "";
+  });
+  assert.match(push, /re-roll|reroll/i, "searching the glossary for Push explains pushing");
+});

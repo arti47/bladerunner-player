@@ -672,3 +672,39 @@ export const META = {
   publisher: "Free League Publishing",
   scope: "Core Rulebook + official Solo Mode (personal play aid).",
 };
+
+// ---------------------------------------------------------------------------
+// GLOSSARY — plain-language definitions of the vocabulary the app uses.
+// Written for someone who has never read the rulebook or played a solo RPG:
+// what the word means and what you DO about it. Paraphrase only (CLAUDE.md §12);
+// the numbers live in the tables above and are never repeated here.
+// ---------------------------------------------------------------------------
+export const GLOSSARY = [
+  { term: "Base Dice", text: "The dice you roll for an action: your attribute die plus the skill die. The app builds the pool for you — you just press the skill." },
+  { term: "Success", text: "A high enough face on any die. One is all you need for the action to work; more successes mean a better outcome." },
+  { term: "Critical success", text: "Two or more successes on one roll. In a fight that means a critical injury; outside one, roll the Crit Success table for a concrete benefit." },
+  { term: "Push", text: "Re-rolling a failed roll for a second chance, at a price: any 1 left in the pool costs you Health (physical skills) or stress (mental ones). Replicants always pay in stress." },
+  { term: "Bane", text: "A die showing 1 after a push. Each one is the cost of having pushed." },
+  { term: "Advantage / disadvantage", text: "One extra die, or one die removed. The app applies the ones your character's state earns automatically." },
+  { term: "Health", text: "How much physical punishment you can take. At zero you are Broken: out of the action until someone patches you up." },
+  { term: "Resolve", text: "How much pressure your mind can take. It drops from stress, not wounds. At zero you break down and suffer a critical stress effect." },
+  { term: "Broken", text: "Out of action — no skill rolls, no defending. From damage it is Health at zero; from stress it is Resolve at zero. Both are recoverable." },
+  { term: "Critical injury", text: "A serious wound rolled on a table when you take a critical hit. Some are lethal and start death saves; the app walks you through the whole procedure." },
+  { term: "Shift", text: "A block of a few hours — the unit of time an investigation runs on. Visiting one location usually costs one Shift." },
+  { term: "Downtime", text: "A Shift spent off the case: you heal, and the counter that tracks how long you have been pushing resets. Skip it too long and you start taking stress." },
+  { term: "Promotion Points", text: "Your standing in the department. Earned by doing the job well, spent on gear from the LAPD and on new specialties." },
+  { term: "Chinyen Points", text: "Street money. Spent on anything the department will not sign off on." },
+  { term: "Humanity Points", text: "Earned for acts of compassion and for touching your memories and relationships. Spent to raise a skill." },
+  { term: "Specialty", text: "A named knack that bends a rule in your favour — the closest thing this game has to a feat or perk." },
+  { term: "Baseline Test", text: "The interrogation a Replicant blade runner has to pass to stay on duty. The app runs it and tracks the consequences of failing." },
+  { term: "Oracle", text: "Solo play has no Game Runner, so dice answer the questions instead. Any table you roll to find out what happens is an oracle." },
+  { term: "Scene Check", text: "A solo roll that tells you how hard or dangerous a situation is before you commit to it." },
+  { term: "Question Check", text: "A solo roll that answers a yes/no question about the world when you genuinely do not know the answer." },
+  { term: "Countdown Event Check", text: "A once-per-Shift roll that decides whether trouble interrupts you on the way to a location. The longer nothing happens, the likelier it becomes." },
+  { term: "Hypothesis", text: "Your working theory of the case, rated with a die that rises as evidence supports it. Testing it is how a solo case ends." },
+  { term: "Clue / lead", text: "A clue is what you find; a lead is where it points you next. Clues go in your notes, leads decide the next location." },
+  { term: "Initiative card", text: "A drawn number that fixes the order of a fight. Low numbers act first, and the order holds for the whole fight." },
+  { term: "Engaged", text: "Close enough to hit each other by hand. The other range bands step outward from there." },
+  { term: "Prey / pursuer", text: "The two sides of a chase — the one running and the one chasing." },
+  { term: "Game Runner", text: "This game's name for the referee. In solo play there is not one; the oracles take that job." },
+];

@@ -29,6 +29,22 @@ function bindRemoteCombat() {
   });
 }
 
+// A newcomer opening this screen has no idea what an initiative card is or in
+// what order to press things — so the tracker explains itself, in order.
+const HOW = [
+  ["1. Add everyone in the fight", "— your character, then each adversary. Adversaries come with their own stats."],
+  ["2. ⚄ Draw initiative", "once. Everyone gets a number; low numbers act first and that order holds for the whole fight."],
+  ["3. On your turn", "press ⚔ Attack on your own card (or 🎲 Skill for anything else). The app rolls it, works out the damage and offers to apply it to the target."],
+  ["4. Next turn ›", "moves the marker on. When it wraps around, the round counter goes up."],
+  ["5. End combat", "when it is over. Wounds and stress stay on the character sheets — heal them in Rest & Recovery."],
+];
+function howCard() {
+  const d = el("details", { class: "card how how--card" },
+    el("summary", {}, "How a fight runs — press these in order"));
+  for (const [what, when] of HOW) d.append(el("p", { class: "how__line" }, el("strong", {}, what), " ", el("span", { class: "muted" }, when)));
+  return d;
+}
+
 export function renderCombat(mount) {
   lastMount = mount;
   bindRemoteCombat();
@@ -64,6 +80,7 @@ export function renderCombat(mount) {
   if (!state.combatants.length) {
     wrap.append(el("div", { class: "card" }, el("p", { class: "muted" }, "No combatants yet.")));
     wrap.append(renderChaseCard(() => renderCombat(mount)));
+    wrap.append(howCard());
     mount.append(wrap); return;
   }
   const ordered = state.active ? [...state.combatants].sort((a, b) => a.card - b.card) : state.combatants;
@@ -72,6 +89,7 @@ export function renderCombat(mount) {
   for (const c of ordered) list.append(combatantCard(c, c.id === activeId, commit));
   wrap.append(list);
   wrap.append(renderChaseCard(() => renderCombat(mount)));
+  wrap.append(howCard());
   mount.append(wrap);
 }
 

@@ -36,7 +36,14 @@ export function renderChaseCard(rerender) {
   const card = el("div", { class: "card" }, sectionTitle("Chase"));
 
   if (!st.active) {
-    card.append(el("p", { class: "muted" }, "Foot and vehicle chases run without a map: pick maneuvers in secret, reveal an obstacle, then resolve — prey first, pursuer last."));
+    card.append(el("p", { class: "muted" }, "Someone is running and someone is chasing. Start this only when that happens — otherwise ignore the card."));
+    card.append(el("details", { class: "how" },
+      el("summary", {}, "How a chase runs"),
+      el("p", { class: "how__line" }, el("strong", {}, "Prey and pursuer"), " ", el("span", { class: "muted" }, "are the two sides: the one running, and the one chasing.")),
+      el("p", { class: "how__line" }, el("strong", {}, "1. Set the environment and distance"), " ", el("span", { class: "muted" }, "— on foot, in a car, or in a Spinner, and how far apart you start.")),
+      el("p", { class: "how__line" }, el("strong", {}, "2. Each side picks a maneuver"), " ", el("span", { class: "muted" }, "for the round, without knowing the other's.")),
+      el("p", { class: "how__line" }, el("strong", {}, "3. 🎲 Reveal obstacle"), " ", el("span", { class: "muted" }, "throws something in the way — traffic, a fence, a crowd.")),
+      el("p", { class: "how__line" }, el("strong", {}, "4. Move the distance"), " ", el("span", { class: "muted" }, "closer or farther by who won the exchange, then take the next round. Close all the way and the prey is caught; open it far enough and they are gone."))));
     card.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Environment"),
       el("div", { class: "chips" }, ...ENVIRONMENTS.map((e) =>
         el("button", { class: "chip" + (st.env === e.key ? " chip--on" : ""), onClick: () => commit((s) => { s.env = e.key; }) }, e.name)))));

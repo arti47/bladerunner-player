@@ -20,10 +20,12 @@ export function renderHome(mount) {
   clear(mount);
   const chars = Store.list();
   const active = Store.getActive();
+  const rerender = () => renderHome(mount);
   const body = screen(
     "Blade Runner Player",
     el("p", { class: "muted" }, "A player companion for the Blade Runner RPG — create Blade Runners, track cases, and roll the dice."),
     renderPartyBanner(),
+    startHereCard(chars, rerender),
     active
       ? el("div", { class: "card card--active" },
           el("div", { class: "card__eyebrow" }, "Active character"),
@@ -55,6 +57,34 @@ export function renderHome(mount) {
     }));
   }
   mount.append(body);
+}
+// First-run guidance. A newcomer lands on a screen of equal-looking tiles with
+// no idea that Solo Mode is a toggle, or which order to do things in — so until
+// they have a character (or dismiss it) the path is spelled out.
+const ONBOARD_KEY = "brp:onboarded";
+const dismissed = () => { try { return localStorage.getItem(ONBOARD_KEY) === "1"; } catch { return false; } };
+function startHereCard(chars, rerender) {
+  if (chars.length || dismissed()) return null;
+  const solo = Settings.solo();
+  const step = (n, title, text, label, onClick, done) => el("li", { class: "start__step" + (done ? " start__step--done" : "") },
+    el("span", { class: "start__n" }, done ? "✓" : String(n)),
+    el("span", { class: "start__body" },
+      el("span", { class: "start__title" }, title),
+      el("span", { class: "start__text muted" }, text),
+      label ? el("button", { class: "btn btn--sm" + (done ? " btn--ghost" : " btn--primary"), onClick }, label) : null));
+  return el("div", { class: "card card--active start" },
+    el("div", { class: "card__eyebrow" }, "New here?"),
+    el("div", { class: "card__title" }, "Start here"),
+    el("p", { class: "muted" }, "You don't need to have read the rulebook, or to have played a solo roleplaying game before. Three steps, in this order:"),
+    el("ol", { class: "start__list" },
+      step(1, "Read the 10-minute walkthrough", "How to Play explains the whole loop — what to press, and when.", "Open How to Play", () => navigate("tutorial")),
+      step(2, "Playing on your own? Turn on Solo Mode", "It adds a Solo tab that takes the Game Runner's job: dice answer your questions.",
+        solo ? "Solo Mode is on" : "Turn on Solo Mode",
+        // navigate() re-renders through the router, so the Solo tab appears in
+        // the bottom nav immediately — a local rerender would only redraw Home.
+        () => { Settings.set("solo", !solo); showToast(solo ? "Solo Mode off." : "Solo Mode on — see the Solo tab."); navigate("home"); }, solo),
+      step(3, "Create a Blade Runner", "The wizard walks it; every step can be rolled for you if you'd rather not choose.", "Create a Blade Runner", () => navigate("wizard"))),
+    el("button", { class: "btn btn--ghost btn--sm", onClick: () => { try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {} rerender(); } }, "Hide this"));
 }
 const archLabel = (key) => (key ? (D.ARCHETYPES.find((a) => a.key === key)?.name || titleCase(key)) : "No archetype");
 function tile(title, sub, onClick) {
@@ -99,7 +129,7 @@ export function renderRules(mount) {
     for (const h of hits) (byCat[h.cat] ||= []).push(h);
     if (!hits.length) { results.append(el("p", { class: "muted" }, "No matches.")); return; }
     for (const [cat, items] of Object.entries(byCat)) {
-      const group = el("details", { class: "rules__group", open: query ? true : cat === "Skills" });
+      const group = el("details", { class: "rules__group", open: query ? true : cat === "Glossary" });
       group.append(el("summary", {}, `${cat} (${items.length})`));
       for (const it of items) {
         group.append(el("div", { class: "rules__item" },
@@ -110,12 +140,17 @@ export function renderRules(mount) {
     }
   }
   search.addEventListener("input", () => run(search.value));
-  mount.append(screen("Rules Library", search, results));
+  mount.append(screen("Rules Library",
+    el("p", { class: "muted" }, "Everything the app knows, searchable. New to the game? Open Glossary first — it explains the words the rest of the app uses."),
+    search, results));
   run("");
 }
 
 function buildRulesIndex() {
   const idx = [];
+  // Plain-language vocabulary first: a newcomer searching "push" or "Shift"
+  // should land on an explanation, not on a weapon stat line.
+  for (const g of D.GLOSSARY) idx.push({ cat: "Glossary", name: g.term, desc: g.text, text: `${g.term} ${g.text}` });
   for (const s of D.SKILLS) idx.push({ cat: "Skills", name: `${s.name} (${attrName(s.attr)})`, desc: s.blurb, text: `${s.name} ${s.blurb}` });
   for (const s of D.SPECIALTIES) idx.push({ cat: "Specialties", name: s.name, desc: s.text, text: `${s.name} ${s.text}` });
   for (const c of D.CONDITIONS) idx.push({ cat: "Conditions", name: c.name, desc: c.text, text: `${c.name} ${c.text}` });

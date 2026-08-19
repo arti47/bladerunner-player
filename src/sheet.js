@@ -29,6 +29,71 @@ function ensureCharWatch(ch, mount) {
 // Conditions the player toggles by hand; broken states are auto-derived (§3.6).
 const AUTO_CONDITIONS = ["broken_damage", "broken_stress"];
 
+// ---- "How to use this" — per-section guidance ------------------------------
+// The sheet is thirteen sections deep and assumes you know the game. Each entry
+// is [what you press, when you press it and what happens]. Procedure only, no
+// rules numbers (§10.2) — those live in the sections themselves.
+const HOW = {
+  "Vitals": [
+    ["Health", "is physical punishment. − when you are hurt, + when you heal. At zero you are Broken and cannot act until you are patched up."],
+    ["Resolve", "is mental pressure. It drops from stress, not wounds. At zero you break down and the sheet rolls the effect for you."],
+    ["You rarely press these by hand", "— rolls, attacks and recovery move them on their own."],
+  ],
+  "Critical Injuries": [
+    ["＋ Take a critical injury", "when a fight lands one on you. The app rolls the wound and, if it is lethal, walks the death saves and the patching-up."],
+    ["Nothing here", "usually means nothing is wrong. Leave it alone."],
+  ],
+  "Resources": [
+    ["Promotion", "is your standing in the department: earned on the job, spent on LAPD gear and new specialties."],
+    ["Chinyen", "is street money for anything the department will not sign off on."],
+    ["Humanity", "is earned for compassion and for touching your memories; it buys skill increases."],
+    ["Solo play", "awards these from the checklists on the Solo ▸ Wrap tab."],
+  ],
+  "Conditions": [
+    ["Tap one on", "when the fiction says so — you dived prone, you are behind cover, you took aim."],
+    ["The engine reads them", "on your next roll, so you do not have to remember the modifier."],
+    ["Broken", "is not in this list: it turns itself on when Health or Resolve hits zero."],
+  ],
+  "Attributes": [
+    ["These never change in play", "— they were set at creation. They are here so you can see the die you roll."],
+  ],
+  "Skills": [
+    ["Tap a skill to roll it", "— that is the main thing you do on this sheet. The app builds the dice and reads the result."],
+    ["★ marks your key skills", "from your archetype: what your character is actually good at."],
+    ["Not sure which to roll?", "Pick the one that matches what you are trying to do; the Rules Library says what each covers."],
+  ],
+  "Specialties": [
+    ["These are your knacks", "— they bend a rule in your favour and the engine applies them for you where it can."],
+    ["Buy more", "in the Advancement section with Promotion Points."],
+  ],
+  "Inventory": [
+    ["＋ Add item", "for anything you pick up. No weight or slots to track — this game does not use them."],
+    ["Equipped", "matters: attack rolls and armor only use what you are carrying ready."],
+    ["🛒 Acquire gear", "buys from the catalog with Promotion or Chinyen Points and rolls for availability when the item is rare."],
+  ],
+  "Rest & Recovery": [
+    ["▶ Investigation Shift", "when you spend a Shift working the case. Push past the limit and it costs you stress."],
+    ["🛌 Downtime Shift", "when you take time off: you heal and the counter resets."],
+    ["First aid", "patches up someone who is Broken. The once-per-Shift buttons are your gear and specialties doing their job."],
+  ],
+  "Advancement": [
+    ["Between cases", "spend what you earned: Promotion Points buy a specialty, Humanity Points raise a skill one step."],
+    ["Replicants", "take the Baseline Test here when it is due — the app tracks the consequences of failing."],
+  ],
+  "Roll Log": [
+    ["Every roll you make", "lands here, newest last. Nothing to press unless you want to keep one."],
+    ["📌", "copies a roll into this character's journal, so the moment survives the log's cap."],
+  ],
+  "Journal": [
+    ["Write what happened", "in your own words — it is a diary, not a mechanic."],
+    ["Solo players", "get more out of the case notes on Solo ▸ Notes; this is for the character's own story."],
+  ],
+  "Identity & Notes": [
+    ["Key memory and relationship", "are mechanical: leaning on them in play earns Humanity, and the memory can buy you advantage on a roll."],
+    ["Everything here is editable", "— tap a field, type, tap away."],
+  ],
+};
+
 export function renderSheet(mount) {
   const ch = Store.getActive();
   clear(mount);
@@ -73,8 +138,21 @@ export function renderSheet(mount) {
   wrap.append(journalSection(ch, commit));
   wrap.append(identitySection(ch, commit));
   wrap.append(dangerZone(ch, mount));
+  paintGuidance(wrap);
 
   mount.append(wrap);
+}
+
+// Attach the collapsed "how to use this" note to every section that has one.
+function paintGuidance(wrap) {
+  for (const cardEl of wrap.querySelectorAll(".card")) {
+    const key = cardEl.querySelector(".sheet__section")?.textContent;
+    if (!key || !HOW[key]) continue;
+    cardEl.append(el("details", { class: "how" },
+      el("summary", {}, "How to use this"),
+      ...HOW[key].map(([what, when]) => el("p", { class: "how__line" },
+        el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
+  }
 }
 
 // ---- Header + portrait ----------------------------------------------------

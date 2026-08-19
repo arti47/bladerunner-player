@@ -829,3 +829,18 @@ test("the board's files are cached and the module map documents them", () => {
   const spec = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
   for (const f of ["data-house.js", "src/board.js"]) assert.ok(spec.includes(f), `${f} is documented in CLAUDE.md`);
 });
+
+test("glossary is complete, unique, and jargon-free enough to help a newcomer", async () => {
+  const D = await import("../data.js");
+  assert.ok(D.GLOSSARY.length >= 20, "the glossary covers the app's vocabulary");
+  const terms = D.GLOSSARY.map((g) => g.term);
+  assert.equal(new Set(terms).size, terms.length, "no duplicate terms");
+  for (const g of D.GLOSSARY) {
+    assert.ok(g.term && g.text, `${g.term}: needs both a term and an explanation`);
+    assert.ok(g.text.length > 40, `${g.term}: one-word definitions do not help`);
+  }
+  // The words a first-timer actually trips over must all be in there.
+  for (const must of ["Push", "Broken", "Shift", "Downtime", "Oracle", "Hypothesis", "Base Dice", "Resolve"]) {
+    assert.ok(terms.some((t) => t.toLowerCase().includes(must.toLowerCase())), `glossary is missing "${must}"`);
+  }
+});

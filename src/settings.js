@@ -32,7 +32,7 @@ export function applyTheme(theme = Settings.theme()) {
 }
 
 export const TOGGLES = [
-  { key: "solo", label: "Solo Mode", desc: "Official solo-play oracle and assistant." },
-  { key: "gm", label: "GM Screen", desc: "Game Runner dashboard: party, combat, reference tables." },
-  { key: "advanced", label: "Advanced Automation", desc: "Extra GM/automation helpers (time, events)." },
+  { key: "solo", label: "Solo Mode", desc: "Playing on your own, with no one running the game? This adds a Solo tab where dice answer your questions and walk you through a case." },
+  { key: "gm", label: "GM Screen", desc: "Running the game for other people? This adds a GM tab: build the case, watch the party's health, drop in adversaries." },
+  { key: "advanced", label: "Advanced Automation", desc: "Extra helpers for experienced players. Leave it off to start." },
 ];
