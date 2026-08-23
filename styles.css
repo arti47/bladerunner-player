@@ -634,3 +634,11 @@ textarea.input { resize: vertical; font-family: inherit; }
 .start__body .btn { align-self: flex-start; }
 .how--card { padding: .8rem .9rem; }
 .quickbuild { border-color: var(--cyan); margin-bottom: .8rem; }
+
+/* ---- Vehicles in a chase --------------------------------------------------- */
+.chase-veh { display: flex; flex-direction: column; gap: .35rem; padding: .5rem 0; border-bottom: 1px dashed var(--line); min-width: 0; }
+.chase-veh:last-child { border-bottom: 0; }
+.chase-veh__stats { font-size: .82rem; overflow-wrap: anywhere; }
+.picker__row--btn { width: 100%; text-align: left; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: .45rem; color: var(--text); font: inherit; font-size: .85rem; cursor: pointer; }
+.picker__row--btn:hover { border-color: var(--cyan); }

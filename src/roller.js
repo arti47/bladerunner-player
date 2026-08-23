@@ -157,12 +157,12 @@ function outcomeLine(succ, banes) {
 }
 
 // ---- skill roll -----------------------------------------------------------
-export function openSkillRoll(ch, skillKey, onDone) {
+export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
   const sk = R.skill(skillKey);
   const isManeuver = sk.attr === "MANEUVER";
-  const st = { maneuver: MANEUVER_DEFAULT, adv: 0, dis: 0, keyMemory: false, phase: "config", dice: null, pushed: false, note: null };
+  const st = { maneuver: maneuver || MANEUVER_DEFAULT, adv: 0, dis: 0, keyMemory: false, phase: "config", dice: null, pushed: false, note: null };
   const attrKey = isManeuver ? "MANEUVER" : sk.attr;
   const auto = () => autoFor(ch, skillKey);
   const attrLevel = () => (isManeuver ? st.maneuver : ch.attributes[sk.attr]);
@@ -458,14 +458,43 @@ export function openWeaponPicker(ch, onDone) {
       body.append(group("Ranged", D.WEAPONS_RANGED));
       body.append(group("Close combat", D.WEAPONS_MELEE));
       body.append(group("Thrown / explosives", D.EXPLOSIVES.filter((e) => e.thrown)));
+      // Placed charges were listed nowhere — you could own one and never use it.
+      body.append(group("Placed charges", D.EXPLOSIVES.filter((e) => !e.thrown)));
     },
     onClose: () => onDone && onDone(),
+  });
+}
+
+// Explosives rated by Blast Power carry a range ("2–4"), not a damage number:
+// you choose the rating when you place or throw one. Resolve it into a concrete
+// weapon before rolling. [Ch04/Ch08 — data.js BLAST_POWER]
+export function needsBlastPower(w) {
+  return !!w?.blastPower && typeof w.damage !== "number";
+}
+export function resolveBlastPower(weapon, onPicked) {
+  if (!needsBlastPower(weapon)) { onPicked(weapon); return; }
+  modal({
+    title: `${weapon.name} — Blast Power`,
+    render(body, close) {
+      body.append(el("p", { class: "muted" }, weapon.note || "Pick the rating this charge was built at."));
+      const list = el("div", { class: "picker" });
+      for (const [rating, v] of Object.entries(D.BLAST_POWER)) {
+        list.append(el("button", { class: "picker__row picker__row--btn", onClick: () => {
+          close();
+          onPicked({ ...weapon, blastRating: rating, damage: v.damage, critDie: v.critDie });
+        } },
+          el("span", {}, el("strong", {}, `Blast Power ${rating}`), " — ", el("span", { class: "muted" }, `Damage ${v.damage} · Crit D${v.critDie}`))));
+      }
+      body.append(list, el("div", { class: "modal__actions" },
+        el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
+    },
   });
 }
 
 export function openAttackRoll(ch, weapon, onDone) {
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
+  if (needsBlastPower(weapon)) { resolveBlastPower(weapon, (w) => openAttackRoll(ch, w, onDone)); return; }
   const melee = D.WEAPONS_MELEE.some((w) => w.key === weapon.key);
   const skillKey = melee ? "hand_to_hand" : "firearms";
   const sk = R.skill(skillKey);
@@ -820,6 +849,7 @@ function weaponPickRow(w, c, rc, commit, close, isArmed = false) {
 }
 
 function openRangedAttack(c, rc, w, commit) {
+  if (needsBlastPower(w)) { resolveBlastPower(w, (res) => openRangedAttack(c, rc, res, commit)); return; }
   const skKey = "firearms";
   const sk = R.skill(skKey);
   const attrLv = rc.attributes.AGI || "C";

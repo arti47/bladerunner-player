@@ -5,8 +5,9 @@
 // `brp:chase` so a chase survives a reload.
 import { el, uid, rollDie, STORAGE_PREFIX } from "./core.js";
 import * as D from "../data.js";
-import { showToast, sectionTitle, resultSlot, renderToHtml } from "./ui.js";
-import { RollLog } from "./store.js";
+import { showToast, sectionTitle, resultSlot, renderToHtml, modal } from "./ui.js";
+import { RollLog, Store } from "./store.js";
+import { openSkillRoll, proceduralRoll } from "./roller.js";
 
 const KEY = STORAGE_PREFIX + "chase";
 const ENVIRONMENTS = [
@@ -27,8 +28,11 @@ export const Chase = {
   clear() { try { localStorage.removeItem(KEY); } catch {} },
 };
 function blank() {
-  return { active: false, env: "foot", round: 1, distIdx: RANGE_KEYS.indexOf("short"), obstacle: null, prey: null, pursuer: null, log: [] };
+  return { active: false, env: "foot", round: 1, distIdx: RANGE_KEYS.indexOf("short"), obstacle: null, prey: null, pursuer: null,
+    vehicles: { prey: null, pursuer: null }, hull: { prey: null, pursuer: null }, log: [] };
 }
+const vehicle = (key) => D.VEHICLES.find((v) => v.key === key) || null;
+const SIDES = [["prey", "Prey"], ["pursuer", "Pursuer"]];
 
 export function renderChaseCard(rerender) {
   const st = Chase.get();
@@ -77,6 +81,94 @@ export function renderChaseCard(rerender) {
     const skill = st.env === "foot" ? m.skill : (m.vehicleSkill || m.skill);
     card.append(el("div", { class: "muted sheet__note" },
       `${side === "prey" ? "Prey" : "Pursuer"} — ${m.name}${skill ? ` (${skillName(skill)})` : ""}: ${m.text}`));
+  }
+
+
+  // ---- vehicles ------------------------------------------------------------
+  // A vehicle chase runs on the machine's stats: Maneuverability is the die a
+  // DRIVING roll uses, Hull is what gunfire chews through, Armor soaks it.
+  // Without this the fleet was reference-only. [§3.12]
+  if (st.env !== "foot") {
+    const vcard = el("div", { class: "field" }, el("label", { class: "field__label" }, "Vehicles"));
+    for (const [side, label] of SIDES) {
+      const v = vehicle(st.vehicles?.[side]);
+      const row = el("div", { class: "chase-veh" });
+      const sel = el("select", { class: "input roll-select", "aria-label": `${label} vehicle` });
+      sel.append(el("option", { value: "" }, `${label}: on foot / unstated`));
+      for (const opt of D.VEHICLES) sel.append(el("option", { value: opt.key, selected: opt.key === st.vehicles?.[side] || null }, opt.name));
+      sel.addEventListener("change", () => commit((x) => {
+        x.vehicles = { ...(x.vehicles || {}), [side]: sel.value || null };
+        const nv = vehicle(sel.value);
+        x.hull = { ...(x.hull || {}), [side]: nv ? nv.hull : null };
+      }));
+      row.append(sel);
+      if (v) {
+        const hull = st.hull?.[side] ?? v.hull;
+        row.append(el("div", { class: "chase-veh__stats muted" },
+          `Maneuverability ${v.maneuverability} · Hull ${hull}/${v.hull}${v.armor ? ` · Armor ${v.armor}` : " · no armor"}`));
+        const bump = (d) => commit((x) => {
+          const cur = x.hull?.[side] ?? v.hull;
+          const next = Math.max(0, Math.min(v.hull, cur + d));
+          x.hull = { ...(x.hull || {}), [side]: next };
+          if (next === 0) showToast(`${label}'s ${v.name} is wrecked.`, { kind: "warn" });
+        });
+        row.append(el("div", { class: "rec-actions" },
+          el("button", { class: "btn btn--sm btn--ghost", onClick: () => bump(-1), "aria-label": `${label} hull down` }, "− Hull"),
+          el("button", { class: "btn btn--sm btn--ghost", onClick: () => bump(+1), "aria-label": `${label} hull up` }, "＋ Hull"),
+          el("button", { class: "btn btn--sm btn--roll", onClick: () => driveRoll(v) }, "🎲 Driving"),
+          el("button", { class: "btn btn--sm btn--roll", onClick: () => vehicleWeapon(side, v) }, "⚔ Vehicle weapon")));
+      }
+      vcard.append(row);
+    }
+    card.append(vcard);
+  }
+
+  // DRIVING rolls off the vehicle's Maneuverability rather than the default.
+  function driveRoll(v) {
+    const ch = Store.getActive();
+    if (!ch) { showToast("No active character to roll for.", { kind: "warn" }); return; }
+    openSkillRoll(ch, "driving", rerender, { maneuver: v.maneuverability });
+  }
+
+  // Shooting from a vehicle: FIREARMS, then the damage lands on the other side's
+  // Hull (armor is applied by the Game Runner — the book leaves vehicle armor to
+  // narration rather than the personal-armor dice).
+  function vehicleWeapon(side, v) {
+    const ch = Store.getActive();
+    if (!ch) { showToast("No active character to roll for.", { kind: "warn" }); return; }
+    const other = side === "prey" ? "pursuer" : "prey";
+    modal({
+      title: `${v.name} — open fire`,
+      render(body, close) {
+        const list = el("div", { class: "picker" });
+        for (const w of D.VEHICLE_WEAPONS) {
+          list.append(el("button", { class: "picker__row picker__row--btn", onClick: () => {
+            close();
+            if (typeof w.damage !== "number") { showToast(`${w.name}: ${w.note || "no direct damage"}`, { timeout: 5000 }); return; }
+            proceduralRoll(ch, {
+              skillKey: "firearms", title: `${w.name} — ${v.name}`,
+              note: `Damage ${w.damage}${w.fullAuto ? " · full auto" : ""}${w.note ? ` — ${w.note}` : ""}. Hits land on the ${other === "prey" ? "prey" : "pursuer"}'s Hull.`,
+              onResult: ({ successes }) => {
+                if (successes < 1) { showToast("Missed."); rerender(); return; }
+                const dmg = w.damage + (successes - 1);
+                commit((x) => {
+                  const tv = vehicle(x.vehicles?.[other]);
+                  if (!tv) { showToast(`Hit for ${dmg} — no vehicle recorded for the ${other}.`, { kind: "warn" }); return; }
+                  const cur = x.hull?.[other] ?? tv.hull;
+                  const next = Math.max(0, cur - dmg);
+                  x.hull = { ...(x.hull || {}), [other]: next };
+                  x.log.unshift({ id: uid(), text: `R${x.round} ${w.name} hit for ${dmg} — ${tv.name} Hull ${next}/${tv.hull}` });
+                  showToast(next === 0 ? `${tv.name} is wrecked.` : `Hit for ${dmg} — Hull ${next}/${tv.hull}.`, { kind: next === 0 ? "warn" : "info" });
+                });
+              },
+            });
+          } },
+            el("span", {}, el("strong", {}, w.name), " — ",
+              el("span", { class: "muted" }, `${typeof w.damage === "number" ? `Damage ${w.damage}` : "Special"}${w.critDie ? ` · Crit D${w.critDie}` : ""}${w.fullAuto ? " · full auto" : ""}`))));
+        }
+        body.append(list, el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
+      },
+    });
   }
 
   // 2 — obstacle. The roll lands inline under the button (same surface as the

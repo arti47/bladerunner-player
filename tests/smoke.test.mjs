@@ -1947,3 +1947,84 @@ test("the solo Case tab rolls every case-creation table the book names", async (
     assert.ok(!/\bnull\b|\bundefined\b/.test(shown), `"${label}" rendered a hole: ${shown.slice(0, 80)}`);
   }
 });
+
+// Vehicles were reference-only: the fleet had Maneuverability, Hull and Armor
+// and vehicle weapons, and none of it reached the table. A vehicle chase now
+// runs on those numbers.
+test("a vehicle chase runs on the vehicle's own stats [§3.12]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?veh`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.removeItem("brp:chase");
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: false, gm: false }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Driver", nature: "human", archetype: "skimmer", years: "veteran",
+      attributes: { STR: "C", AGI: "B", INT: "C", EMP: "C" }, skills: { driving: "B", firearms: "B" } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?veh2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.click('.chips .chip:text-is("Ground vehicle")');
+  await page.waitForTimeout(120);
+  await page.click('.btn:text-is("▶ Start the chase")');
+  await page.waitForTimeout(250);
+
+  await page.selectOption('select[aria-label="Prey vehicle"]', "ground_car");
+  await page.waitForTimeout(200);
+  await page.selectOption('select[aria-label="Pursuer vehicle"]', "spinner");
+  await page.waitForTimeout(250);
+  const stats = await page.$$eval(".chase-veh__stats", (n) => n.map((x) => x.textContent));
+  assert.match(stats[0], /Maneuverability C · Hull 4\/4 · Armor D/, stats[0]);
+  assert.match(stats[1], /Maneuverability B · Hull 4\/4 · Armor C/, stats[1]);
+
+  // A Driving roll uses the vehicle's Maneuverability die, not the default.
+  await page.locator('.chase-veh').nth(1).locator('.btn:text-is("🎲 Driving")').click();
+  await page.waitForTimeout(250);
+  assert.match(await page.$eval(".modal", (n) => n.textContent), /Maneuverability d10/, "Spinner is Maneuverability B = d10");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+
+  // Vehicle weapons exist and their damage lands on the other side's Hull.
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.locator('.chase-veh').nth(0).locator('.btn:text-is("⚔ Vehicle weapon")').click();
+  await page.waitForTimeout(200);
+  const weapons = await page.$$eval(".picker__row--btn", (n) => n.map((x) => x.textContent));
+  assert.ok(weapons.some((w) => /Autocannon/.test(w)), weapons.join(" | "));
+  await page.click(".picker__row--btn");
+  await page.waitForTimeout(200);
+  await page.click('.modal .btn:text-is("⚄ Roll")');
+  await page.waitForTimeout(200);
+  await page.click('.modal .btn:text-is("Apply result")');
+  await page.waitForTimeout(300);
+  const after = await page.$$eval(".chase-veh__stats", (n) => n.map((x) => x.textContent));
+  assert.match(after[1], /Hull 0\/4/, `the pursuer's Hull took the hit: ${after[1]}`);
+  await page.evaluate(() => localStorage.removeItem("brp:chase"));
+});
+
+// A placed charge has no fixed damage — its Blast Power decides. It used to be
+// missing from the weapon picker entirely, and unresolvable if reached.
+test("a placed explosive resolves at a chosen Blast Power [Ch08]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?blast#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.click('.btn:text-is("⚔ Roll an attack")');
+  await page.waitForTimeout(250);
+  await page.evaluate(() => document.querySelectorAll(".modal details").forEach((d) => (d.open = true)));
+  await page.waitForTimeout(120);
+  const groups = await page.$$eval(".modal details summary", (n) => n.map((x) => x.textContent));
+  assert.ok(groups.includes("Placed charges"), `placed charges are offered: ${groups.join(", ")}`);
+  await page.click('.list__row:has-text("Explosive Charge")');
+  await page.waitForTimeout(250);
+  const chooser = await page.$eval(".modal", (n) => n.textContent);
+  assert.match(chooser, /Blast Power/, chooser.slice(0, 80));
+  assert.match(chooser, /Blast Power A — Damage 4 · Crit D12/, "the ratings carry their damage");
+  await page.click(".picker__row--btn");            // Blast Power A
+  await page.waitForTimeout(250);
+  assert.match(await page.$eval(".modal", (n) => n.textContent), /Dmg 4 · Crit d12/, "the attack uses the chosen rating");
+  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.waitForTimeout(250);
+  const res = await page.$eval(".modal", (n) => n.textContent);
+  assert.ok(/Damage to target: \d+/.test(res) || /Failure/.test(res), res.slice(0, 120));
+  await page.keyboard.press("Escape");
+});
