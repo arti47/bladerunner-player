@@ -1901,3 +1901,49 @@ test("the tutorial opens on a no-jargon explanation of what you actually do", as
   await page.waitForTimeout(250);
   assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Setup");
 });
+
+// Case creation has to expose every table the Solo book names for it: its own
+// briefing tables, and — for the Case File Generator method — Core Tables 1-4
+// and 6, Main NPCs included. Those were GM-only, which a solo player never
+// turns on, so the generator quietly stopped short.
+test("the solo Case tab rolls every case-creation table the book names", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "case", altOpen: true, moreOpen: true, log: [], scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?casegen#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.querySelectorAll("details").forEach((d) => (d.open = true)));
+
+  const labels = await page.$$eval(".panel .btn", (els) => els.map((e) => e.textContent));
+  const has = (re) => labels.some((l) => re.test(l));
+  // Solo Mode's own briefing tables
+  for (const re of [/Assignment/, /Relevance/, /Complication/, /Personal Hook/, /Origin Seed/]) {
+    assert.ok(has(re), `the briefing is missing ${re}`);
+  }
+  // The Core Rulebook's Case File Generator, as the Solo book cites it
+  for (const re of [/Theme/, /Core Assignment/, /Main NPC/, /Full cast/, /Sector \(D8\)/, /Twist/]) {
+    assert.ok(has(re), `the Core generator is missing ${re}`);
+  }
+  // "Seek inspiration": the character and location tables, plus the Ch09 extras
+  for (const re of [/Someone involved/, /Where it starts/, /Cipher/, /Clue/, /Final Confrontation/, /Mood/, /Sector location/]) {
+    assert.ok(has(re), `fleshing out the case is missing ${re}`);
+  }
+
+  // Every one of them must actually produce a result in its own card.
+  const rollables = labels.filter((l) => /^[\u{1F3B2}\u26A1]/u.test(l));
+  assert.ok(rollables.length >= 19, `expected the full set of rolls, got ${rollables.length}`);
+  for (const label of rollables) {
+    await page.locator(`.panel .btn:text-is("${label}")`).first().click();
+    await page.waitForTimeout(150);
+    const shown = await page.evaluate((lbl) => {
+      const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent === lbl);
+      const host = b.closest(".card") || b.closest(".panel");
+      const slots = host.querySelectorAll(":scope > .result-slot");
+      return slots.length ? slots[slots.length - 1].textContent : "";
+    }, label);
+    assert.ok(shown.length > 0, `"${label}" produced no result`);
+    assert.ok(!/\bnull\b|\bundefined\b/.test(shown), `"${label}" rendered a hole: ${shown.slice(0, 80)}`);
+  }
+});

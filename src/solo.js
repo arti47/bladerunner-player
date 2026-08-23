@@ -88,6 +88,13 @@ const HOW = {
   "Core Case File Generator": [
     ["Use this instead of the briefing", "when you want a Core-rulebook style case rather than the solo one."],
     ["🎲 Theme first", "— it selects which Assignment table you roll on. Then Sector and Twist."],
+    ["⚡ Full cast", "rolls how many named people the case carries, then each one — occupation, quirk and name."],
+  ],
+  "Flesh out the case": [
+    ["Roll as much or as little as you like", "— none of this is required to start. Leave it and the same tables are waiting on the Scene tab."],
+    ["⚡ Someone involved", "gives you a person: what world they come from, what they are like, how good they are, and whether they are human."],
+    ["🎲 Where it starts", "names the first location; 🎲 Cipher gives two words to interpret when you want a prompt rather than an answer."],
+    ["More Core case tables", "hold what the players can find (clues), where it ends (the finale), and the weather and street noise of a scene."],
   ],
   "Proceed to a location": [
     ["Decide from your leads", "where the case takes you. Travelling there costs the Shift."],
@@ -487,12 +494,84 @@ export function renderSolo(mount, rerender) {
           show({ label: "Assignment", text: t, pin: `[Assignment] ${t}`, title: `Assignment — ${roll} (D${list.length})`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, theme), el("p", { class: "roll-prose" }, t)) });
         }),
         btn("🎲 Sector (D8)", () => { const roll = rollDie(8); const res = lookupRange(GM.CASE_SECTOR, roll); show({ label: "Sector", text: res?.sector || "?", pin: `[Sector] ${res?.sector || "?"}`, title: `Sector — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res?.sector || "Unknown")) }); }),
-        btn("🎲 Twist (D12)", () => rollTable("Twist", GM.CASE_TWIST, 12))));
+        btn("🎲 Twist (D12)", () => rollTable("Twist", GM.CASE_TWIST, 12)),
+        // Case Table 3. The Solo book names it as part of this method, so it
+        // has to be rollable here and not only on the GM screen. [Solo p.004]
+        btn("🎲 Main NPC", () => { const n = rollMainNpc(); show({ label: "Main NPC", text: `${n.name} · ${n.occ}`, pin: `[NPC] ${n.name} — ${n.occ} (${n.type}); quirk: ${n.quirk}`, title: "Main NPC", render: (b) => b.append(el("h3", { class: "roll-result" }, n.name), el("p", {}, `${n.occ} · ${n.type}`), el("div", { class: "roll-eyebrow" }, "Quirk"), el("p", { class: "muted" }, n.quirk)) }); }),
+        btn("⚡ Full cast", () => {
+          const count = Math.ceil(rollDie(6) / 2) + GM.CASE_MAIN_NPC_COUNT.bonus;   // D3+3
+          const lines = Array.from({ length: count }, rollMainNpc).map((n) => `${n.name} — ${n.occ} (${n.type}); ${n.quirk}`);
+          show({ label: "Main NPCs", text: `${count} NPCs`, pin: `[Cast] ${lines.join(" | ")}`, title: `Main cast — D3+${GM.CASE_MAIN_NPC_COUNT.bonus} = ${count}`,
+            render: (b) => { for (const l of lines) b.append(el("p", { class: "roll-prose" }, l)); } });
+        }, "primary")));
     details.addEventListener("toggle", () => { st.altOpen = details.open; writeSoloState(st); });
     alt.append(details);
     root.append(alt);
 
+    // The book's fourth way in — "seek inspiration" — points at the Character and
+    // Location tables as well as the briefing, and the Core Rulebook's remaining
+    // case tables flesh out what the players can find. All were reachable only
+    // from the GM screen, which a solo player never turns on. [Solo p.004, Ch09]
+    const flesh = stepCard("Optional", "Flesh out the case", "Detail you can roll now or leave for play. The same generators live on the Scene tab.");
+    flesh.append(grid(
+      btn("⚡ Someone involved", () => {
+        const sph = rollGrouped(S.CHARACTER_SPHERE).entry, tr = rollGrouped(S.CHARACTER_TRAIT).entry;
+        const sk = lookupRange(S.NPC_SKILL_LEVEL, rollDie(8)), nat = lookupRange(S.NPC_NATURE, rollDie(10));
+        show({ label: "NPC", text: `${tr} · ${sph} · ${nat.result}`, pin: `[NPC] ${tr} character from ${sph}; ${sk.name}; ${nat.result}`, title: "Someone involved",
+          render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${tr} · ${sph}`),
+            el("div", { class: "roll-eyebrow" }, "Skill level"), el("p", { class: "muted" }, `${sk.name} — ${sk.dice}`),
+            el("div", { class: "roll-eyebrow" }, "Human or Replicant"), el("p", { class: "muted" }, `${nat.result} — ${nat.detail}`)) });
+      }, "primary"),
+      btn("🎲 Where it starts", () => { const e = rollColumn(S.LOCATION_ENVIRONMENT), p2 = rollColumn(S.LOCATION_PLACE); show({ label: "Location", text: `${e.entry} ${p2.entry}`, pin: `[Location] ${e.entry} ${p2.entry}`, title: "Where it starts", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${e.entry} ${p2.entry}`), el("p", { class: "muted roll-center" }, `Environment D6=${e.d6}/D12=${e.d}  |  Place D6=${p2.d6}/D12=${p2.d}`)) }); }),
+      btn("🎲 Cipher", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher — interpret it", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })));
+
+    const sectorSelect = el("select", { class: "input roll-select" });
+    GM.CASE_SECTOR.forEach((x) => sectorSelect.append(el("option", { value: x.sector, selected: x.sector === st.selectedSector || null }, x.sector)));
+    sectorSelect.addEventListener("change", () => { st.selectedSector = sectorSelect.value; writeSoloState(st); });
+    const more = el("details", { class: "rules__group solo-alt", open: st.moreOpen || null },
+      el("summary", {}, "More Core case tables — clues, the finale, mood"),
+      el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Sector:"), sectorSelect),
+      grid(
+        btn("🎲 Clue (D8)", () => {
+          const roll = rollDie(8); const row = lookupRange(GM.CASE_CLUES, roll);
+          const detail = row.detailDie ? row.detail[rollDie(row.detailDie) - 1] : null;
+          const text = detail ? `${row.type} — ${detail}` : row.type;
+          show({ label: "Clue", text, pin: `[Clue] ${text}${row.note ? ` (${row.note})` : ""}`, title: `Clue — ${roll} (D8)`,
+            render: (b) => b.append(...[el("h3", { class: "roll-result" }, row.type), detail ? el("p", {}, detail) : null, row.note ? el("p", { class: "muted" }, row.note) : null].filter(Boolean)) });
+        }),
+        btn("🎲 Sector location (D6×D6)", () => {
+          const sector = st.selectedSector || GM.CASE_SECTOR[0].sector;
+          const areas = GM.SECTOR_LOCATIONS[sector] || [];
+          if (!areas.length) { showToast("No locations for that sector.", { kind: "warn" }); return; }
+          const a = rollDie(6); const area = lookupRange(areas, a) || areas[0];
+          const p2 = rollDie(6); const place = area.places[p2 - 1];
+          show({ label: "Location", text: `${place} · ${area.area}`, pin: `[Location] ${place} — ${area.area}, ${sector}`, title: `${sector} — area ${a}, place ${p2}`,
+            render: (b) => b.append(el("h3", { class: "roll-result" }, place), el("p", { class: "muted" }, `${area.area} · ${sector}`)) });
+        }),
+        btn("🎲 Final Confrontation (D10)", () => {
+          const l = rollDie(10), e = rollDie(10);
+          show({ label: "Finale", text: `${GM.CASE_FINALE_LOCATION[l - 1]} — ${GM.CASE_FINALE_ENVIRONMENT[e - 1]}`, pin: `[Finale] ${GM.CASE_FINALE_LOCATION[l - 1]} — ${GM.CASE_FINALE_ENVIRONMENT[e - 1]}`, title: `Final Confrontation — ${l}/${e} (D10)`,
+            render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, GM.CASE_FINALE_LOCATION[l - 1]), el("p", { class: "roll-center muted" }, GM.CASE_FINALE_ENVIRONMENT[e - 1])) });
+        }),
+        btn("🎲 Mood (D8×3)", () => {
+          const w = GM.CASE_MOOD.weather[rollDie(8) - 1], sc = GM.CASE_MOOD.screen[rollDie(8) - 1], pb = GM.CASE_MOOD.passingBy[rollDie(8) - 1];
+          show({ label: "Mood", text: `${w} · ${sc} · ${pb}`, pin: `[Mood] ${w}; on screen: ${sc}; passing by: ${pb}`, title: "Mood Pieces",
+            render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "Weather"), el("p", {}, w),
+              el("div", { class: "roll-eyebrow" }, "On that screen"), el("p", {}, sc),
+              el("div", { class: "roll-eyebrow" }, "Passing by"), el("p", {}, pb)) });
+        })));
+    more.addEventListener("toggle", () => { st.moreOpen = more.open; writeSoloState(st); });
+    flesh.append(more);
+    root.append(flesh);
+
     root.append(el("div", { class: "btn-row" }, btn("Briefed — start the first Shift →", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
+
+    // Case Table 3: D8 type, then D6 each for occupation, quirk, and both names.
+    function rollMainNpc() {
+      const t = GM.CASE_MAIN_NPCS[rollDie(8) - 1];
+      return { type: t.type, occ: t.occupation[rollDie(6) - 1], quirk: t.quirk[rollDie(6) - 1],
+        name: `${t.firstName[rollDie(6) - 1]} ${t.lastName[rollDie(6) - 1]}` };
+    }
 
     function rollTable(label, arr, die) {
       const roll = rollDie(die); const t = arr[roll - 1];
