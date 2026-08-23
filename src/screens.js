@@ -2,7 +2,8 @@
 // + party banner. Wizard, sheet, combat, gm, solo mount from their own modules.
 import { el, clear, titleCase } from "./core.js";
 import * as D from "../data.js";
-import { NPCS } from "../data-npcs.js";
+import * as S from "../data-solo.js";
+import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, RollLog } from "./store.js";
 import { Settings, TOGGLES, applyTheme } from "./settings.js";
 import { showToast, promptModal, confirmModal, rollLogCard } from "./ui.js";
@@ -164,12 +165,31 @@ function buildRulesIndex() {
   for (const g of D.GEAR) idx.push({ cat: "Armor & Gear", name: g.name, desc: `${g.text} · ${g.avail} (cost ${g.cost})`, text: `${g.name} ${g.text} gear` });
   for (const g of D.AUGMENTATIONS) idx.push({ cat: "Augmentations", name: g.name, desc: `${g.text} · ${g.avail} (cost ${g.cost})`, text: `${g.name} ${g.text} implant augmentation` });
   for (const a of D.ARCHETYPES) idx.push({ cat: "Archetypes", name: a.name, desc: `Key ${attrName(a.keyAttr)} · ${a.keySkills.map((k) => D.SKILLS.find((s) => s.key === k)?.name).join(", ")} · Chinyen D${a.chinyenDie} · ${natLabel(a.nature)}`, text: `${a.name} archetype ${a.blurb}` });
+  for (const [label, text] of [["Average human", NPC_BUILD.averageHuman], ["Typical Replicant", NPC_BUILD.typicalReplicant], ["Replicant NPCs", NPC_BUILD.replicantNpcRule]])
+    idx.push({ cat: "NPCs", name: `Building an NPC: ${label}`, desc: text, text: `building an npc stat block ${label} ${text}` });
   for (const n of NPCS) idx.push({ cat: "NPCs", name: n.name, desc: `STR ${n.attrs.STR} AGI ${n.attrs.AGI} INT ${n.attrs.INT} EMP ${n.attrs.EMP} · Health ${n.health} · ${n.gear.join(", ") || "—"}`, text: `${n.name} npc` });
   // Combat & movement reference
   for (const r of D.RANGES) idx.push({ cat: "Combat", name: `Range: ${r.name}`, desc: r.desc, text: `${r.name} range zone distance` });
   for (const a of D.COMBAT_ACTIONS) idx.push({ cat: "Combat", name: a.action, desc: `Requires ${a.prereq}${a.skill ? ` · rolls ${D.SKILLS.find((s) => s.key === a.skill)?.name}` : " · no roll"}`, text: `${a.action} combat action ${a.prereq}` });
+  for (const [rating, v] of Object.entries(D.BLAST_POWER))
+    idx.push({ cat: "Combat", name: `Blast Power ${rating}`, desc: `Damage ${v.damage} · Crit D${v.critDie}. Explosives and vehicle weapons are rated by Blast Power.`, text: `blast power ${rating} explosive grenade charge damage` });
+  for (const [unit, text] of Object.entries(D.TIME_UNITS))
+    idx.push({ cat: "Combat", name: `Time: one ${unit}`, desc: text, text: `time one ${unit} scale duration how long ${text}` });
   idx.push({ cat: "Combat", name: "Initiative", desc: `Draw once from ${D.INITIATIVE_CARDS} cards; act low→high; the order holds for the whole fight.`, text: "initiative cards order surprise ambush" });
   idx.push({ cat: "Combat", name: "Armor", desc: `When hit, roll ${D.ARMOR_DICE} dice of the armor's rating; each success stops ${D.ARMOR_DAMAGE_PER_SUCCESS} damage. Stop it all and the critical injury is negated too. One suit only.`, text: "armor rating damage reduction protection" });
+  // Solo Mode oracles — reachable from the Solo tab, but a player looking up
+  // "Scene Check" in the library should find the table, not just the glossary.
+  const band = (r) => { const [lo, hi] = r.range || [r.min, r.max]; return lo === hi ? `${lo}` : `${lo}–${hi}`; };
+  for (const r of S.SCENE_CHECK) idx.push({ cat: "Solo Mode", name: `Scene Check ${band(r)}`, desc: `${r.result}${r.detail ? ` — ${r.detail}` : ""}`, text: `scene check solo ${band(r)} ${r.result} ${r.detail || ""}` });
+  for (const r of S.QUESTION_CHECK) idx.push({ cat: "Solo Mode", name: `Question Check ${band(r)}`, desc: r.result, text: `question check solo yes no ${band(r)} ${r.result}` });
+  S.CRITICAL_SUCCESS.forEach((c, i) => idx.push({ cat: "Solo Mode", name: `Critical Success ${i + 1}: ${c.name}`, desc: `${c.text} ${c.bonus}`, text: `critical success solo ${c.name} ${c.text}` }));
+  S.SCENE_CATEGORIES.forEach((c, i) => idx.push({ cat: "Solo Mode", name: `Scene ${i + 1}: ${c.name}`, desc: `${c.detail} · ${c.skills.join(", ")}`, text: `scene category solo ${c.name} ${c.detail}` }));
+  for (const r of S.NPC_SKILL_LEVEL) idx.push({ cat: "Solo Mode", name: `NPC skill ${band(r)}`, desc: `${r.name} — ${r.dice}`, text: `npc skill level solo ${band(r)} ${r.name}` });
+  for (const r of S.NPC_TACTICS) idx.push({ cat: "Solo Mode", name: `NPC tactics: ${r.name}`, desc: r.behavior, text: `npc tactics solo ${r.name} ${r.behavior}` });
+  idx.push({ cat: "Solo Mode", name: "Countdown Event Timer", desc: D.GLOSSARY.find((g) => g.term === "Countdown Event Check")?.text || S.COUNTDOWN_TIMER.note, text: "countdown event timer solo escalate" });
+  idx.push({ cat: "Solo Mode", name: "Hypothesis Check", desc: `${S.HYPOTHESIS_CHECK.crit.name} ${S.HYPOTHESIS_CHECK.crit.pp} PP · ${S.HYPOTHESIS_CHECK.success.name} +${S.HYPOTHESIS_CHECK.success.pp} PP · ${S.HYPOTHESIS_CHECK.failure.name} ${S.HYPOTHESIS_CHECK.failure.pp} PP. Cannot be pushed.`, text: "hypothesis check solo promotion points" });
+  for (const m of S.CASE_START_METHODS) idx.push({ cat: "Solo Mode", name: `Opening a case: ${m.name}`, desc: m.text, text: `start case solo ${m.name} ${m.text}` });
+
   // Chases
   D.CHASE.procedure.forEach((p, i) => idx.push({ cat: "Chases", name: `Procedure ${i + 1}`, desc: p, text: `chase procedure ${p}` }));
   for (const m of D.CHASE.maneuvers) idx.push({ cat: "Chases", name: `Maneuver: ${m.name}`, desc: `${m.who === "both" ? "Either side" : m.who === "prey" ? "Prey only" : "Pursuer only"}${m.skill ? ` · ${D.SKILLS.find((s) => s.key === m.skill)?.name}` : ""}${m.vehicleSkill ? ` (vehicles: ${D.SKILLS.find((s) => s.key === m.vehicleSkill)?.name})` : ""} — ${m.text}`, text: `chase maneuver ${m.name} ${m.text}` });

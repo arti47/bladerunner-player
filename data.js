@@ -506,7 +506,8 @@ export const ARMOR = [
   { key: "police_shield", name: "Police Shield", rating: null, avail: "Standard", cost: 2, disadvantage: ["mobility", "stealth", "connections", "manipulation"], note: "Disadvantage to attacks against you from the front (close and ranged)." },
   { key: "zip_ties", name: "Zip Ties", rating: null, avail: "Incidental", cost: 0, note: "Restraint. One action to apply; Force roll to break free." },
 ];
-export const AVAILABILITY = ["Incidental", "Standard", "Premium", "Rare", "Luxury"]; // Cost = # of Promotion or Chinyen Points
+// (Availability lives in AVAILABILITY_TIERS below — it carries the lead time,
+// the cost band and whether the tier needs a Connections roll.)
 
 // The Purchases table  [Ch08 p204] — availability sets the time, the cost band,
 // and whether the deal needs a CONNECTIONS roll at all. Incidental and Standard

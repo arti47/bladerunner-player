@@ -8,7 +8,7 @@
 
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { NPCS } from "../data-npcs.js";
+import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
@@ -247,6 +247,13 @@ export function renderGm(mount, rerender) {
     };
     const nc = stepCard("Before the session", "Main NPC Generator", `Roll a case NPC — type, occupation, quirk, and name. A case carries ${GM.CASE_MAIN_NPC_COUNT.text}.`);
     nc.append(grid(
+      btn("📋 How to stat an NPC", () => {
+        show({ label: "NPC build", text: NPC_BUILD.averageHuman, pin: `[NPC build] ${NPC_BUILD.averageHuman} ${NPC_BUILD.replicantNpcRule}`, title: "Statting an NPC on the fly",
+          render: (b) => b.append(
+            el("div", { class: "roll-eyebrow" }, "Average human"), el("p", {}, NPC_BUILD.averageHuman),
+            el("div", { class: "roll-eyebrow" }, "Typical Replicant"), el("p", {}, NPC_BUILD.typicalReplicant),
+            el("div", { class: "roll-eyebrow" }, "Replicant NPCs"), el("p", { class: "muted" }, NPC_BUILD.replicantNpcRule)) });
+      }, "ghost"),
       btn("🎲 Main NPC", () => {
         const n = rollNpc();
         show({
@@ -373,7 +380,7 @@ export function renderGm(mount, rerender) {
 
   function panelWrap(root) {
     // End-of-session awards  [Ch09] — one point per bullet, per character.
-    const awards = stepCard("After the session", "Session Awards", `Promotion and Humanity checklists. Five or more Promotion Points in one session earns a distinction from Deputy Chief Holden.`);
+    const awards = stepCard("After the session", "Session Awards", `Promotion and Humanity checklists. ${GM.DISTINCTION_THRESHOLD} or more Promotion Points in one session earns a distinction from Deputy Chief Holden.`);
     const checklist = (title, items) => {
       const box = el("details", { class: "rules__group" }, el("summary", {}, `${title} (${items.length})`));
       for (const line of items) box.append(el("div", { class: "muted sheet__note" }, "• " + line));

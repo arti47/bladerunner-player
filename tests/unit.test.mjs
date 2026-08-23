@@ -609,7 +609,9 @@ test("every machine-readable specialty effect has a consumer", () => {
 // Core Ch08/Ch09 pass (2026-07-28, user-supplied transcription).
 // ---------------------------------------------------------------------------
 test("Purchases table: tiers, times and which need a Connections roll [Ch08 p204]", () => {
-  assert.deepEqual(D.AVAILABILITY, ["Incidental", "Standard", "Premium", "Rare", "Luxury"]);
+  // AVAILABILITY_TIERS is the single source for tiers (the old flat AVAILABILITY
+  // list duplicated it and nothing read it).
+  assert.deepEqual(D.AVAILABILITY_TIERS.map((t) => t.key), ["Incidental", "Standard", "Premium", "Rare", "Luxury"]);
   assert.equal(D.AVAILABILITY_TIERS.length, 5);
   const by = (k) => D.AVAILABILITY_TIERS.find((t) => t.key === k);
   assert.equal(by("Incidental").time, "Instant");
@@ -843,4 +845,26 @@ test("glossary is complete, unique, and jargon-free enough to help a newcomer", 
   for (const must of ["Push", "Broken", "Shift", "Downtime", "Oracle", "Hypothesis", "Base Dice", "Resolve"]) {
     assert.ok(terms.some((t) => t.toLowerCase().includes(must.toLowerCase())), `glossary is missing "${must}"`);
   }
+});
+
+// Anything in the data layer that nothing reads is content the player cannot
+// reach. This is the guard that keeps extraction and UI in step.
+test("every data table has a reader in src/ — no unreachable content", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const url = await import("node:url");
+  const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), "..");
+  const src = fs.readdirSync(path.join(ROOT, "src"))
+    .filter((f) => f.endsWith(".js"))
+    .map((f) => fs.readFileSync(path.join(ROOT, "src", f), "utf8"))
+    .join("\n");
+  const orphans = [];
+  for (const file of ["data.js", "data-solo.js", "data-gm.js", "data-npcs.js", "data-house.js"]) {
+    const text = fs.readFileSync(path.join(ROOT, file), "utf8");
+    for (const m of text.matchAll(/^export const ([A-Z_0-9]+)/gm)) {
+      const name = m[1];
+      if (!new RegExp(`\\b${name}\\b`).test(src)) orphans.push(`${file}:${name}`);
+    }
+  }
+  assert.deepEqual(orphans, [], `data with no reader — the player cannot reach it:\n${orphans.join("\n")}`);
 });

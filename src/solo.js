@@ -710,7 +710,7 @@ export function renderSolo(mount, rerender) {
           show({ label: "NPC", text: `${tr} · ${sph} · ${nat.result}`, pin: `[NPC] ${tr} character from ${sph}; ${sk.name}; ${nat.result}`, title: "Generated NPC",
             render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${tr} · ${sph}`), el("p", {}, `A ${tr.toLowerCase()} character connected to ${sph.toLowerCase()}.`), el("div", { class: "roll-eyebrow" }, "Skill Level"), el("p", { class: "muted" }, `${sk.name} — ${sk.dice}`), el("div", { class: "roll-eyebrow" }, "Human or Replicant"), el("p", { class: "muted" }, `${nat.result} — ${nat.detail}`)) });
         }, "primary")),
-      el("p", { class: "muted roll-note" }, "Roll for an NPC only when they are pitted directly against you \u2014 and never push an NPC's roll.")));
+      el("p", { class: "muted roll-note" }, `Roll for an NPC only when they are pitted directly against you \u2014 and never push an NPC's roll. Not worth statting? Assume ${S.NPC_SKILL_DEFAULT}.`)));
 
     // Step 4d - when it turns violent.
     root.append(stepCard(4, "Combat & chases", "Direct the opposition, then run the fight in the tracker.",

@@ -268,7 +268,7 @@ function attributesSection(ch) {
     grid.append(el("div", { class: "stat", title: a.blurb },
       el("span", { class: "stat__name" }, a.name),
       el("span", { class: "stat__lv" }, lv),
-      el("span", { class: "stat__die muted" }, `d${D.LEVEL_DIE[lv]}`)));
+      el("span", { class: "stat__die muted" }, `d${D.LEVEL_DIE[lv]} · ${D.ATTR_LEVEL_DESC[lv]}`)));
   }
   return el("div", { class: "card" }, sectionTitle("Attributes"), grid);
 }
@@ -284,10 +284,10 @@ function skillsSection(ch, arch, rerender) {
       onClick: () => openSkillRoll(ch, s.key, rerender) },
       el("span", { class: "skill__name" }, s.name, isKey ? el("span", { class: "skill__key", title: "Key skill" }, " ★") : null),
       el("span", { class: "skill__attr muted" }, R.attrDisplay(s.attr)),
-      el("span", { class: "skill__lv" }, `${lv} · d${D.LEVEL_DIE[lv]}`, el("span", { class: "skill__die-cta muted" }, " ⚄"))));
+      el("span", { class: "skill__lv", title: D.SKILL_LEVEL_DESC[lv] }, `${lv} · d${D.LEVEL_DIE[lv]}`, el("span", { class: "skill__die-cta muted" }, " ⚄"))));
   }
   return el("div", { class: "card" }, sectionTitle("Skills"),
-    el("p", { class: "muted sheet__note" }, "Tap a skill to roll its Base Dice."), list,
+    el("p", { class: "muted sheet__note" }, `Tap a skill to roll its Base Dice. ${D.LEVELS.map((l) => `${l} ${D.SKILL_LEVEL_DESC[l]}`).join(" · ")}.`), list,
     el("div", { class: "inv__actions" },
       el("button", { class: "btn btn--sm btn--roll", onClick: () => openOpposedSkillRoll(ch, rerender) }, "⚖ Opposed roll"),
       el("span", { class: "muted sheet__note" }, "Stealth vs Observation, Manipulation vs Insight, Interrogation vs Stamina, the Voight-Kampff test — only the initiator may push.")));
