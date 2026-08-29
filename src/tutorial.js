@@ -132,6 +132,15 @@ function panelSolo(host, rerender) {
       ["Full walkthrough", "The <b>Case Board</b> tab of this tutorial is the step-by-step guide."],
     ], [["Case Board guide", () => { writePanel("board"); rerender(); window.scrollTo(0, 0); }], ["Open the Case Board", () => navigate("solo")]]),
 
+    steps("A case, start to finish", "The three moments the loop above does not spell out: how one begins, how you keep it alive across days, and how it ends.", [
+      ["Beginning", "Solo ▸ <b>Case</b> ▸ <b>⚡ Open a case</b>. It rolls the whole briefing, asks you to name the case, and puts you on the Shift tab. That is the whole setup — you are playing from the next tap."],
+      ["The first ten minutes", "Pick a location. Roll the countdown. Frame one scene and ask one question of the oracle. Answer it out loud in your own words, write the answer in the notes, and act on it. That is the game; everything else is more of that."],
+      ["Sustaining it", "Stop whenever you like — the case is saved as you play. When you come back, the Case tab shows the case, the Shift you are on, and how many leads are open, with one button back into it. A case usually runs three to six Shifts; take Downtime before the sheet starts charging you stress."],
+      ["Knowing it is over", "A case ends when a Hypothesis Check settles the question you have been chasing — not when you run out of ideas. If the trail dies, that is an ending too: file it unsolved and let it come back."],
+      ["Ending", "Solo ▸ Case (or Wrap) ▸ <b>✔ Close the case</b>. Say who did it and how it ended; the app files the case with the Shifts it took and the points it paid, and writes the summary into your notes. Closed cases are kept — <b>Start a fresh case</b> never deletes them."],
+      ["Then the next one", "Open a case file and read it. An unresolved thread from an old case is the book's own second way to start a new one."],
+    ], [["Open Solo Mode", () => navigate("solo")]]),
+
     steps("Solo habits worth keeping", null, [
       ["Write it down", "Pin oracle results (📌) into case notes and pin rolls into your character's journal. Solo play falls apart when you can't remember what you established."],
       ["Answer before you roll", "If you already know what's behind the door, don't ask the oracle. It's for genuine uncertainty."],

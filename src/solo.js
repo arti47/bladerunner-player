@@ -28,6 +28,8 @@ import { navigate } from "./router.js";
 import { Board, renderBoardPanel } from "./board.js";
 import { Chase } from "./chase.js";
 
+const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo state,
+                                 // so starting a fresh case cannot wipe your record
 const LOG_CAP = 50;
 const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
 const LOOSE = "__panel";    // bucket for rolls fired outside any card
@@ -46,7 +48,7 @@ const LEGACY_PANELS = { start: "case", track: "leads", session: "wrap" };
 function readSoloState() {
   const base = { timerDie: "D6", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {},
     log: [], panel: "case", scratchpad: "", shiftNo: 1, shiftFlags: {}, selectedTheme: null,
-    pendingEvent: null, lastSkill: null };
+    pendingEvent: null, lastSkill: null, caseOpen: null };
   try {
     const raw = localStorage.getItem(SOLO_KEY);
     if (raw) {
@@ -60,6 +62,19 @@ function readSoloState() {
   return base;
 }
 function writeSoloState(st) { try { localStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch (e) {} }
+
+// Closed case files. A campaign is a sequence of cases, so the record outlives
+// any one of them: this key is never touched by "Start a fresh case".
+const Cases = {
+  read() {
+    try { const c = JSON.parse(localStorage.getItem(CASES_KEY) || "null"); if (c) return { files: [], nextNo: 1, ...c }; } catch (e) {}
+    return { files: [], nextNo: 1 };
+  },
+  write(c) { try { localStorage.setItem(CASES_KEY, JSON.stringify(c)); } catch (e) {} },
+  add(file) { const c = Cases.read(); c.files.unshift(file); c.nextNo = Math.max(c.nextNo, (file.no || 0) + 1); Cases.write(c); return c; },
+  remove(id) { const c = Cases.read(); c.files = c.files.filter((f) => f.id !== id); Cases.write(c); },
+  nextNo() { return Cases.read().nextNo; },
+};
 // Set by btn() on every click so show() knows which card to drop the result in.
 let activeBtn = null;
 // Card key of the result just rolled — scrolled into view once, after paint.
@@ -149,6 +164,15 @@ const HOW = {
   "Award your points": [
     ["Tick as they happen", "during play, then count them at the end of the case or session."],
     ["Move the totals", "onto your sheet, where they are spent on specialties and skills."],
+  ],
+  "Start a case": [
+    ["⚡ Open a case", "when you want to play now. It rolls the whole briefing, names the case, and drops you on the Shift tab ready to go."],
+    ["✍ Open a blank case", "when you already know what you are investigating and only want the app to track it."],
+    ["You can stop any time", "and the case is still here when you come back — it is saved on this device as you play."],
+  ],
+  "Case files": [
+    ["Every closed case is kept here", "with what it was, who did it, how long it took, and what it paid. Starting a fresh case never deletes them."],
+    ["Open one", "to re-read it — an old case is the best seed for the next one (the book's \"follow a thread\" method)."],
   ],
   "Case Board": [
     ["This whole tab is a house aid", "not part of the Blade Runner rules. Ignore it and nothing else changes."],
@@ -244,6 +268,71 @@ export function renderSolo(mount, rerender) {
     record("Promotion", `${sign} PP · ${ch.name}`, `[Promotion] ${sign} PP — ${why}`);
     showToast(`${ch.name}: ${sign} Promotion Points (now ${ch.state.promotionPoints}).`);
   }
+  // ---- a case has a beginning, a middle and an end -------------------------
+  // Opening records what the case IS and the character's points at the time, so
+  // closing it can report what the case cost and paid.
+  function openCase({ title, assignment }) {
+    const ch = Store.getActive();
+    st.caseOpen = {
+      no: Cases.nextNo(),
+      title: title || "Untitled case",
+      assignment: assignment || "",
+      opened: Date.now(),
+      openStats: { pp: ch?.state.promotionPoints || 0, humanity: ch?.state.humanityPoints || 0 },
+      character: ch?.name || null,
+    };
+    st.shiftNo = 1;
+    writeSoloState(st);
+  }
+
+  // Closing writes a case file that survives everything, so a campaign leaves a
+  // record instead of the case simply being deleted.
+  async function closeCase() {
+    const c = st.caseOpen;
+    if (!c) return;
+    const suspect = boardCulprit() || (st.hypotheses[0]?.text || "");
+    const culprit = await promptModal("Who did it, or what was the answer?", { title: `Close case #${c.no}`, value: suspect, okLabel: "Next" });
+    if (culprit === null) return;
+    const outcome = await promptModal("How did it end? (one line — retirement, arrest, a deal, a dead end)", { title: `Close case #${c.no}`, okLabel: "Close the case" });
+    if (outcome === null) return;
+
+    const ch = Store.getActive();
+    const shifts = st.shiftNo || 1;
+    const pp = (ch?.state.promotionPoints || 0) - (c.openStats?.pp || 0);
+    const hum = (ch?.state.humanityPoints || 0) - (c.openStats?.humanity || 0);
+    const file = {
+      id: uid(), no: c.no, title: c.title, assignment: c.assignment,
+      culprit: culprit.trim() || "Never established",
+      outcome: outcome.trim() || "",
+      shifts, pp, humanity: hum,
+      opened: c.opened, closed: Date.now(),
+      character: ch?.name || c.character || null,
+    };
+    Cases.add(file);
+    st.scratchpad = appendToNotes(st.scratchpad, caseSummary(file));
+    st.caseOpen = null;
+    writeSoloState(st);
+    record("Case closed", `#${file.no} ${file.title}`, `[Case closed] #${file.no} ${file.title} — ${file.culprit}`);
+    showToast(`Case #${file.no} closed and filed. ${shifts} Shift${shifts === 1 ? "" : "s"}.`);
+  }
+
+  const caseSummary = (f) => [
+    `=== CASE #${f.no} CLOSED — ${new Date(f.closed).toLocaleDateString()} ===`,
+    f.assignment ? `• Assignment: ${f.assignment}` : null,
+    `• Answer: ${f.culprit}`,
+    f.outcome ? `• How it ended: ${f.outcome}` : null,
+    `• ${f.shifts} Shift${f.shifts === 1 ? "" : "s"} · Promotion ${f.pp >= 0 ? "+" : ""}${f.pp} · Humanity ${f.humanity >= 0 ? "+" : ""}${f.humanity}`,
+  ].filter(Boolean).join("\n");
+
+  // The board names a culprit once one suspect is far enough ahead.
+  function boardCulprit() {
+    try {
+      const b = Board.get();
+      const solved = b.solvedId ? b.boxes.find((x) => x.id === b.solvedId) : null;
+      return solved?.name || "";
+    } catch { return ""; }
+  }
+
   // Points never go below zero (§3.10). Saves the character.
   function applyPoints(ch, { pp = 0, humanity = 0 }) {
     ch.state.promotionPoints = Math.max(0, (ch.state.promotionPoints || 0) + pp);
@@ -304,7 +393,8 @@ export function renderSolo(mount, rerender) {
     const atLimit = used >= limit;
     const cell = (text, cls = "") => el("span", { class: "solo-status__cell " + cls }, text);
     wrap.append(
-      cell(ch.name, "solo-status__name"),
+      cell(st.caseOpen ? `#${st.caseOpen.no} ${st.caseOpen.title}` : "No case open", "solo-status__name"),
+      cell(ch.name),
       cell(`♥ ${ch.state.health}/${maxHealth(ch)}`, ch.state.health <= 0 ? "warn" : ""),
       cell(`◈ ${ch.state.resolve}/${maxResolve(ch)}`, ch.state.resolve <= 0 ? "warn" : ""),
       cell(`Shift ${st.shiftNo || 1}`),
@@ -427,6 +517,45 @@ export function renderSolo(mount, rerender) {
   function panelCase(root) {
     // Assignment is a D6×D10 table: 1–3 → first ten, 4–6 → second ten. [Solo Mode p.16]
     const rollAssignment = () => { const g = rollDie(6) <= 3 ? 0 : 1; const d = rollDie(10); return S.CASE_BRIEFING.assignment[g * 10 + (d - 1)]; };
+
+    const ch = Store.getActive();
+
+    if (!st.caseOpen) {
+      // The on-ramp. One card, three numbered moves, ending on the Shift tab.
+      const start = card("Start a case", ch
+        ? `${ch.name} is between cases. This takes about a minute, then you are playing.`
+        : "You need a Blade Runner first — the wizard rolls a legal one in a couple of taps.");
+      start.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "Start here"));
+      const ol = el("ol", { class: "solo-onramp" },
+        el("li", {}, el("strong", {}, "Get the assignment. "), "Press the button below: the app rolls what you have been handed, why it matters, what is already going wrong, and why it is personal — and writes it into your case notes."),
+        el("li", {}, el("strong", {}, "Name it. "), "One or two words you will recognise later."),
+        el("li", {}, el("strong", {}, "Go to work. "), "You land on the Shift tab: pick a location, roll the countdown, then play the scene."));
+      start.append(ol);
+      start.append(el("div", { class: "btn-row" },
+        ch ? btn("⚡ Open a case — roll the briefing", () => openBriefedCase(true), "primary")
+           : btn("Create a Blade Runner →", () => navigate("wizard"), "primary"),
+        ch ? btn("✍ Open a blank case", () => openBriefedCase(false), "sm ghost") : null));
+      root.append(start);
+    } else {
+      // Where you left off: what this case IS, not just how healthy you are.
+      const c = st.caseOpen;
+      const openLeads = st.hypotheses.length;
+      const boxes = (() => { try { return Board.get().boxes.length; } catch { return 0; } })();
+      const head = card(`Case #${c.no} — ${c.title}`,
+        `Opened ${new Date(c.opened).toLocaleDateString()}${c.character ? ` · ${c.character}` : ""}`);
+      head.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "Open case"));
+      if (c.assignment) head.append(el("p", { class: "roll-prose" }, c.assignment));
+      head.append(el("p", { class: "muted small" },
+        `Shift ${st.shiftNo || 1} · ${openLeads} open lead${openLeads === 1 ? "" : "s"}${boxes ? ` · ${boxes} on the board` : ""}`));
+      head.append(el("div", { class: "btn-row" },
+        btn("Pick up where you left off →", () => { st.panel = "shift"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary"),
+        btn("✔ Close the case", closeCase, "sm ghost"),
+        btn("✎ Rename", async () => {
+          const t = await promptModal("Case name", { title: "Rename the case", value: c.title, okLabel: "Rename" });
+          if (t && t.trim()) { c.title = t.trim(); writeSoloState(st); rerender(); }
+        }, "sm ghost")));
+      root.append(head);
+    }
 
     // Before the loop: the solo character themselves.
     root.append(stepCard("Before you start", "Your solo Blade Runner", S.SOLO_NO_ARCHETYPE.advice,
@@ -571,6 +700,50 @@ export function renderSolo(mount, rerender) {
       const t = GM.CASE_MAIN_NPCS[rollDie(8) - 1];
       return { type: t.type, occ: t.occupation[rollDie(6) - 1], quirk: t.quirk[rollDie(6) - 1],
         name: `${t.firstName[rollDie(6) - 1]} ${t.lastName[rollDie(6) - 1]}` };
+    }
+
+    // Closed cases, newest first. Never wiped by "Start a fresh case".
+    const filed = Cases.read().files;
+    if (filed.length) {
+      const arch = card("Case files", `${filed.length} closed case${filed.length === 1 ? "" : "s"} — your Blade Runner's record.`);
+      const list = el("div", { class: "casefiles" });
+      for (const f of filed) {
+        const row = el("details", { class: "rules__group casefile" },
+          el("summary", {}, `#${f.no} ${f.title} — ${f.shifts} Shift${f.shifts === 1 ? "" : "s"}, ${f.pp >= 0 ? "+" : ""}${f.pp} PP`),
+          f.assignment ? el("p", { class: "muted small" }, f.assignment) : null,
+          el("p", {}, el("strong", {}, "Answer: "), f.culprit),
+          f.outcome ? el("p", { class: "muted" }, f.outcome) : null,
+          el("p", { class: "muted small" }, `${new Date(f.opened).toLocaleDateString()} → ${new Date(f.closed).toLocaleDateString()}${f.character ? ` · ${f.character}` : ""} · Humanity ${f.humanity >= 0 ? "+" : ""}${f.humanity}`),
+          el("div", { class: "btn-row" }, btn("✕ Delete this file", async () => {
+            if (await confirmModal(`Delete the case file for #${f.no} ${f.title}? The record is gone for good.`, { title: "Delete case file", danger: true, okLabel: "Delete" })) {
+              Cases.remove(f.id); rerender();
+            }
+          }, "sm ghost")));
+        list.append(row);
+      }
+      arch.append(list);
+      root.append(arch);
+    }
+
+    // Roll the briefing (or not) and open the case in one move.
+    async function openBriefedCase(withBriefing) {
+      let assignment = "";
+      if (withBriefing) {
+        const a = rollAssignment(), r = pick(S.CASE_BRIEFING.relevance), cx = pick(S.CASE_BRIEFING.complication), h = pick(S.CASE_BRIEFING.hook);
+        assignment = a;
+        st.scratchpad = appendToNotes(st.scratchpad, `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${cx}\n• Personal Hook: ${h}`);
+        writeSoloState(st);
+      }
+      const suggested = assignment ? assignment.split(/[,.;]/)[0].slice(0, 40) : "";
+      const title = await promptModal("Name this case — something you will recognise later.",
+        { title: "Name the case", value: suggested, okLabel: "Open the case" });
+      if (title === null) return;
+      openCase({ title: (title || suggested || "Untitled case").trim(), assignment });
+      st.panel = "shift";
+      writeSoloState(st);
+      showToast(`Case #${st.caseOpen.no} open. Pick a location, then roll the countdown.`);
+      rerender();
+      window.scrollTo(0, 0);
     }
 
     function rollTable(label, arr, die) {
@@ -802,6 +975,8 @@ export function renderSolo(mount, rerender) {
         showToast(`Downtime Shift: +${r.health} Health, +${r.resolve} Resolve.`);
       }, "ghost")));
     endCard.append(el("p", { class: "muted small" }, "No Countdown Event Check on a Downtime Shift."));
+    if (st.caseOpen) endCard.append(el("div", { class: "btn-row" },
+      btn("✔ The case is solved — close it", closeCase, "sm ghost")));
     root.append(endCard);
 
     root.append(stepCard(7, "Downtime scene", "Roll how the off-hours go.",
@@ -914,6 +1089,7 @@ export function renderSolo(mount, rerender) {
         st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
         st.timerDie = S.ESCALATION_STEPS[0];
         st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null; st.pendingEvent = null;
+        st.caseOpen = null;              // closed case FILES live in brp:cases and survive
         st.panel = "case";              // a new case starts on the Case tab
         // Everything else this case wrote outside the solo screen.
         RollLog.clear();                // the global log, shown here, on the sheet and on Home

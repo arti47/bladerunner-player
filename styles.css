@@ -551,6 +551,12 @@ textarea.input { resize: vertical; font-family: inherit; }
 .solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
 .solo-method:first-of-type { border-top: 0; }
 .rolllog__scope { padding: .1rem .6rem .4rem; }
+/* Solo: the first-case on-ramp and the closed-case archive. */
+.solo-onramp { margin: .4rem 0 .2rem; padding-left: 1.2rem; display: grid; gap: .45rem; }
+.solo-onramp li { line-height: 1.45; }
+.casefiles { display: grid; gap: .4rem; margin-top: .4rem; }
+.casefile summary { font-weight: 600; }
+
 /* Solo: the status strip above the sub-nav — vitals, Shift, timer, banked checks. */
 .solo-status { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: baseline; padding: .4rem .6rem; margin-bottom: .5rem;
   border: 1px solid var(--line); border-radius: 8px; font-size: .85rem; }

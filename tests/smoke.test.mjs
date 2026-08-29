@@ -1028,6 +1028,97 @@ test("roll logs read top to bottom too — newest entry is last", async (t) => {
 // Scene -> Leads -> Wrap -> Notes, and the two things that OPEN a Shift
 // (proceed to a location, then the Countdown Event Check) sit together on the
 // Shift panel, in that order.
+// A case has to have a beginning, a middle and an end. Before this, the only
+// way to finish one was "Start a fresh case", which DELETED it.
+test("a solo case can be opened, resumed, closed, and filed", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  let n = 0;
+  const go = async () => { await page.goto(`${base}/index.html?life${++n}#solo`, { waitUntil: "load" }); await page.waitForTimeout(300); };
+  const solo = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  const cases = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:cases") || '{"files":[]}'));
+
+  await go();
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: false }));
+    localStorage.removeItem("brp:cases");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Kaz", nature: "human", archetype: "analyst", years: "seasoned", attributes: { STR: "C", AGI: "C", INT: "A", EMP: "B" } });
+    ch.state.promotionPoints = 2;
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "case", hypotheses: [], log: [], scratchpad: "", results: {}, shiftNo: 1, shiftFlags: {} }));
+  });
+  await go();
+
+  // Beginning: with no case open, the tab leads with a numbered on-ramp.
+  const steps = await page.$$eval(".solo-onramp li strong", (e) => e.map((x) => x.textContent.trim()));
+  assert.equal(steps.length, 3, `the on-ramp is three moves: ${steps}`);
+  assert.match(await page.$eval(".solo-status", (e) => e.textContent), /No case open/);
+
+  await page.getByRole("button", { name: /Open a case — roll the briefing/ }).click();
+  await page.waitForTimeout(250);
+  await page.fill(".modal input, .modal textarea", "The Tyrell Contract");
+  await page.locator(".modal").getByRole("button", { name: /Open the case|^OK$/ }).click();
+  await page.waitForTimeout(350);
+  let st = await solo();
+  assert.equal(st.caseOpen.no, 1, "cases are numbered");
+  assert.equal(st.caseOpen.title, "The Tyrell Contract");
+  assert.ok(st.caseOpen.assignment, "the briefing's assignment is kept on the case");
+  assert.match(st.scratchpad, /CASE BRIEFING/, "and written into the notes");
+  assert.equal(st.panel, "shift", "opening a case puts you where play starts");
+  assert.match(await page.$eval(".solo-status", (e) => e.textContent), /#1 The Tyrell Contract/);
+
+  // Middle: coming back says what the case is, not just how healthy you are.
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const ch = Store.getActive(); ch.state.promotionPoints = 7; ch.state.humanityPoints = 2; Store.save(ch);
+    const s = JSON.parse(localStorage.getItem("brp:solo"));
+    s.shiftNo = 4; s.panel = "case"; s.hypotheses = [{ id: "h", text: "The fixer did it", die: "D8" }];
+    localStorage.setItem("brp:solo", JSON.stringify(s));
+  });
+  await go();
+  const head = await page.$eval(".panel .card", (e) => e.textContent.replace(/\s+/g, " "));
+  assert.match(head, /Case #1 — The Tyrell Contract/);
+  assert.match(head, /Shift 4/);
+  assert.match(head, /1 open lead/);
+  assert.match(head, /Pick up where you left off/);
+
+  // End: closing files the case with what it cost and what it paid.
+  await page.getByRole("button", { name: "✔ Close the case" }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.$eval(".modal input", (e) => e.value), "The fixer did it", "the culprit is prefilled from your leads");
+  await page.fill(".modal input", "Roy Batty");
+  await page.locator(".modal").getByRole("button", { name: /^(Next|OK)$/ }).click();
+  await page.waitForTimeout(250);
+  await page.fill(".modal input, .modal textarea", "Retired on a rooftop.");
+  await page.locator(".modal").getByRole("button", { name: /Close the case|^OK$/ }).click();
+  await page.waitForTimeout(350);
+
+  const filed = (await cases()).files;
+  assert.equal(filed.length, 1);
+  assert.equal(filed[0].culprit, "Roy Batty");
+  assert.equal(filed[0].shifts, 4, "Shifts taken");
+  assert.equal(filed[0].pp, 5, "Promotion Points earned across the case (7 − 2)");
+  assert.equal(filed[0].humanity, 2);
+  st = await solo();
+  assert.equal(st.caseOpen, null, "the case is closed, not still open");
+  assert.match(st.scratchpad, /CASE #1 CLOSED/, "and written up in the notes");
+
+  await go();
+  const titles = await page.$$eval(".panel .card .sheet__section", (e) => e.map((x) => x.textContent.trim()));
+  assert.ok(titles.includes("Start a case"), "the tab offers the next case");
+  assert.ok(titles.includes("Case files"), "and keeps the record");
+
+  // The record outlives the wipe — closing a case and deleting it are different acts.
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo")); s.panel = "notes"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+  await go();
+  await page.getByRole("button", { name: /Start a fresh case/ }).click();
+  await page.waitForTimeout(200);
+  await page.getByRole("button", { name: "Wipe everything" }).click();
+  await page.waitForTimeout(350);
+  assert.equal((await cases()).files.length, 1, "Start a fresh case never deletes your case files");
+});
+
 // The solo-flow audit found eight seams; these pin the fixes. The loop must not
 // need the bottom nav, must not make the player the app's clipboard, and must
 // show vitals where damage actually lands.
@@ -1616,12 +1707,16 @@ test("every oracle button on Solo and GM shows a result", async (t) => {
         // the panel when the button has no card. (Counting all slots would miss
         // this once a card's history hits its cap.)
         const ok = await page.evaluate((lbl) => {
+          // A dialog counts: some generators ask you something before they can
+          // finish. What must never happen is the press doing nothing visible.
+          if (document.querySelector(".modal")) return true;
           const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent === lbl);
           if (!b) return false;
           const host = b.closest(".card") || b.closest(".panel");
           return host.querySelectorAll(":scope > .result-slot").length > 0;
         }, label);
         assert.ok(ok, `${screen}/${panel}: "${label}" produced no visible result`);
+        if (await page.$(".modal")) { await page.keyboard.press("Escape"); await page.waitForTimeout(120); }
       }
     }
   };
@@ -1938,6 +2033,8 @@ test("the solo Case tab rolls every case-creation table the book names", async (
   for (const label of rollables) {
     await page.locator(`.panel .btn:text-is("${label}")`).first().click();
     await page.waitForTimeout(150);
+    // Opening a case asks for a name before it can finish; a dialog is a result.
+    if (await page.$(".modal")) { await page.keyboard.press("Escape"); await page.waitForTimeout(120); continue; }
     const shown = await page.evaluate((lbl) => {
       const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent === lbl);
       const host = b.closest(".card") || b.closest(".panel");
