@@ -9,6 +9,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { announceSkip } from "./harness.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ROUTES = ["home", "characters", "rules", "wizard", "sheet", "combat", "solo", "gm", "tutorial", "settings"];
@@ -60,13 +61,13 @@ before(async () => {
   ({ server, base } = await startServer());
   let chromium;
   try { ({ chromium } = await import("playwright-core")); }
-  catch { unavailable = "playwright-core is not installed — run `npm install` to enable the smoke layer"; return; }
+  catch { unavailable = "playwright-core is not installed — run `npm install` to enable the smoke layer"; announceSkip("smoke suite", unavailable, 51); return; }
   let launchErr;
   for (const executablePath of [...CHROME_PATHS, null]) {
     try { browser = await chromium.launch(executablePath ? { executablePath, headless: true } : { channel: "chrome", headless: true }); break; }
     catch (e) { launchErr = e; }
   }
-  if (!browser) { unavailable = `no browser: ${launchErr?.message || "launch failed"}`; return; }
+  if (!browser) { unavailable = `no browser: ${launchErr?.message || "launch failed"}`; announceSkip("smoke suite", unavailable, 51); return; }
 
   page = await browser.newPage({ viewport: { width: 390, height: 800 } });
   // Hermetic: block everything that isn't our local origin (e.g. Firebase/gstatic).

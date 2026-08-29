@@ -160,7 +160,8 @@ function sheetHeader(ch, arch, y, commit) {
   const portrait = ch.identity.portraitUrl
     ? el("img", { class: "sheet__portrait", src: ch.identity.portraitUrl, alt: `Portrait of ${ch.name}` })
     : el("div", { class: "sheet__portrait sheet__portrait--empty", "aria-hidden": "true" }, "🕵");
-  const fileInput = el("input", { type: "file", accept: "image/*", class: "visually-hidden", id: "portrait-file" });
+  const fileInput = el("input", { type: "file", accept: "image/*", class: "visually-hidden", id: "portrait-file",
+    "aria-label": "Upload a portrait" });
   fileInput.addEventListener("change", () => {
     const f = fileInput.files?.[0];
     if (!f) return;
@@ -297,7 +298,7 @@ function skillsSection(ch, arch, rerender) {
 function specialtiesSection(ch) {
   const card = el("div", { class: "card" }, sectionTitle("Specialties"));
   const specs = (ch.specialties || []).map((s) => R.specialty(typeof s === "string" ? s : s?.key)).filter(Boolean);
-  if (!specs.length) { card.append(el("p", { class: "muted" }, "None yet — learn specialties in play (5 PP, one Shift at the Training Grounds).")); return card; }
+  if (!specs.length) { card.append(el("p", { class: "muted" }, "None yet — press Learn specialty below (costs Promotion Points, one Shift at the Training Grounds).")); return card; }
   for (const sp of specs)
     card.append(el("div", { class: "ability" }, el("div", { class: "ability__name" }, sp.name), el("div", { class: "muted ability__text" }, sp.text)));
   return card;
@@ -486,11 +487,12 @@ function identitySection(ch, commit) {
 }
 // Debounced-on-blur editable field: commit (and re-render) only when focus leaves.
 function flavorField(label, value, onSave, big = false) {
-  const input = el(big ? "textarea" : "input", { class: "input", rows: big ? 4 : null });
+  const id = "f-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const input = el(big ? "textarea" : "input", { class: "input", rows: big ? 4 : null, id, "aria-label": label });
   input.value = value || "";
   if (!big) input.type = "text";
   input.addEventListener("blur", () => { if (input.value !== (value || "")) onSave(input.value); });
-  return el("div", { class: "field" }, el("label", { class: "field__label" }, label), input);
+  return el("div", { class: "field" }, el("label", { class: "field__label", for: id }, label), input);
 }
 
 // Solo sends you here to roll; this is the way back. Bottom-nav only was a
@@ -522,7 +524,7 @@ function deceasedBanner() {
 function criticalInjuriesSection(ch, commit, rerender) {
   const card = el("div", { class: "card" }, sectionTitle("Critical Injuries"));
   const injuries = ch.state.criticalInjuries || [];
-  if (!injuries.length) card.append(el("p", { class: "muted" }, "No critical injuries."));
+  if (!injuries.length) card.append(el("p", { class: "muted" }, "No critical injuries. Press Take a critical injury below when a fight lands one."));
   for (const inj of injuries) {
     const row = el("div", { class: "injury" });
     const lethalTxt = inj.instantKill ? " · instant kill" : inj.lethal ? ` · lethal (${inj.deathSave} save)` : "";
@@ -884,7 +886,7 @@ function rollLogSection(ch, commit, rerender) {
   const entries = (rollLogScope === "char" ? all.filter((e) => e.charId === ch.id) : all)
     .slice(0, 30)
     .map((e) => (rollLogScope === "all" && e.charName ? { ...e, label: `${e.charName} · ${e.label}` } : e));
-  card.append(rollLogCard({
+  card.append(rollLogCard({ emptyHint: "Press Roll an attack, or tap any skill above.",
     entries,
     pinLabel: "Pin to this character's journal",
     onPin: (e) => commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: `[${e.label}] ${e.text}` }); showToast("Pinned to journal."); }),
@@ -903,7 +905,7 @@ function journalSection(ch, commit) {
     const text = await promptModal("Journal entry", { title: "New journal entry", okLabel: "Add" });
     if (text && text.trim()) commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: text.trim() }); });
   } }, "＋ Add entry"));
-  if (!entries.length) { card.append(el("p", { class: "muted sheet__note" }, "No journal entries yet. Add your own, or pin a roll from the Roll Log.")); return card; }
+  if (!entries.length) { card.append(el("p", { class: "muted sheet__note" }, "No journal entries yet. Press Add entry, or pin a roll from the Roll Log.")); return card; }
   for (const e of entries) {
     card.append(el("div", { class: "journal__entry" },
       el("div", { class: "journal__head" },

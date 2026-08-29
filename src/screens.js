@@ -50,7 +50,7 @@ export function renderHome(mount) {
   );
   const rolls = RollLog.list();
   if (rolls.length) {
-    body.append(rollLogCard({
+    body.append(rollLogCard({ emptyHint: "Open sheet and roll something.",
       open: false,
       entries: rolls.slice(0, 20).map((e) => (e.charName ? { ...e, label: `${e.charName} · ${e.label}` } : e)),
       onDelete: (e) => { RollLog.remove(e.id); renderHome(mount); },

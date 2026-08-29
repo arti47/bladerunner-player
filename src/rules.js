@@ -3,7 +3,6 @@ import * as D from "../data.js";
 import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
 import { rollDie } from "./core.js";
 
-export const dieForLevel = (level) => D.LEVEL_DIE[level];        // "B" -> 10
 export const dieSizeForLevel = (level) => D.LEVEL_DIE[level];    // alias (die size == max face)
 export const skill = (key) => D.SKILLS.find((s) => s.key === key);
 export const skillName = (key) => skill(key)?.name ?? key;
@@ -36,14 +35,12 @@ export function stepLevel(level, dir) {
   const next = i - dir; // improving = toward index 0
   return order[Math.max(0, Math.min(order.length - 1, next))];
 }
-export const isBetterOrEqual = (level, floor) => D.LEVELS.indexOf(level) <= D.LEVELS.indexOf(floor);
 
 // Crit table by damage type.
 export const critTable = (type) => (type === "piercing" ? D.CRIT_PIERCING : D.CRIT_CRUSHING);
 export const critEntry = (type, roll) => critTable(type).find((e) => e.roll === roll);
 
 // Roll a value on a simple array table (1-indexed), or a min/max-range table.
-export function rollOnArray(arr, face) { return arr[(face - 1) % arr.length]; }
 export function lookupRange(table, roll) {
   return table.find((r) => {
     const min = r.min !== undefined ? r.min : (r.range ? r.range[0] : -Infinity);
@@ -122,7 +119,6 @@ export function skillIncreaseCost(currentLevel) {
 // ---- Creation legality helpers  [Ch02] ------------------------------------
 // Numeric level: D=0, C=1, B=2, A=3 (higher = better).
 export const levelValue = (level) => 3 - D.LEVELS.indexOf(level); // A(idx0)=3 … D(idx3)=0
-export const valueLevel = (v) => D.LEVELS[3 - v];
 const STR_C = levelValue(D.ATTR_START_LEVEL); // C = 1
 const SKL_D = levelValue(D.SKILL_START_LEVEL); // D = 0
 

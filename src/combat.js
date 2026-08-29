@@ -78,7 +78,8 @@ export function renderCombat(mount) {
 
   // ---- combatant list -----------------------------------------------------
   if (!state.combatants.length) {
-    wrap.append(el("div", { class: "card" }, el("p", { class: "muted" }, "No combatants yet.")));
+    wrap.append(el("div", { class: "card" }, el("p", { class: "muted" },
+      "No combatants yet — press Add my character or Add adversary above to start a fight.")));
     wrap.append(renderChaseCard(() => renderCombat(mount)));
     wrap.append(howCard());
     mount.append(wrap); return;

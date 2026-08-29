@@ -151,21 +151,6 @@ export function renderToHtml(render) {
 
 // A result modal that always offers "Pin to notes" (when a pin line + handler
 // are given) alongside OK. `render(body)` fills the result content.
-export function resultModal({ title, render, pinLine, onPin }) {
-  modal({
-    title,
-    render(body, close) {
-      if (typeof render === "function") render(body);
-      const actions = el("div", { class: "modal__actions" });
-      if (pinLine && typeof onPin === "function") {
-        actions.append(el("button", { class: "btn btn--ghost", onClick: () => { onPin(pinLine); close(); } }, "📌 Pin to notes"));
-      }
-      actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "OK"));
-      body.append(actions);
-    },
-  });
-}
-
 // Segmented sub-nav (pill row) for swapping panels within a screen.
 // segments: [{ key, label }]. Calls onSelect(key). Scrolls horizontally on overflow.
 export function segmentNav({ segments = [], active, onSelect } = {}) {
@@ -175,6 +160,9 @@ export function segmentNav({ segments = [], active, onSelect } = {}) {
     row.append(el("button", {
       class: "segnav__pill" + (on ? " segnav__pill--on" : ""),
       role: "tab", "aria-selected": on ? "true" : "false",
+      // A pill labelled with a term of art still has to say what it is for.
+      "aria-label": s.hint ? `${s.label} — ${s.hint}` : null,
+      title: s.hint || null,
       onClick: () => { if (!on && typeof onSelect === "function") onSelect(s.key); },
     }, s.label));
   }
@@ -185,7 +173,7 @@ export function segmentNav({ segments = [], active, onSelect } = {}) {
 // and rendered oldest-first so the whole screen reads top to bottom, like the
 // notes below it; the list scrolls to the newest entry after render.
 // Handlers: onPin(entry), onDelete(entry), onClear().
-export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = true, pinLabel = "Pin to notes", title = "Roll Log", head = null } = {}) {
+export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = true, pinLabel = "Pin to notes", title = "Roll Log", head = null, emptyHint = "" } = {}) {
   const card = el("div", { class: "card rolllog" });
   const details = el("details", { class: "rolllog__details", open: open || null });
   const summary = el("summary", { class: "rolllog__summary" },
@@ -196,7 +184,7 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
   if (head) details.append(head);
   const list = el("div", { class: "rolllog__list" });
   if (!entries.length) {
-    list.append(el("p", { class: "muted rolllog__empty" }, "No rolls yet. Results you roll will collect here."));
+    list.append(el("p", { class: "muted rolllog__empty" }, `No rolls yet. ${emptyHint}`.trim()));
   } else {
     for (const e of [...entries].reverse()) {
       const time = new Date(e.ts || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

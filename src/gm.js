@@ -406,7 +406,7 @@ export function renderGm(mount, rerender) {
   }
 
   function panelNotes(root) {
-    root.append(rollLogCard({
+    root.append(rollLogCard({ emptyHint: "Roll a table on Prep and results collect here.",
       entries: st.log || [],
       pinLabel: "Pin to case notes",
       onPin: (e) => pinNote(e.pin),

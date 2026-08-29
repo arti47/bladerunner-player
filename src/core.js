@@ -1,7 +1,6 @@
 // core.js — foundational constants, DOM/util helpers, raw dice functions.
 // No imports (per CLAUDE.md §6.1). Everything here is pure/stateless.
 
-export const APP_NAME = "Blade Runner Player";
 export const STORAGE_PREFIX = "brp:"; // localStorage key namespace
 // The tutorial remembers its open panel here. Shared so a feature screen can
 // deep-link straight to the panel that documents it.
@@ -33,7 +32,6 @@ export const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
 
 // ---- misc utils -----------------------------------------------------------
-export const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 export const uid = () => (crypto?.randomUUID ? crypto.randomUUID() : "id-" + Math.random().toString(36).slice(2) + Date.now().toString(36));
 export const titleCase = (s) => String(s).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -44,14 +42,6 @@ export function rollDie(size) { return 1 + Math.floor(Math.random() * size); }
 export function successesFor(face) { return face >= 10 ? 2 : face >= 6 ? 1 : 0; }
 
 // Roll an array of die sizes; return per-die results with success counts.
-export function rollDice(sizes) {
-  return sizes.map((size) => {
-    const face = rollDie(size);
-    return { size, face, successes: successesFor(face), isBane: face === 1 };
-  });
-}
-export function totalSuccesses(dice) { return dice.reduce((n, d) => n + d.successes, 0); }
-export function totalBanes(dice) { return dice.reduce((n, d) => n + (d.isBane ? 1 : 0), 0); }
 
 // One-line outcome summary for the roll log: "Critical success · 2 successes · 1 bane".
 export function outcomeSummary(succ, banes) {

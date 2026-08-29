@@ -158,7 +158,7 @@ function stepNature(body, rerender) {
   body.append(el("div", { class: "card quickbuild" },
     el("div", { class: "card__title" }, "Never played before?"),
     el("p", { class: "muted" }, "Let the dice make every choice. You land on the review screen and can still change anything, or start over."),
-    el("button", { class: "btn btn--primary", onClick: () => { quickBuild(); showToast("Rolled a complete Blade Runner — check it over and press Finish."); rerender(); } }, "⚄ Roll me a whole Blade Runner")));
+    el("button", { class: "btn btn--primary", onClick: () => { quickBuild(); showToast("Rolled a complete Blade Runner — check it over, then press Create Blade Runner."); rerender(); } }, "⚄ Roll me a whole Blade Runner")));
   body.append(el("p", { class: "muted" }, "Replicants are stronger and tougher (+2 Health) but less stable (−2 Resolve), all rookies, and start with fewer points. Humans are the baseline."));
   for (const key of ["human", "replicant"]) {
     const n = D.NATURES[key];
@@ -383,7 +383,8 @@ function finish() {
   Store.setActiveId(saved.id);
   draft = newDraft();
   showToast(`${saved.name} created — Promotion ${promotion}, Chinyen ${chinyen}.`, { kind: "info", timeout: 4200 });
-  navigate("home");
+  // Land on the thing you just made, not back at Home.  [reachability R7]
+  navigate("sheet");
 }
 
 // ---- shared UI bits -------------------------------------------------------

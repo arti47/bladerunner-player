@@ -193,13 +193,9 @@ test("outcomeSummary spelling + pluralization (roll-log text)", () => {
   for (const n of [0, 1, 2, 3]) assert.ok(!core.outcomeSummary(n, 0).includes("succes "), "no 'succes' typo");
 });
 
-test("rollDie stays within range; rollDice reports successes + banes", () => {
+test("rollDie stays within range", () => {
   for (const size of core.DIE_SIZES)
     for (let i = 0; i < 500; i++) { const f = core.rollDie(size); assert.ok(f >= 1 && f <= size, `d${size} rolled ${f}`); }
-  // deterministic dice via successesFor over a synthetic pool
-  const dice = [{ size: 12, face: 10, successes: core.successesFor(10), isBane: false }, { size: 6, face: 1, successes: 0, isBane: true }];
-  assert.equal(core.totalSuccesses(dice), 2);
-  assert.equal(core.totalBanes(dice), 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -253,8 +249,7 @@ test("reclampVitals clamps to current maxima", () => {
 // Creation legality (rules.js)  [§3.2, §3.4, §3.5]
 // ---------------------------------------------------------------------------
 test("level helpers round-trip", () => {
-  for (const lv of D.LEVELS) assert.equal(R.valueLevel(R.levelValue(lv)), lv);
-  assert.equal(R.dieForLevel("B"), 10);
+  assert.equal(R.dieSizeForLevel("B"), 10);
   assert.equal(R.stepLevel("C", +1), "B");   // improve
   assert.equal(R.stepLevel("C", -1), "D");   // worsen
   assert.equal(R.stepLevel("A", +1), "A");   // capped

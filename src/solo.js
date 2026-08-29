@@ -32,13 +32,13 @@ const LOG_CAP = 50;
 const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
 const LOOSE = "__panel";    // bucket for rolls fired outside any card
 const SEGMENTS = [
-  { key: "case", label: "Case" },
-  { key: "shift", label: "Shift" },
-  { key: "scene", label: "Scene" },
-  { key: "board", label: "Board" },
-  { key: "leads", label: "Leads" },
-  { key: "wrap", label: "Wrap" },
-  { key: "notes", label: "Notes" },
+  { key: "case", label: "Case", hint: "open a new case file" },
+  { key: "shift", label: "Shift", hint: "travel to a location and check the countdown" },
+  { key: "scene", label: "Scene", hint: "play the scene and roll the dice" },
+  { key: "board", label: "Board", hint: "the clue and suspect board" },
+  { key: "leads", label: "Leads", hint: "your theories and how you test them" },
+  { key: "wrap", label: "Wrap", hint: "end the shift and take your points" },
+  { key: "notes", label: "Notes", hint: "the case log and every roll" },
 ];
 // Panels renamed when the assistant was re-ordered to the book's procedure.
 const LEGACY_PANELS = { start: "case", track: "leads", session: "wrap" };
@@ -523,7 +523,7 @@ export function renderSolo(mount, rerender) {
             el("div", { class: "roll-eyebrow" }, "Human or Replicant"), el("p", { class: "muted" }, `${nat.result} — ${nat.detail}`)) });
       }, "primary"),
       btn("🎲 Where it starts", () => { const e = rollColumn(S.LOCATION_ENVIRONMENT), p2 = rollColumn(S.LOCATION_PLACE); show({ label: "Location", text: `${e.entry} ${p2.entry}`, pin: `[Location] ${e.entry} ${p2.entry}`, title: "Where it starts", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${e.entry} ${p2.entry}`), el("p", { class: "muted roll-center" }, `Environment D6=${e.d6}/D12=${e.d}  |  Place D6=${p2.d6}/D12=${p2.d}`)) }); }),
-      btn("🎲 Cipher", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher — interpret it", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })));
+      btnNamed("🎲 Cipher", "Roll the Cipher oracle — two words to interpret", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher — interpret it", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })));
 
     const sectorSelect = el("select", { class: "input roll-select" });
     GM.CASE_SECTOR.forEach((x) => sectorSelect.append(el("option", { value: x.sector, selected: x.sector === st.selectedSector || null }, x.sector)));
@@ -677,7 +677,7 @@ export function renderSolo(mount, rerender) {
           show({ label: "Question", text: `${d} · ${res.result}`, pin: `[Question] ${res.result}`, title: `Question Check — ${d} (D10)`, render: (b) => { b.append(el("h3", { class: "roll-result" }, res.result)); if (res.detail) b.append(el("p", { class: "muted" }, res.detail)); } });
         }),
         btn("🎲 Crit Success (D8)", () => { const roll = rollDie(8); const res = S.CRITICAL_SUCCESS[roll - 1]; show({ label: "Crit Success", text: res.name, pin: `[Crit Success] ${res.name} — ${res.bonus}`, title: `Critical Success — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res.name), el("p", {}, res.text), el("div", { class: "roll-eyebrow" }, "Bonus"), el("p", { class: "muted" }, res.bonus)) }); }),
-        btn("🎲 Cipher", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher Oracle", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })),
+        btnNamed("🎲 Cipher", "Roll the Cipher oracle — two words to interpret", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher Oracle", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })),
       el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Question odds:"), oddsSelect),
       el("p", { class: "muted roll-note" }, S.QUESTION_ODDS_NOTE),
       rollHere()));
@@ -870,7 +870,7 @@ export function renderSolo(mount, rerender) {
       class: "chip" + (scope === key ? " chip--on" : ""),
       onClick: () => { st.logScope = key; writeSoloState(st); rerender(); },
     }, label);
-    root.append(rollLogCard({
+    root.append(rollLogCard({ emptyHint: "Roll a table on Scene and results collect here.",
       entries,
       title: scope === "all" ? "Roll Log — every roll" : "Roll Log — solo oracle",
       pinLabel: "Pin to case notes",
@@ -937,6 +937,14 @@ function card(title, sub, ...children) {
   return c;
 }
 function grid(...children) { return el("div", { class: "roll-grid" }, ...children.filter(Boolean)); }
+// A button whose visible label is a term of art gets a spoken name that also
+// says what it does. The accessible name still contains the visible label.
+function btnNamed(label, spoken, onClick, variant = "roll") {
+  const b = btn(label, onClick, variant);
+  b.setAttribute("aria-label", spoken);
+  b.title = spoken;
+  return b;
+}
 function btn(label, onClick, variant = "roll") {
   const cls = "btn " + variant.split(" ").map((v) => (v === "roll" ? "btn--roll" : v === "primary" ? "btn--primary" : v === "ghost" ? "btn--ghost" : v === "sm" ? "btn--sm" : "")).join(" ");
   // Record the button so a result raised by this click knows which card it

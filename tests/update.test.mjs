@@ -10,6 +10,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { announceSkip } from "./harness.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
@@ -47,12 +48,12 @@ before(async () => {
   ({ server, base } = await startServer());
   let chromium;
   try { ({ chromium } = await import("playwright-core")); }
-  catch { unavailable = "playwright-core is not installed"; return; }
+  catch { unavailable = "playwright-core is not installed"; announceSkip("service-worker update suite", unavailable, 2); return; }
   for (const executablePath of [...browserPaths(), null]) {
     try { browser = await chromium.launch(executablePath ? { executablePath, headless: true } : { channel: "chrome", headless: true }); break; }
     catch { /* try the next candidate */ }
   }
-  if (!browser) unavailable = "no browser available";
+  if (!browser) { unavailable = "no browser available"; announceSkip("service-worker update suite", unavailable, 2); }
 });
 
 after(async () => { if (browser) await browser.close(); if (server) server.close(); });
