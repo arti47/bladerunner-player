@@ -26,6 +26,7 @@ import { applyInvestigationShift, applyDowntimeShift, downtimeLimitFor, maxHealt
 import { openSkillRoll, openWeaponPicker, openOpposedSkillRoll } from "./roller.js";
 import { navigate } from "./router.js";
 import { Board, renderBoardPanel } from "./board.js";
+import { renderPlayPanel } from "./play.js";
 import { Chase } from "./chase.js";
 
 const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo state,
@@ -34,6 +35,7 @@ const LOG_CAP = 50;
 const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
 const LOOSE = "__panel";    // bucket for rolls fired outside any card
 const SEGMENTS = [
+  { key: "play", label: "▶ Play", hint: "guided play — one question at a time" },
   { key: "case", label: "Case", hint: "open a new case file" },
   { key: "shift", label: "Shift", hint: "travel to a location and check the countdown" },
   { key: "scene", label: "Scene", hint: "play the scene and roll the dice" },
@@ -47,14 +49,14 @@ const LEGACY_PANELS = { start: "case", track: "leads", session: "wrap" };
 
 function readSoloState() {
   const base = { timerDie: "D6", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {},
-    log: [], panel: "case", scratchpad: "", shiftNo: 1, shiftFlags: {}, selectedTheme: null,
+    log: [], panel: "play", scratchpad: "", shiftNo: 1, shiftFlags: {}, selectedTheme: null,
     pendingEvent: null, lastSkill: null, caseOpen: null };
   try {
     const raw = localStorage.getItem(SOLO_KEY);
     if (raw) {
       const st = { ...base, ...JSON.parse(raw) };
       st.panel = LEGACY_PANELS[st.panel] || st.panel;
-      if (!SEGMENTS.some((s) => s.key === st.panel)) st.panel = "case";
+      if (!SEGMENTS.some((s) => s.key === st.panel)) st.panel = "play";
       st.shiftFlags = st.shiftFlags || {};
       return st;
     }
@@ -287,14 +289,19 @@ export function renderSolo(mount, rerender) {
 
   // Closing writes a case file that survives everything, so a campaign leaves a
   // record instead of the case simply being deleted.
-  async function closeCase() {
+  async function closeCase(known = null) {
     const c = st.caseOpen;
     if (!c) return;
-    const suspect = boardCulprit() || (st.hypotheses[0]?.text || "");
-    const culprit = await promptModal("Who did it, or what was the answer?", { title: `Close case #${c.no}`, value: suspect, okLabel: "Next" });
-    if (culprit === null) return;
-    const outcome = await promptModal("How did it end? (one line — retirement, arrest, a deal, a dead end)", { title: `Close case #${c.no}`, okLabel: "Close the case" });
-    if (outcome === null) return;
+    let culprit = known?.culprit, outcome = known?.outcome;
+    if (culprit == null) {
+      const suspect = boardCulprit() || (st.hypotheses[0]?.text || "");
+      culprit = await promptModal("Who did it, or what was the answer?", { title: `Close case #${c.no}`, value: suspect, okLabel: "Next" });
+      if (culprit === null) return;
+    }
+    if (outcome == null) {
+      outcome = await promptModal("How did it end? (one line — retirement, arrest, a deal, a dead end)", { title: `Close case #${c.no}`, okLabel: "Close the case" });
+      if (outcome === null) return;
+    }
 
     const ch = Store.getActive();
     const shifts = st.shiftNo || 1;
@@ -439,7 +446,7 @@ export function renderSolo(mount, rerender) {
   const doneChip = (key) => (flagged(key) ? el("span", { class: "chip chip--done" }, "✓ done this Shift") : null);
 
   const panel = el("div", { class: "panel" });
-  ({ case: panelCase, shift: panelShift, scene: panelScene, board: panelBoard, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
+  ({ play: panelPlay, case: panelCase, shift: panelShift, scene: panelScene, board: panelBoard, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
   paintResults(panel);
   mount.append(panel);
 
@@ -696,12 +703,6 @@ export function renderSolo(mount, rerender) {
     root.append(el("div", { class: "btn-row" }, btn("Briefed — start the first Shift →", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
 
     // Case Table 3: D8 type, then D6 each for occupation, quirk, and both names.
-    function rollMainNpc() {
-      const t = GM.CASE_MAIN_NPCS[rollDie(8) - 1];
-      return { type: t.type, occ: t.occupation[rollDie(6) - 1], quirk: t.quirk[rollDie(6) - 1],
-        name: `${t.firstName[rollDie(6) - 1]} ${t.lastName[rollDie(6) - 1]}` };
-    }
-
     // Closed cases, newest first. Never wiped by "Start a fresh case".
     const filed = Cases.read().files;
     if (filed.length) {
@@ -892,6 +893,35 @@ export function renderSolo(mount, rerender) {
       el("div", { class: "btn-row" }, btn("Combat Tracker \u2192", () => navigate("combat"), "sm ghost"))));
 
     root.append(el("div", { class: "btn-row" }, btn("Scenes done \u2014 review the leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); }, "primary")));
+  }
+
+  // ---- PLAY: the guided loop, for someone who has read nothing ------------
+  function panelPlay(root) {
+    renderPlayPanel(root, {
+      card, btn, st, rerender, navigate,
+      save: () => writeSoloState(st),
+      openCase, closeCase, applyPoints, addNote, pin: pinNote, pinNote,
+      rollBriefing, rollMainNpc,
+      endShift: () => {
+        const ch = Store.getActive();
+        if (ch) { applyInvestigationShift(ch); Store.save(ch); }
+        st.shiftNo = (st.shiftNo || 1) + 1;
+        st.shiftFlags = {};
+        writeSoloState(st);
+      },
+    });
+    root.append(el("p", { class: "muted small play__escape" },
+      "Every other tab is still here if you want the tables themselves — this one just picks for you."));
+  }
+
+  // The Solo briefing, rolled as one block and written to the notes.
+  function rollBriefing() {
+    const g = rollDie(6) <= 3 ? 0 : 1, d = rollDie(10);
+    const assignment = S.CASE_BRIEFING.assignment[g * 10 + (d - 1)];
+    const relevance = pick(S.CASE_BRIEFING.relevance), complication = pick(S.CASE_BRIEFING.complication), hook = pick(S.CASE_BRIEFING.hook);
+    st.scratchpad = appendToNotes(st.scratchpad, `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${assignment}\n• Relevance: ${relevance}\n• Complication: ${complication}\n• Personal Hook: ${hook}`);
+    writeSoloState(st);
+    return { assignment, relevance, complication, hook };
   }
 
   // ---- BOARD: a house aid, not part of the printing -----------------------
@@ -1090,6 +1120,7 @@ export function renderSolo(mount, rerender) {
         st.timerDie = S.ESCALATION_STEPS[0];
         st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null; st.pendingEvent = null;
         st.caseOpen = null;              // closed case FILES live in brp:cases and survive
+        st.play = null;                  // the guided loop starts over with the case
         st.panel = "case";              // a new case starts on the Case tab
         // Everything else this case wrote outside the solo screen.
         RollLog.clear();                // the global log, shown here, on the sheet and on Home
@@ -1103,6 +1134,14 @@ export function renderSolo(mount, rerender) {
     root.append(c);
     root.append(el("div", { class: "btn-row" }, btn("Back to the case \u2014 next Shift \u2192", () => { st.panel = "shift"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
   }
+}
+
+// Case Table 3 (Main NPCs) — a named person with an occupation and a quirk.
+// Shared: the Case tab rolls it, and guided play names its suspects with it.
+function rollMainNpc() {
+  const t = GM.CASE_MAIN_NPCS[rollDie(8) - 1];
+  return { type: t.type, occ: t.occupation[rollDie(6) - 1], quirk: t.quirk[rollDie(6) - 1],
+    name: `${t.firstName[rollDie(6) - 1]} ${t.lastName[rollDie(6) - 1]}` };
 }
 
 // ---- small builders -------------------------------------------------------

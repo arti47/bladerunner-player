@@ -1028,6 +1028,107 @@ test("roll logs read top to bottom too — newest entry is last", async (t) => {
 // Scene -> Leads -> Wrap -> Notes, and the two things that OPEN a Shift
 // (proceed to a location, then the Countdown Event Check) sit together on the
 // Shift panel, in that order.
+// Guided play is the answer to "I still don't know how to start". It must run a
+// whole case — brief, travel, search, find, accuse, close — with nothing on
+// screen but one question and a few concrete answers.
+test("guided play runs a whole case with one question at a time", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  let n = 0;
+  const go = async () => { await page.goto(`${base}/index.html?gp${++n}#solo`, { waitUntil: "load" }); await page.waitForTimeout(300); };
+  const choices = () => page.$$eval(".play__choices .btn", (e) => e.map((x) => x.textContent.trim()));
+  const cardText = () => page.$eval(".panel .card", (e) => e.textContent.replace(/\s+/g, " "));
+
+  await go();
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: false }));
+    localStorage.removeItem("brp:cases"); localStorage.removeItem("brp:solo");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Kaz", nature: "human", archetype: "analyst", years: "seasoned", attributes: { STR: "C", AGI: "C", INT: "A", EMP: "B" } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await go();
+
+  // Play is the first tab and the default — a lazy user lands in it.
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "▶ Play");
+  assert.deepEqual(await choices(), ["▶ Get me a case"], "with no case, there is exactly one thing to press");
+
+  await page.getByRole("button", { name: /Get me a case/ }).click();
+  await page.waitForTimeout(250);
+  await page.fill(".modal input", "Ghosts of Sector 4");
+  await page.locator(".modal").getByRole("button", { name: /Take the case|^OK$/ }).click();
+  await page.waitForTimeout(350);
+
+  // Where do you go: three real places, and a way to name your own.
+  let opts = await choices();
+  assert.equal(opts.filter((o) => o.startsWith("📍")).length, 3, `three places offered: ${opts}`);
+  assert.ok(opts.some((o) => /Somewhere else/.test(o)));
+  await page.locator(".play__choices .btn").first().click();
+  await page.waitForTimeout(300);
+  assert.deepEqual(await choices(), ["Go in →"], "arriving is one press");
+  await page.getByRole("button", { name: "Go in →" }).click();
+  await page.waitForTimeout(300);
+
+  // At the location: four concrete things a detective does.
+  opts = await choices();
+  for (const verb of ["Look the place over", "Examine something closely", "Talk to whoever is here", "Put the word out"])
+    assert.ok(opts.some((o) => o.includes(verb)), `offers "${verb}": ${opts}`);
+  assert.match(await cardText(), /Health \d+\/\d+/, "and shows the state you are in");
+
+  // A success hands you something already interpreted, and files it for you.
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: /Look the place over/ }).click();
+  await page.waitForTimeout(250);
+  assert.match(await cardText(), /You find something/);
+  await page.getByRole("button", { name: /Write it down/ }).click();
+  await page.waitForTimeout(250);
+  const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.match(notes, /• Clue:/, "the find is written into the case notes without being asked");
+
+  // People get real names off the Core table, not a trait blob.
+  await page.getByRole("button", { name: /Talk to whoever is here/ }).click();
+  await page.waitForTimeout(220);
+  await page.getByRole("button", { name: /Write it down/ }).click();
+  await page.waitForTimeout(250);
+  const suspect = (await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).play.suspects))[0];
+  assert.match(suspect.name, /^\S+ \S+/, `a suspect has a name: ${suspect.name}`);
+
+  // A failure offers the push, in plain words, and the cost lands.
+  await page.evaluate(() => { Math.random = () => 0; });
+  await page.getByRole("button", { name: /Examine something closely/ }).click();
+  await page.waitForTimeout(250);
+  assert.ok((await choices()).some((c) => /Push yourself/.test(c)), "a failed roll offers the push");
+  const before = await page.evaluate(async () => { const { Store } = await import("/src/store.js"); return Store.getActive().state.resolve; });
+  await page.getByRole("button", { name: /Push yourself/ }).click();
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(async () => { const { Store } = await import("/src/store.js"); return Store.getActive().state.resolve; });
+  assert.ok(after < before, `pushing an Intelligence roll costs Resolve: ${before} → ${after}`);
+  await page.getByRole("button", { name: /Let it go/ }).click();
+  await page.waitForTimeout(250);
+
+  // Accusing runs the book's own Hypothesis Check and pays out.
+  await page.evaluate(() => { Math.random = () => 0.999; });
+  await page.getByRole("button", { name: /I think .* did it/ }).click();
+  await page.waitForTimeout(250);
+  assert.match(await cardText(), /piece.? of evidence pointing their way/);
+  await page.getByRole("button", { name: /Put it to the test/ }).click();
+  await page.waitForTimeout(300);
+  assert.match(await cardText(), /Case closed/);
+  const pp = await page.evaluate(async () => { const { Store } = await import("/src/store.js"); return Store.getActive().state.promotionPoints; });
+  assert.ok(pp > 0, "solving it paid Promotion Points");
+
+  // Closing files the case and offers the next one.
+  await page.getByRole("button", { name: /File it and take the next case/ }).click();
+  await page.waitForTimeout(400);
+  const filed = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:cases")).files);
+  assert.equal(filed.length, 1);
+  assert.equal(filed[0].title, "Ghosts of Sector 4");
+  assert.ok(filed[0].culprit, "with the culprit you named");
+  assert.deepEqual(await choices(), ["▶ Get me a case"], "and hands you a fresh one");
+
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+});
+
 // A case has to have a beginning, a middle and an end. Before this, the only
 // way to finish one was "Start a fresh case", which DELETED it.
 test("a solo case can be opened, resumed, closed, and filed", async (t) => {
@@ -1463,7 +1564,7 @@ test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.
   await page.waitForTimeout(200);
 
   const pills = await page.$$eval(".segnav__pill", (els) => els.map((e) => e.textContent.trim()));
-  assert.deepEqual(pills, ["Case", "Shift", "Scene", "Board", "Leads", "Wrap", "Notes"],
+  assert.deepEqual(pills, ["▶ Play", "Case", "Shift", "Scene", "Board", "Leads", "Wrap", "Notes"],
     "the house-aid Board sits between the scene that finds evidence and the leads it feeds");
   // a legacy panel key migrates instead of falling back to the first panel
   const active = await page.$eval(".segnav__pill--on", (e) => e.textContent.trim());
@@ -1882,22 +1983,28 @@ test("a first-timer is walked from a cold launch to a playable character", async
   await page.goto(`${base}/index.html?newbie2#home`, { waitUntil: "load" });
   await page.waitForTimeout(300);
 
-  // 1 — the Start-here card, with its steps in order
+  // 1 — one press does the whole cold start: Solo Mode on, and off to the wizard
+  //     because there is no character yet. Nothing to read first.
+  await page.click('.start .btn:text-is("▶ Just start playing")');
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:settings")).solo), true,
+    "the one-press start turns Solo Mode on for you");
+  const tabs = await page.$$eval("#nav .nav__btn", (els) => els.map((e) => e.getAttribute("aria-label")));
+  assert.ok(tabs.includes("Solo"), `the Solo tab appears straight away: ${tabs.join(",")}`);
+  assert.equal(await page.evaluate(() => location.hash), "#wizard", "and sends you to make a detective");
+
+  // …and the manual route is still there for anyone who wants it
+  await page.goto(`${base}/index.html?newbie3#home`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => document.querySelectorAll(".start details").forEach((d) => (d.open = true)));
   const steps = await page.$$eval(".start__step .start__title", (els) => els.map((e) => e.textContent));
-  assert.equal(steps.length, 3, `expected three first-run steps, got ${steps.join(" | ")}`);
+  assert.equal(steps.length, 3, `expected three manual steps, got ${steps.join(" | ")}`);
   assert.match(steps[0], /walkthrough|How to Play/i);
   assert.match(steps[1], /Solo Mode/i);
   assert.match(steps[2], /Create/i);
 
-  // 2 — pressing step 2 turns Solo Mode on AND surfaces the Solo tab
-  await page.click(".start__step:nth-child(2) .btn");
-  await page.waitForTimeout(300);
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:settings")).solo), true);
-  const tabs = await page.$$eval("#nav .nav__btn", (els) => els.map((e) => e.getAttribute("aria-label")));
-  assert.ok(tabs.includes("Solo"), `the Solo tab appears straight away: ${tabs.join(",")}`);
-
-  // 3 — the wizard can build the whole character for you, legally
-  await page.click(".start__step:nth-child(3) .btn");
+  // 2 — the wizard can build the whole character for you, legally
+  await page.goto(`${base}/index.html?newbie4#wizard`, { waitUntil: "load" });
   await page.waitForTimeout(300);
   await page.click(".quickbuild .btn");
   await page.waitForTimeout(400);

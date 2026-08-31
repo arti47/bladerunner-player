@@ -551,6 +551,12 @@ textarea.input { resize: vertical; font-family: inherit; }
 .solo-method { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; justify-content: space-between; padding: .35rem 0; border-top: 1px solid var(--line); }
 .solo-method:first-of-type { border-top: 0; }
 .rolllog__scope { padding: .1rem .6rem .4rem; }
+/* Guided play: one card, big readable prose, one column of choices. */
+.play__prose { font-size: 1.02rem; line-height: 1.55; margin: .5rem 0; }
+.play__choices { display: grid; gap: .45rem; margin: .8rem 0 .3rem; }
+.play__choices .btn { width: 100%; justify-content: flex-start; text-align: left; padding: .7rem .8rem; }
+.play__escape { margin-top: .6rem; text-align: center; }
+
 /* Solo: the first-case on-ramp and the closed-case archive. */
 .solo-onramp { margin: .4rem 0 .2rem; padding-left: 1.2rem; display: grid; gap: .45rem; }
 .solo-onramp li { line-height: 1.45; }

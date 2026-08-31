@@ -38,7 +38,7 @@ const SURFACES = [
   { id: "sheet", route: "sheet" },
   { id: "combat", route: "combat" },
   { id: "settings", route: "settings" },
-  ...["case", "shift", "scene", "board", "leads", "wrap", "notes"].map((p) => ({ id: `solo/${p}`, route: "solo", seed: { "brp:solo": { panel: p } } })),
+  ...["play", "case", "shift", "scene", "board", "leads", "wrap", "notes"].map((p) => ({ id: `solo/${p}`, route: "solo", seed: { "brp:solo": { panel: p } } })),
   ...["prep", "play", "fight", "wrap", "notes"].map((p) => ({ id: `gm/${p}`, route: "gm", seed: { "brp:gm": { panel: p } } })),
   ...["basics", "setup", "solo", "board", "table", "reference"].map((p) => ({ id: `tutorial/${p}`, route: "tutorial", seedRaw: { "brp:tutorial": p } })),
 ];
@@ -308,21 +308,23 @@ async function coldStart() {
   await page.waitForTimeout(260);
   const trail = [];
   const clickByText = async (re) => {
-    const b = page.locator("#screen button, #screen a", { hasText: re }).first();
+    // Only a VISIBLE control counts: a match inside a collapsed section is not
+    // something a cold user can press.
+    const b = page.locator("#screen button:visible, #screen a:visible", { hasText: re }).first();
     if (!(await b.count())) return false;
     trail.push((await b.textContent()).trim().slice(0, 30));
     await b.click(); await page.waitForTimeout(320);
     return true;
   };
   // Home must offer a way to make a character without typing a URL.
-  if (!(await clickByText(/create|new blade runner|start here|wizard/i))) {
+  if (!(await clickByText(/just start playing|create|new blade runner|wizard/i))) {
     add("R7", "cold start", "Home offers no control that leads to creating a character");
     return;
   }
   if (!(await clickByText(/roll me a whole|quick|random/i))) {
     add("R7", "cold start", "the wizard offers no one-click build for someone with no rules knowledge");
   }
-  const finish = page.locator("#screen .btn--primary").last();
+  const finish = page.locator("#screen .btn--primary:visible").last();
   if (!(await finish.count())) {
     add("R7", "cold start", `the wizard's final step offers no primary action; trail: ${trail.join(" → ")}`);
     return;

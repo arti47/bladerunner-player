@@ -43,7 +43,7 @@ export function renderHome(mount) {
       tile("How to Play", "Solo & table tutorial", () => navigate("tutorial")),
       tile("Rules Library", "Searchable reference", () => navigate("rules")),
       tile("Combat Tracker", "Initiative & vitals", () => navigate("combat")),
-      Settings.solo() ? tile("Solo Mode", "Play on your own", () => navigate("solo")) : null,
+      Settings.solo() ? tile("▶ Play", "Guided solo — one question at a time", () => navigate("solo")) : null,
       Settings.gm() ? tile("GM Screen", "Run the table", () => navigate("gm")) : null,
       tile("Settings", "Theme & toggles", () => navigate("settings")),
     ),
@@ -76,15 +76,26 @@ function startHereCard(chars, rerender) {
   return el("div", { class: "card card--active start" },
     el("div", { class: "card__eyebrow" }, "New here?"),
     el("div", { class: "card__title" }, "Start here"),
-    el("p", { class: "muted" }, "You don't need to have read the rulebook, or to have played a solo roleplaying game before. Three steps, in this order:"),
-    el("ol", { class: "start__list" },
-      step(1, "Read the 10-minute walkthrough", "How to Play explains the whole loop — what to press, and when.", "Open How to Play", () => navigate("tutorial")),
-      step(2, "Playing on your own? Turn on Solo Mode", "It adds a Solo tab that takes the Game Runner's job: dice answer your questions.",
-        solo ? "Solo Mode is on" : "Turn on Solo Mode",
-        // navigate() re-renders through the router, so the Solo tab appears in
-        // the bottom nav immediately — a local rerender would only redraw Home.
-        () => { Settings.set("solo", !solo); showToast(solo ? "Solo Mode off." : "Solo Mode on — see the Solo tab."); navigate("home"); }, solo),
-      step(3, "Create a Blade Runner", "The wizard walks it; every step can be rolled for you if you'd rather not choose.", "Create a Blade Runner", () => navigate("wizard"))),
+    el("p", { class: "muted" }, "You don't need the rulebook, and you don't need to have played one of these before. One button: the app turns on what it needs, rolls you a detective if you have none, and then asks you one question at a time."),
+    el("div", { class: "btn-row" },
+      el("button", { class: "btn btn--primary", onClick: () => {
+        // The whole cold start, in one press: solo on, a detective, then play.
+        if (!solo) Settings.set("solo", true);
+        if (!Store.getActive()) { showToast("Roll a detective — then press ▶ Play in the Solo tab."); navigate("wizard"); return; }
+        try { const st = JSON.parse(localStorage.getItem("brp:solo") || "{}"); st.panel = "play"; localStorage.setItem("brp:solo", JSON.stringify(st)); } catch {}
+        navigate("solo");
+      } }, "▶ Just start playing")),
+    el("p", { class: "muted small" }, "It walks you through a whole case — where to go, what to do there, what you found, and how it ends. Nothing to read first."),
+    el("details", { class: "rules__group" },
+      el("summary", {}, "I'd rather set it up myself"),
+      el("ol", { class: "start__list" },
+        step(1, "Read the walkthrough", "How to Play explains the whole loop — what to press, and when.", "Open How to Play", () => navigate("tutorial")),
+        step(2, "Playing on your own? Turn on Solo Mode", "It adds a Solo tab that takes the Game Runner's job: dice answer your questions.",
+          solo ? "Solo Mode is on" : "Turn on Solo Mode",
+          // navigate() re-renders through the router, so the Solo tab appears in
+          // the bottom nav immediately — a local rerender would only redraw Home.
+          () => { Settings.set("solo", !solo); showToast(solo ? "Solo Mode off." : "Solo Mode on — see the Solo tab."); navigate("home"); }, solo),
+        step(3, "Create a Blade Runner", "The wizard walks it; every step can be rolled for you if you'd rather not choose.", "Create a Blade Runner", () => navigate("wizard")))),
     el("button", { class: "btn btn--ghost btn--sm", onClick: () => { try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {} rerender(); } }, "Hide this"));
 }
 const archLabel = (key) => (key ? (D.ARCHETYPES.find((a) => a.key === key)?.name || titleCase(key)) : "No archetype");
