@@ -20,7 +20,7 @@ import { navigate } from "./router.js";
 const GM_KEY = "brp:gm";
 const LOG_CAP = 50;
 const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
-const LOOSE = "__panel";    // bucket for rolls fired outside any card
+const LOOSE_PREFIX = "__panel";   // bucket for rolls fired outside any card — one per tab
 const MANUAL_CONDITIONS = D.CONDITIONS.filter((c) => !c.key.startsWith("broken"));
 // Panels follow the arc of a session: prep the case, run it, fight, wrap up.
 const SEGMENTS = [
@@ -104,6 +104,10 @@ export function renderGm(mount, rerender) {
     try { RollLog.add({ label, text, source: "gm" }); } catch {}
     rerender();
   };
+  // One loose bucket per tab: a roll fired from a dialog used to hang its result
+  // on EVERY panel, since they all read the same key. [playtest audit, solo.js]
+  const loose = () => `${LOOSE_PREFIX}:${st.panel || "prep"}`;
+  if (st.results && st.results[LOOSE_PREFIX]) { delete st.results[LOOSE_PREFIX]; writeGmState(st); }
   // Notes read top to bottom — the newest entry lands at the bottom.
   const pinNote = (line) => { st.scratchpad = appendToNotes(st.scratchpad, `• ${line}`); writeGmState(st); showToast("Pinned to the end of your notes."); rerender(); };
   // A roll writes its result into the card that produced it (and the roll log).
@@ -111,7 +115,7 @@ export function renderGm(mount, rerender) {
     const pinLine = pin || `[${label}] ${text}`;
     // A roll fired from outside a card (a bare <details>, a stray row) still has
     // to show its result — park it on the panel rather than vanishing into a toast.
-    const key = slot || cardTitleOf(activeBtn) || LOOSE;
+    const key = slot || cardTitleOf(activeBtn) || loose();
     if (key) {
       st.results = st.results || {};
       const list = resultList(key);
@@ -195,16 +199,16 @@ export function renderGm(mount, rerender) {
       });
     }
     // Results with no owning card hang at the end of the panel.
-    for (const r of resultList(LOOSE)) {
+    for (const r of resultList(loose())) {
       live += 1;
       panelEl.append(resultSlot({ title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts, onPin: pinNote,
-        onDismiss: () => { st.results[LOOSE] = resultList(LOOSE).filter((x) => x.id !== r.id); if (!st.results[LOOSE].length) delete st.results[LOOSE]; writeGmState(st); rerender(); } }));
+        onDismiss: () => { st.results[loose()] = resultList(loose()).filter((x) => x.id !== r.id); if (!st.results[loose()].length) delete st.results[loose()]; writeGmState(st); rerender(); } }));
     }
     if (!live) return;
     const shown = [...panelEl.querySelectorAll(".card")]
       .map((c) => c.querySelector(".sheet__section")?.textContent)
       .filter((k) => k && resultList(k).length)
-      .concat(resultList(LOOSE).length ? [LOOSE] : []);
+      .concat(resultList(loose()).length ? [loose()] : []);
     panelEl.append(el("div", { class: "btn-row result-clear" },
       btn(`\u2715 Clear ${live === 1 ? "this result" : "these " + live + " results"}`, () => {
         for (const key of shown) delete st.results[key];

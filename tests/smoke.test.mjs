@@ -2523,3 +2523,52 @@ test("a Replicant at 0 Promotion Points is told a Baseline Test is due", async (
   await page.waitForTimeout(300);
   assert.ok(await page.locator('select[aria-label*="Question odds"]').count(), "the odds select is named");
 });
+
+// The two bugs the 2026-09-09 fix pass turned up while closing the 15 findings.
+
+// `openCombatSkillExecute` rendered its result with `nextSteps(ch, …)` and had no
+// `ch` in scope — a ReferenceError on every skill roll made from the tracker.
+test("a tracker skill roll renders its result (no undefined character)", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const before = consoleErrors.length;
+  await page.goto(`${base}/index.html?tskill#combat`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Combat } = await import("/src/store.js");
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "n1", kind: "npc", npcKey: "street_thug", name: "Street Thug", health: 5, maxHealth: 5, card: 1, conditions: {}, criticalInjuries: [] },
+    ] });
+  });
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.locator(".combatant").first().locator('.btn:text-is("🎲 Skill")').click();
+  await page.waitForTimeout(250);
+  await page.click('.list__row:has-text("Observation")');
+  await page.waitForTimeout(250);
+  await page.click('.modal .btn:text-is("⚄ Roll")');
+  await page.waitForTimeout(300);
+  const res = await page.$eval(".modal", (n) => n.textContent);
+  assert.match(res, /Success|Failure/, `the roll result renders: ${res.slice(0, 120)}`);
+  assert.equal(consoleErrors.length, before, `no console error from the result render: ${consoleErrors.slice(before).join(" | ")}`);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => localStorage.removeItem("brp:combat"));
+});
+
+// The GM screen carried the same single loose bucket the Solo screen did.
+test("a GM result with no owning card stays on the tab that rolled it", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?gmloose#gm`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ gm: true }));
+    localStorage.setItem("brp:gm", JSON.stringify({ panel: "prep", scratchpad: "", log: [],
+      results: { "__panel:prep": [{ id: "g1", title: "LOOSE ROLL", html: "<p>rolled from a dialog</p>", pinLine: "[X] y", ts: Date.now() }] } }));
+  });
+  await page.goto(`${base}/index.html?gmloose2#gm`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  const slots = () => page.$$eval(".panel .result-slot", (n) => n.map((x) => x.textContent));
+  assert.ok((await slots()).some((s) => /rolled from a dialog/.test(s)), "the result shows on the tab that rolled it");
+  for (const tab of ["Play", "Fight", "Wrap"]) {
+    await page.locator(`.segnav__pill:text-is("${tab}")`).first().click();
+    await page.waitForTimeout(250);
+    assert.ok(!(await slots()).some((s) => /rolled from a dialog/.test(s)), `${tab} must not carry Prep's loose result`);
+  }
+});
