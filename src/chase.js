@@ -8,6 +8,9 @@ import * as D from "../data.js";
 import { showToast, sectionTitle, resultSlot, renderToHtml, modal } from "./ui.js";
 import { RollLog, Store } from "./store.js";
 import { openSkillRoll, proceduralRoll, openWeaponPicker } from "./roller.js";
+import * as S from "../data-solo.js";
+import { lookupRange } from "./rules.js";
+import { Settings } from "./settings.js";
 
 const KEY = STORAGE_PREFIX + "chase";
 const ENVIRONMENTS = [
@@ -29,7 +32,7 @@ export const Chase = {
 };
 function blank() {
   return { active: false, env: "foot", round: 1, distIdx: RANGE_KEYS.indexOf("short"), obstacle: null, prey: null, pursuer: null,
-    vehicles: { prey: null, pursuer: null }, hull: { prey: null, pursuer: null }, log: [] };
+    npcManeuver: null, vehicles: { prey: null, pursuer: null }, hull: { prey: null, pursuer: null }, log: [] };
 }
 const vehicle = (key) => D.VEHICLES.find((v) => v.key === key) || null;
 const SIDES = [["prey", "Prey"], ["pursuer", "Pursuer"]];
@@ -68,11 +71,18 @@ export function renderChaseCard(rerender) {
   // 1 — maneuvers (both sides choose; the app just records the choice)
   const maneuverRow = (side) => {
     const legal = D.CHASE.maneuvers.filter((m) => m.who === "both" || m.who === side);
-    return el("div", { class: "field" },
+    const row = el("div", { class: "field" },
       el("label", { class: "field__label" }, side === "prey" ? "Prey maneuver" : "Pursuer maneuver"),
       el("div", { class: "chips" }, ...legal.map((m) =>
         el("button", { class: "chip" + (st[side] === m.name ? " chip--on" : ""), title: m.text,
           onClick: () => commit((s) => { s[side] = s[side] === m.name ? null : m.name; }) }, m.name))));
+    // Solo play has nobody to choose the NPC's side, and the table that decides it
+    // sat three taps away on another tab with no link. Roll it where you are.
+    // [playtest journal, finding 2]
+    if (Settings.solo()) row.append(el("div", { class: "rec-actions" },
+      el("button", { class: "btn btn--sm btn--roll", onClick: () => rollNpcManeuver(side) },
+        `🎲 Roll it — the ${side} is an NPC`)));
+    return row;
   };
   card.append(maneuverRow("prey"), maneuverRow("pursuer"));
   for (const side of ["prey", "pursuer"]) {
@@ -83,6 +93,28 @@ export function renderChaseCard(rerender) {
       `${side === "prey" ? "Prey" : "Pursuer"} — ${m.name}${skill ? ` (${skillName(skill)})` : ""}: ${m.text}`));
   }
 
+
+  // The Solo Mode NPC Chase Maneuvers table (D8), read for ONE side — the column
+  // that does not apply is never pinned, so the note cannot claim a move nobody
+  // made. [playtest journal, findings 2 and 5]
+  function rollNpcManeuver(side) {
+    const roll = rollDie(8);
+    const m = lookupRange(S.NPC_CHASE_MANEUVERS, roll);
+    const choice = side === "prey" ? m.prey : m.pursuer;
+    commit((s) => {
+      s.npcManeuver = { side, roll, text: choice };
+      s.log.unshift({ id: uid(), text: `R${s.round} NPC ${side}: ${choice} (D8=${roll})` });
+    });
+    try { RollLog.add({ label: `NPC Chase Maneuver — ${side}`, text: `D8=${roll} · ${choice}`, source: "combat" }); } catch {}
+  }
+  if (st.npcManeuver) {
+    card.append(resultSlot({
+      title: `NPC ${st.npcManeuver.side} — ${st.npcManeuver.roll} (D8)`,
+      html: renderToHtml((b) => b.append(el("p", { class: "roll-prose" }, st.npcManeuver.text))),
+      onReroll: () => rollNpcManeuver(st.npcManeuver.side),
+      onDismiss: () => commit((s) => { s.npcManeuver = null; }),
+    }));
+  }
 
   // ---- vehicles ------------------------------------------------------------
   // A vehicle chase runs on the machine's stats: Maneuverability is the die a
@@ -217,7 +249,7 @@ export function renderChaseCard(rerender) {
   card.append(el("div", { class: "muted sheet__note" }, `Escape: ${D.CHASE.escape}`));
 
   card.append(el("div", { class: "rec-actions" },
-    el("button", { class: "btn btn--primary btn--sm", onClick: () => commit((s) => { s.round++; s.obstacle = null; s.prey = null; s.pursuer = null; showToast(`Chase round ${s.round}.`); }) }, "Next round ›"),
+    el("button", { class: "btn btn--primary btn--sm", onClick: () => commit((s) => { s.round++; s.obstacle = null; s.prey = null; s.pursuer = null; s.npcManeuver = null; showToast(`Chase round ${s.round}.`); }) }, "Next round ›"),
     el("button", { class: "btn btn--sm btn--danger", onClick: () => { Chase.clear(); rerender(); } }, "End chase")));
 
   const proc = el("details", { class: "rules__group" }, el("summary", {}, "Chase procedure"));

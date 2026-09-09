@@ -27,7 +27,31 @@ function newDraft() {
   };
 }
 
-let draft = newDraft();
+// The draft survives a reload: ten screens of decisions used to vanish if a phone
+// backgrounded the tab mid-creation. [playtest journal, finding 8]
+const DRAFT_KEY = "brp:wizard";
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || typeof d.step !== "number") return null;
+    // Merge over a fresh draft so a shape change in a later version cannot crash it.
+    const base = newDraft();
+    return { ...base, ...d,
+      attributes: { ...base.attributes, ...(d.attributes || {}) },
+      skills: { ...base.skills, ...(d.skills || {}) },
+      identity: { ...base.identity, ...(d.identity || {}) },
+      memory: { ...base.memory, ...(d.memory || {}) },
+      relationship: { ...base.relationship, ...(d.relationship || {}) },
+      specialties: Array.isArray(d.specialties) ? d.specialties : [],
+      step: Math.min(Math.max(0, d.step), 9) };
+  } catch { return null; }
+}
+const saveDraft = () => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {} };
+const dropDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch {} };
+
+let draft = loadDraft() || newDraft();
 
 const STEPS = [
   { key: "nature", title: "Human or Replicant", render: stepNature },
@@ -43,11 +67,12 @@ const STEPS = [
 ];
 
 export function renderWizard(mount, { restart = false } = {}) {
-  if (restart || !draft) draft = newDraft();
+  if (restart || !draft) { draft = newDraft(); dropDraft(); }
   paint(mount);
 }
 
 function paint(mount) {
+  saveDraft();
   clear(mount);
   const step = STEPS[draft.step];
   const wrap = el("section", { class: "screen wizard" });
@@ -93,7 +118,7 @@ function stepReady(step) {
   }
 }
 function next(mount) { if (draft.step < STEPS.length - 1) { draft.step++; onEnter(); paint(mount); } }
-function back(mount) { if (draft.step === 0) { navigate("home"); return; } draft.step--; paint(mount); }
+function back(mount) { if (draft.step === 0) { draft = newDraft(); dropDraft(); navigate("home"); return; } draft.step--; paint(mount); }
 
 // Side-effects when entering a step (e.g. force Replicant to Rookie).
 function onEnter() {
@@ -396,6 +421,7 @@ function finish() {
   const saved = Store.save(character);
   Store.setActiveId(saved.id);
   draft = newDraft();
+  dropDraft();
   showToast(`${saved.name} created — Promotion ${promotion}, Chinyen ${chinyen}.`, { kind: "info", timeout: 4200 });
   // Land on the thing you just made, not back at Home.  [reachability R7]
   navigate("sheet");

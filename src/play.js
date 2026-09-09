@@ -19,7 +19,8 @@ import { showToast, promptModal } from "./ui.js";
 import { lookupRange, rollColumn, skill as findSkill } from "./rules.js";
 import { Store, RollLog } from "./store.js";
 import { maxHealth, maxResolve } from "./derived.js";
-import { rollClue, rollSuspect } from "./board.js";
+import { rollClue, rollSuspect, Board, addBox, connect, byId, isFull } from "./board.js";
+import * as H from "../data-house.js";
 
 // The four things a detective does at a place, in the player's words, each
 // mapped to the skill the book would have you roll.
@@ -84,6 +85,9 @@ export function renderPlayPanel(root, ctx) {
 
   // ---- no case: hand them one --------------------------------------------
   if (!st.caseOpen) {
+    // Dispatch's offer sits in this branch too — the case is not open until it
+    // is accepted and named.
+    if (p.stage === "briefed" && p.briefing) { briefed(); return; }
     ask({
       eyebrow: "Start here",
       title: `${ch.name}, you have no case`,
@@ -97,7 +101,7 @@ export function renderPlayPanel(root, ctx) {
 
   // ---- the loop ------------------------------------------------------------
   const stage = p.stage || "plan";
-  ({ plan, travel, here, result, accuse, solved }[stage] || plan)();
+  ({ plan, travel, here, result, accuse, solved, briefed }[stage] || plan)();
 
   // Where do you go? Three real places, or pick your own.
   function plan() {
@@ -107,7 +111,14 @@ export function renderPlayPanel(root, ctx) {
       eyebrow: `Shift ${st.shiftNo || 1}`,
       title: "Where do you go?",
       prose: [st.caseOpen.assignment ? `The case: ${st.caseOpen.assignment}` : null,
-        p.leadHint || "Pick somewhere to start. There is no wrong answer — the case fills in around wherever you look."],
+        p.leadHint || null,
+        // After Shift 1 you are following something, so stop telling the player
+        // there is no wrong answer. [playtest journal, finding 9]
+        (p.suspects || []).length
+          ? `You are looking at ${p.suspects[0].name}. Go where that leads, or somewhere new.`
+          : (st.shiftNo || 1) > 1
+            ? "Follow what you turned up, or try a different corner of the case."
+            : "Pick somewhere to start. There is no wrong answer — the case fills in around wherever you look."],
       choices: [
         ...opts.map((o) => [`📍 ${o}`, () => goTo(o), "primary"]),
         ["✎ Somewhere else", askPlace, "sm ghost"],
@@ -159,8 +170,17 @@ export function renderPlayPanel(root, ctx) {
       prose: [r.prose, r.detail],
       choices: [
         r.ok ? ["✓ Write it down and carry on", keepResult] : null,
+        // The Board's own economy was unreachable from the default panel: only
+        // Scene-tab and sheet rolls offered a check. [playtest journal, finding 1]
+        r.ok && !p.earned && H.DISCOVERY_SKILLS.includes(r.key)
+          ? ["🔍 Bank a Discovery Check (house aid)", () => {
+              const n = Board.earn(1);
+              showToast(`Discovery Check banked — ${n} waiting on the Case Board.`);
+              set({ earned: true });
+            }, "sm ghost"] : null,
         !r.ok && r.canPush ? ["😤 Push yourself — try again harder", pushIt, "primary"] : null,
-        !r.ok ? ["Let it go", () => set({ stage: "here", pending: null, lastNarration: r.prose })] : null,
+        !r.ok ? ["Let it go", () => set({ stage: "here", pending: null,
+          lastNarration: "That line of enquiry came to nothing. Try something else, or somewhere else." })] : null,
       ],
       footer: !r.ok && r.canPush ? "Pushing re-rolls the dice. Any 1s left over cost you: a wound if it was muscle, stress if it was nerve." : null,
     });
@@ -198,14 +218,37 @@ export function renderPlayPanel(root, ctx) {
 
   // ---- the moves ----------------------------------------------------------
 
-  async function startCase() {
-    // Roll it, but keep it out of the notes until the case is actually taken —
-    // a cancelled name prompt used to leave a briefing for a case that never was.
+  // Dispatch hands you the case BEFORE you name it — naming a case you have not
+  // been told about is not a thing anyone can do. [playtest journal, finding 3]
+  function startCase() {
+    // Rolled, but kept out of the notes until the case is actually taken — a
+    // cancelled name prompt used to leave a briefing for a case that never was.
     const b = rollBriefing({ write: false });
+    set({ ...blank(), stage: "briefed", briefing: { assignment: b.assignment, relevance: b.relevance, complication: b.complication, hook: b.hook } });
+  }
+
+  // What dispatch handed you, on screen, before anything is asked of you.
+  function briefed() {
+    const b = p.briefing;
+    if (!b) { set({ stage: "plan" }); return; }
+    ask({
+      eyebrow: "Dispatch",
+      title: b.assignment,
+      prose: [`Why it matters: ${b.relevance}`,
+        `Already going wrong: ${b.complication}`,
+        `Why it lands on you: ${b.hook}`],
+      choices: [["✔ Take the case", () => nameCase(b), "primary"],
+        ["🎲 Give me a different one", startCase, "sm ghost"]],
+      footer: "Take it and you can name it — the whole briefing goes into your case notes.",
+    });
+  }
+
+  async function nameCase(b) {
     const title = await promptModal("Give the case a name you'll recognise later.",
       { title: "Name the case", value: b.assignment.split(/[,.;]/)[0].slice(0, 40), okLabel: "Take the case" });
     if (title === null) return;
-    b.commit();
+    // Write the briefing only once the case is real.
+    say(`=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${b.assignment}\n• Relevance: ${b.relevance}\n• Complication: ${b.complication}\n• Personal Hook: ${b.hook}`);
     openCase({ title: (title || "Untitled case").trim(), assignment: b.assignment });
     set({ ...blank(), stage: "plan", leadHint: `Why it matters: ${b.relevance} Already going wrong: ${b.complication}` });
     showToast("Case open. Pick somewhere to start.");
@@ -270,6 +313,36 @@ export function renderPlayPanel(root, ctx) {
   }
   function countSucc(faces) { return faces.reduce((n, f) => n + successesFor(f), 0); }
 
+
+  // The guided loop used to keep everything to itself: the Board stayed empty and
+  // the Leads tab said "no active hypotheses" while this panel privately tracked
+  // both. It now writes what it finds into the surfaces that exist for it, so
+  // dropping into Board or Leads mid-case shows the case you have been playing.
+  // [playtest journal, finding 1]
+  function boardAdd(kind, name, detail, linkToBoxId = null) {
+    try {
+      const b = Board.get();
+      if (isFull(b)) return null;
+      const box = addBox(b, kind, name, detail);
+      if (box && linkToBoxId && byId(b, linkToBoxId)) connect(b, box.id, linkToBoxId);
+      Board.save(b);
+      return box;
+    } catch { return null; }
+  }
+  // Leads: one hypothesis per named suspect, kept at the rating this panel is using.
+  function leadSync(suspect) {
+    if (!suspect) return;
+    st.hypotheses = st.hypotheses || [];
+    const text = `${suspect.name} did it`;
+    const found = st.hypotheses.find((h) => h.playId === suspect.id);
+    if (found) { found.die = suspect.die; found.text = text; }
+    else st.hypotheses.push({ id: `h${Date.now()}${st.hypotheses.length}`, playId: suspect.id, text, die: suspect.die });
+  }
+  function leadDrop(suspect) {
+    if (!suspect) return;
+    st.hypotheses = (st.hypotheses || []).filter((h) => h.playId !== suspect.id);
+  }
+
   function log(label, text) {
     try { RollLog.add({ label, text, charId: ch.id, charName: ch.name, source: "solo" }); } catch { /* best effort */ }
   }
@@ -279,6 +352,7 @@ export function renderPlayPanel(root, ctx) {
     const faces = sizes.map((size) => rollDie(size));
     const succ = countSucc(faces);
     log(`${findSkill(action.key).name} — guided play`, outcomeSummary(succ, 0));
+    p.earned = false;
     finishRoll(action, { sizes, faces }, succ, false);
   }
 
@@ -340,14 +414,20 @@ export function renderPlayPanel(root, ctx) {
     const r = p.pending;
     const suspects = [...(p.suspects || [])];
     if (r.finds === "person") {
-      suspects.unshift({ id: `s${Date.now()}`, name: r.finding.name, detail: r.finding.detail, clues: 0, die: S.HYPOTHESIS.newRating });
+      const box = boardAdd("suspect", r.finding.name, r.finding.detail);
+      const s = { id: `s${Date.now()}`, name: r.finding.name, detail: r.finding.detail, clues: 0,
+        die: S.HYPOTHESIS.newRating, boxId: box?.id || null };
+      suspects.unshift(s);
+      leadSync(s);
       say(`• Someone involved: ${r.finding.name} — ${r.finding.detail}`);
     } else {
       say(`• Clue: ${r.finding.name} — ${r.finding.detail}`);
       // Evidence points at whoever you are currently looking at, and a hypothesis
       // strengthens one step per piece of evidence. [Solo Mode: Hypotheses]
+      boardAdd("clue", r.finding.name, r.finding.detail, suspects[0]?.boxId || null);
       if (suspects[0]) {
         suspects[0] = { ...suspects[0], clues: suspects[0].clues + 1, die: upgrade(suspects[0].die) };
+        leadSync(suspects[0]);
       }
     }
     set({ stage: "here", pending: null, suspects, found: (p.found || 0) + 1, lastNarration: r.heading });
@@ -390,6 +470,7 @@ export function renderPlayPanel(root, ctx) {
         },
       });
     } else {
+      leadDrop(s);
       set({
         stage: "here",
         suspects: (p.suspects || []).slice(1),
@@ -399,4 +480,4 @@ export function renderPlayPanel(root, ctx) {
   }
 }
 
-const blank = () => ({ stage: "plan", location: null, options: null, found: 0, suspects: [], pending: null, lastNarration: null, leadHint: null, event: null, danger: null, verdict: null });
+const blank = () => ({ stage: "plan", briefing: null, earned: false, location: null, options: null, found: 0, suspects: [], pending: null, lastNarration: null, leadHint: null, event: null, danger: null, verdict: null });

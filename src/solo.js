@@ -286,7 +286,8 @@ export function renderSolo(mount, rerender) {
       title: title || "Untitled case",
       assignment: assignment || "",
       opened: Date.now(),
-      openStats: { pp: ch?.state.promotionPoints || 0, humanity: ch?.state.humanityPoints || 0 },
+      openStats: { pp: ch?.state.promotionPoints || 0, humanity: ch?.state.humanityPoints || 0,
+        spent: { pp: ch?.state.spent?.pp || 0, humanity: ch?.state.spent?.humanity || 0 } },
       character: ch?.name || null,
     };
     st.shiftNo = 1;
@@ -311,8 +312,13 @@ export function renderSolo(mount, rerender) {
 
     const ch = Store.getActive();
     const shifts = st.shiftNo || 1;
-    const pp = (ch?.state.promotionPoints || 0) - (c.openStats?.pp || 0);
-    const hum = (ch?.state.humanityPoints || 0) - (c.openStats?.humanity || 0);
+    // What the case PAID, not what is left in the pocket: points spent on
+    // advancement mid-case are added back, or a case that funded a skill step
+    // files as having earned nothing. [playtest journal]
+    const spentNow = ch?.state.spent || { pp: 0, humanity: 0 };
+    const spentOpen = c.openStats?.spent || { pp: 0, humanity: 0 };
+    const pp = ((ch?.state.promotionPoints || 0) - (c.openStats?.pp || 0)) + ((spentNow.pp || 0) - (spentOpen.pp || 0));
+    const hum = ((ch?.state.humanityPoints || 0) - (c.openStats?.humanity || 0)) + ((spentNow.humanity || 0) - (spentOpen.humanity || 0));
     const file = {
       id: uid(), no: c.no, title: c.title, assignment: c.assignment,
       culprit: culprit.trim() || "Never established",
@@ -783,7 +789,11 @@ export function renderSolo(mount, rerender) {
         block = `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${cx}\n• Personal Hook: ${h}`;
       }
       const suggested = assignment ? assignment.split(/[,.;]/)[0].slice(0, 40) : "";
-      const title = await promptModal("Name this case — something you will recognise later.",
+      // The briefing goes in the prompt: you cannot name a case you have not been
+      // told about. [playtest journal, finding 3]
+      const title = await promptModal(block
+        ? `${block.replace(/^=== .*\n/, "")}\n\nName this case — something you will recognise later.`
+        : "Name this case — something you will recognise later.",
         { title: "Name the case", value: suggested, okLabel: "Open the case" });
       if (title === null) return;
       if (block) st.scratchpad = appendToNotes(st.scratchpad, block);
@@ -799,6 +809,17 @@ export function renderSolo(mount, rerender) {
       const roll = rollDie(die); const t = arr[roll - 1];
       show({ label, text: t, title: `${label} — ${roll} (D${die})`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) });
     }
+  }
+
+  // The Solo Mode NPC Chase Maneuvers table, read for the side the NPC is on.
+  function rollNpcChase(side) {
+    const r = rollDie(8);
+    const m = lookupRange(S.NPC_CHASE_MANEUVERS, r);
+    const choice = side === "pursuer" ? m.pursuer : m.prey;
+    const label = side === "pursuer" ? "NPC pursuer" : "NPC prey";
+    show({ label: "NPC Chase Maneuver", text: `${label}: ${choice}`, pin: `[Chase] ${label}: ${choice}`,
+      title: `NPC Chase Maneuver — ${r} (D8)`,
+      render: (b) => b.append(el("div", { class: "roll-eyebrow" }, label), el("h3", { class: "roll-result" }, choice)) });
   }
 
   // ---- SHIFT: steps 1–2 ---------------------------------------------------
@@ -937,7 +958,10 @@ export function renderSolo(mount, rerender) {
     // Step 4d - when it turns violent.
     root.append(stepCard(4, "Combat & chases", "Direct the opposition, then run the fight in the tracker.",
       grid(btn("🎲 NPC Tactics (D8)", () => { const r = rollDie(8); const t = lookupRange(S.NPC_TACTICS, r); show({ label: "NPC Tactics", text: t.name, pin: `[NPC Tactics] ${t.name} — ${t.behavior}`, title: `NPC Tactics — ${r} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, t.name), el("p", { class: "muted" }, t.behavior)) }); }),
-        btn("🎲 NPC Chase Maneuver (D8)", () => { const r = rollDie(8); const m = lookupRange(S.NPC_CHASE_MANEUVERS, r); show({ label: "NPC Chase Maneuver", text: `Pursuer: ${m.pursuer} · Prey: ${m.prey}`, pin: `[Chase] Pursuer: ${m.pursuer} / Prey: ${m.prey}`, title: `NPC Chase Maneuver — ${r} (D8)`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "If the NPC is the Pursuer"), el("p", {}, m.pursuer), el("div", { class: "roll-eyebrow" }, "If the NPC is the Prey"), el("p", {}, m.prey)) }); })),
+        // One button per side: pinning both columns wrote a note claiming a move
+        // the other side never made. [playtest journal, finding 5]
+        btn("🎲 NPC is the pursuer (D8)", () => rollNpcChase("pursuer")),
+        btn("🎲 NPC is the prey (D8)", () => rollNpcChase("prey"))),
       el("div", { class: "btn-row" }, btn("Combat Tracker \u2192", () => navigate("combat"), "sm ghost"))));
 
     root.append(el("div", { class: "btn-row" }, btn("Scenes done \u2014 review the leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); }, "primary")));

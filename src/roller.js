@@ -736,7 +736,7 @@ export function rollCritOnCombatant(c, commit) {
             const entry = R.critEntry(st.type, face);
             close();
             applyCritToCombatant(c, entry, st.type, face, commit);
-            logRoll({ label: `Critical injury — ${c.name}`, text: `d${st.die}=${face} · ${entry.injury}`, charId: c.charId || null, charName: c.name, source: "combat" });
+            logRoll({ label: `Critical injury → ${c.name}`, text: `d${st.die}=${face} · ${entry.injury}`, charId: c.charId || null, charName: c.name, source: "combat" });
           } }, "⚄ Roll injury")));
       };
       paint();
@@ -783,7 +783,7 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
           el("button", { class: "btn btn--primary", onClick: () => {
             st.dice = poolFor(dsize(attrLv), dsize(skLv), net);
-            logRoll({ label: `${sk.name} — ${c.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
+            logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Roll")));
       };
@@ -841,7 +841,7 @@ export function rollCombatDeathProcedure(c, inj, mode, commit) {
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
           el("button", { class: "btn btn--primary", onClick: () => {
             st.dice = poolFor(dsize(attrLv), dsize(skLv), netOf(st.adv, st.dis));
-            logRoll({ label: `${mode === "save" ? "Death save" : "Stabilize"} — ${c.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: c.charId || null, charName: c.name, source: "combat" });
+            logRoll({ label: mode === "save" ? "Death save" : "Stabilize", text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: c.charId || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Roll")));
       };
@@ -969,7 +969,7 @@ function openRangedAttack(c, rc, w, commit) {
               reclampVitals(rc.pc); Store.save(rc.pc);
             }
             st.dice = poolFor(dsize(attrLv), dsize(skLv), net);
-            logRoll({ label: `Ranged ${w.name} — ${c.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
+            logRoll({ label: `Ranged ${w.name} → ${targetOf()?.name || "no target"}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Attack")));
       };
@@ -1150,7 +1150,7 @@ function runOpposedMeleeModal(c, rc, w, e, rEnemy, commit) {
           el("button", { class: "btn btn--primary", onClick: () => {
             st.attDice = poolFor(dsize(attAttrLv), dsize(attSkLv), netOf(st.attAdv + tm.adv, st.attDis + sm.dis));
             st.defDice = noDefence ? [] : poolFor(dsize(defAttrLv), dsize(defSkLv), netOf(st.defAdv, st.defDis));
-            logRoll({ label: `Opposed: ${c.name} vs ${e.name}`, text: `${sumSucc(st.attDice)}–${sumSucc(st.defDice)} (${w.name})`, charId: rc.pc?.id || null, charName: c.name, source: "combat" });
+            logRoll({ label: `Close combat ${w.name} → ${e.name}`, text: `${sumSucc(st.attDice)}–${sumSucc(st.defDice)} (${w.name})`, charId: rc.pc?.id || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Roll Opposed")));
       };

@@ -1055,6 +1055,9 @@ test("guided play runs a whole case with one question at a time", async (t) => {
 
   await page.getByRole("button", { name: /Get me a case/ }).click();
   await page.waitForTimeout(250);
+  // Dispatch shows the briefing first; taking it is what asks for a name.
+  await page.getByRole("button", { name: /Take the case/ }).first().click();
+  await page.waitForTimeout(250);
   await page.fill(".modal input", "Ghosts of Sector 4");
   await page.locator(".modal").getByRole("button", { name: /Take the case|^OK$/ }).click();
   await page.waitForTimeout(350);
@@ -2571,4 +2574,247 @@ test("a GM result with no owning card stays on the tab that rolled it", async (t
     await page.waitForTimeout(250);
     assert.ok(!(await slots()).some((s) => /rolled from a dialog/.test(s)), `${tab} must not carry Prep's loose result`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The 2026-09-09 PLAY-session journal findings (9). One check per finding.
+// ---------------------------------------------------------------------------
+
+// Guided play kept its case to itself: the Board stayed empty and Leads said
+// "no active hypotheses" while ▶ Play privately tracked both. [1]
+test("guided play writes its finds to the Case Board and its suspects to Leads", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?sync#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.removeItem("brp:board");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Mirror", attributes: { STR: "C", AGI: "C", INT: "A", EMP: "B" },
+      skills: { observation: "A", connections: "A" } });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({
+      panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "",
+      caseOpen: { no: 1, title: "Mirrorfall", assignment: "Murder", opened: Date.now(), openStats: { pp: 0, humanity: 0, spent: { pp: 0, humanity: 0 } } },
+      play: { stage: "here", location: "A wet alley", found: 0, suspects: [], pending: null },
+    }));
+  });
+  await page.goto(`${base}/index.html?sync2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { Math.random = () => 0.99; });   // every die maxes: successes
+
+  // A person first, so the clue has someone to point at.
+  await page.getByRole("button", { name: /Put the word out/ }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /Write it down and carry on/ }).first().click();
+  await page.waitForTimeout(300);
+  // …then a clue.
+  await page.getByRole("button", { name: /Look the place over/ }).first().click();
+  await page.waitForTimeout(300);
+  const offered = await page.$eval(".panel", (n) => n.textContent);
+  assert.match(offered, /Bank a Discovery Check/, "an investigative success offers the Board's own check");
+  await page.getByRole("button", { name: /Write it down and carry on/ }).first().click();
+  await page.waitForTimeout(300);
+
+  const out = await page.evaluate(() => ({
+    board: JSON.parse(localStorage.getItem("brp:board") || "{}"),
+    leads: JSON.parse(localStorage.getItem("brp:solo")).hypotheses,
+  }));
+  assert.equal(out.board.boxes.length, 2, "the suspect and the clue are both on the board");
+  assert.deepEqual(out.board.boxes.map((b) => b.kind).sort(), ["clue", "suspect"]);
+  const clue = out.board.boxes.find((b) => b.kind === "clue");
+  assert.equal(clue.links.length, 1, "the clue is connected to the suspect it points at");
+  assert.equal(out.leads.length, 1, "the suspect is an open hypothesis on Leads");
+  assert.match(out.leads[0].text, /did it$/, out.leads[0].text);
+  assert.notEqual(out.leads[0].die, "D6", `evidence upgraded the rating: ${out.leads[0].die}`);
+
+  // A wrong accusation must take its lead down with it.
+  await page.getByRole("button", { name: /I think .* did it/ }).first().click();
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { Math.random = () => 0; });     // no successes: the check fails
+  await page.getByRole("button", { name: /Put it to the test/ }).first().click();
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).hypotheses);
+  assert.equal(after.length, 0, "a disproved suspect does not stay on Leads at full rating");
+});
+
+// The prey's maneuver was a decision the app said you should not make. [2] [5]
+test("the chase rolls the NPC's maneuver in place, for one side only", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?npcman#combat`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.setItem("brp:chase", JSON.stringify({ active: true, env: "foot", round: 1, distIdx: 1,
+      obstacle: null, prey: null, pursuer: null, npcManeuver: null, vehicles: {}, hull: {}, log: [] }));
+  });
+  await page.goto(`${base}/index.html?npcman2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(350);
+  await page.getByRole("button", { name: /the prey is an NPC/ }).first().click();
+  await page.waitForTimeout(300);
+  const slot = await page.$eval(".result-slot", (n) => n.textContent);
+  assert.match(slot, /NPC prey/, slot.slice(0, 80));
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:chase")));
+  assert.equal(st.npcManeuver.side, "prey");
+  assert.ok(st.log.some((l) => /NPC prey/.test(l.text)), "the chase log records which side it was for");
+
+  // …and the Solo card pins one column, not both.
+  await page.goto(`${base}/index.html?npcman3#solo`, { waitUntil: "load" });
+  await page.evaluate(() => localStorage.setItem("brp:solo", JSON.stringify({ panel: "scene", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "", autoPin: true })));
+  await page.goto(`${base}/index.html?npcman4#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: /NPC is the pursuer/ }).first().click();
+  await page.waitForTimeout(350);
+  const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.match(notes, /\[Chase\] NPC pursuer:/, notes.slice(-120));
+  assert.ok(!/Prey:/.test(notes), "the column that does not apply is never pinned");
+});
+
+// You cannot name a case you have not been told about. [3]
+test("the briefing is on screen before the case is named", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?brf#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Briefed", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {} });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?brf2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: /Get me a case/ }).first().click();
+  await page.waitForTimeout(350);
+  const card = await page.$eval(".panel", (n) => n.textContent);
+  assert.equal(await page.$$eval(".modal", (n) => n.length), 0, "no name prompt before the briefing");
+  assert.match(card, /Why it matters:/, card.slice(0, 200));
+  assert.match(card, /Already going wrong:/);
+  assert.ok(await page.getByRole("button", { name: /Take the case/ }).count(), "and a way to accept it");
+});
+
+// The log line spent its one slot repeating the attacker. [4]
+test("an attack logs who it was aimed at", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?tgtlog#combat`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.removeItem("brp:rolllog");
+    const { Store, Combat } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Shooter", attributes: { STR: "C", AGI: "B", INT: "C", EMP: "C" },
+      skills: { firearms: "C" }, inventory: { items: [{ key: "pkd_blaster", name: "PK-D 5223 Blaster (.44 Special)", equipped: true }] } });
+    const saved = Store.save(ch); Store.setActiveId(saved.id);
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "c1", kind: "pc", charId: saved.id, name: "Shooter", health: 5, maxHealth: 5, card: 1, conditions: {}, criticalInjuries: [] },
+      { id: "c2", kind: "npc", npcKey: "street_thug", name: "Street Thug", health: 5, maxHealth: 5, card: 2, conditions: {}, criticalInjuries: [] },
+    ] });
+  });
+  await page.goto(`${base}/index.html?tgtlog2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(350);
+  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.waitForTimeout(250);
+  await page.click('.list__row:has-text("PK-D 5223 Blaster")');
+  await page.waitForTimeout(250);
+  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.waitForTimeout(300);
+  const entry = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:rolllog"))[0]);
+  assert.match(entry.label, /→ Street Thug/, `the log names the target: ${entry.label}`);
+  assert.equal(entry.charName, "Shooter", "and the character column still names the attacker");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => localStorage.removeItem("brp:combat"));
+});
+
+// A case that funded a skill step filed as having earned nothing. [6]
+test("a closed case reports what it paid, including points already spent", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?paid#sheet`, { waitUntil: "load" });
+  const out = await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Spender", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" },
+      skills: { insight: "D" }, state: { humanityPoints: 0, promotionPoints: 0 } });
+    const saved = Store.save(ch);
+    // Open the case, earn 5 Humanity, spend all 5 on a skill step, then close.
+    const openStats = { pp: saved.state.promotionPoints, humanity: saved.state.humanityPoints,
+      spent: { pp: saved.state.spent.pp, humanity: saved.state.spent.humanity } };
+    saved.state.humanityPoints = 5;
+    saved.state.humanityPoints -= 5; saved.state.spent.humanity += 5;   // what the sheet's raise-a-skill does
+    Store.save(saved);
+    const now = Store.get(saved.id);
+    const hum = (now.state.humanityPoints - openStats.humanity) + (now.state.spent.humanity - openStats.spent.humanity);
+    return { hum, schema: (await import("/src/derived.js")).SCHEMA_VERSION, spent: now.state.spent };
+  });
+  assert.equal(out.hum, 5, "the case paid 5 Humanity even though none is left in the pocket");
+  assert.equal(out.schema, 5, "schema v5 carries state.spent");
+  assert.deepEqual(out.spent, { pp: 0, humanity: 5 });
+});
+
+// A refused push stayed on the card as the current situation. [7]
+test("declining a push clears its offer from the card", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?letgo#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Quitter", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {} });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({
+      panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "",
+      caseOpen: { no: 1, title: "X", assignment: "Murder", opened: Date.now(), openStats: { pp: 0, humanity: 0 } },
+      play: { stage: "here", location: "A wet alley", found: 0, suspects: [], pending: null },
+    }));
+  });
+  await page.goto(`${base}/index.html?letgo2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { Math.random = () => 0; });   // certain failure
+  await page.getByRole("button", { name: /Look the place over/ }).first().click();
+  await page.waitForTimeout(300);
+  assert.match(await page.$eval(".panel", (n) => n.textContent), /push yourself/, "the push is offered");
+  await page.getByRole("button", { name: /Let it go/ }).first().click();
+  await page.waitForTimeout(300);
+  const after = await page.$eval(".panel", (n) => n.textContent);
+  assert.ok(!/You can push yourself and try again/.test(after), `the refused offer is gone: ${after.slice(0, 160)}`);
+  assert.match(after, /came to nothing/, "and the card says what actually happened");
+});
+
+// Ten screens of decisions vanished on a reload. [8]
+test("the creation draft survives a reload", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?draft#wizard`, { waitUntil: "load" });
+  await page.evaluate(() => localStorage.removeItem("brp:wizard"));
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /Roll me a whole Blade Runner/ }).first().click();
+  await page.waitForTimeout(350);
+  const before = await page.$eval(".wiz__body", (n) => n.textContent);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(400);
+  const step = await page.$eval(".wiz__count", (n) => n.textContent);
+  assert.match(step, /Step 10 of 10/, `the wizard reopens where it was: ${step}`);
+  const after = await page.$eval(".wiz__body", (n) => n.textContent);
+  assert.equal(after.slice(0, 60), before.slice(0, 60), "with the same character in it");
+  await page.evaluate(() => localStorage.removeItem("brp:wizard"));
+});
+
+// "There is no wrong answer" is bad advice on Shift 4. [9]
+test("the travel card stops saying there is no wrong answer once you have a lead", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?hint#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Led", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {} });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({
+      panel: "play", shiftNo: 4, timerDie: "D10", hypotheses: [], scratchpad: "",
+      caseOpen: { no: 1, title: "X", assignment: "Murder", opened: Date.now(), openStats: { pp: 0, humanity: 0 } },
+      play: { stage: "plan", options: null, found: 0, suspects: [{ id: "s1", name: "Niko Hoskins", detail: "Ruthless.", clues: 2, die: "D10" }], pending: null },
+    }));
+  });
+  await page.goto(`${base}/index.html?hint2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  const card = await page.$eval(".panel", (n) => n.textContent);
+  assert.match(card, /You are looking at Niko Hoskins/, card.slice(0, 200));
+  assert.ok(!/no wrong answer/.test(card), "the Shift-1 advice does not follow you to Shift 4");
 });

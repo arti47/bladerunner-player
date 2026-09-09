@@ -27,7 +27,7 @@ export function countSpecialty(character, key) {
 // ---- Normalization / migration --------------------------------------------
 // Never crash on old/partial data — back-fill defaults. Bump SCHEMA_VERSION and
 // add a migration branch whenever the schema grows (CLAUDE.md §7).
-export const SCHEMA_VERSION = 4; // v4: secretReplicant flag (§3.5 Secret Replicant option)
+export const SCHEMA_VERSION = 5; // v5: state.spent — points deliberately spent, so a closed case can report what it PAID (§3.15)
 
 export function normalizeCharacter(c = {}) {
   const attributes = { STR: "C", AGI: "C", INT: "C", EMP: "C", ...(c.attributes || {}) };
@@ -54,6 +54,7 @@ export function normalizeCharacter(c = {}) {
       promotionPoints: 0, chinyenPoints: 0, humanityPoints: 0,
       baselineFails: 0, shiftsSinceDowntime: 0, shiftUses: {},
       permanentResolveLoss: 0, dead: false,   // v2
+      spent: { pp: 0, humanity: 0 },          // v5 — lifetime deliberate spends
       ...(c.state || {}),
     },
     inventory: { items: [], ...(c.inventory || {}) },
@@ -63,6 +64,8 @@ export function normalizeCharacter(c = {}) {
     campaignId: c.campaignId || null,
     owner: c.owner || null,
   };
+  // v5: a spread over `...c.state` keeps an OLD object whole, so back-fill inside it too.
+  ch.state.spent = { pp: 0, humanity: 0, ...(ch.state.spent || {}) };
   if (ch.state.health == null) ch.state.health = maxHealth(ch);
   if (ch.state.resolve == null) ch.state.resolve = maxResolve(ch);
   // Back-fill stable ids for critical injuries (needed by the death-save UI).

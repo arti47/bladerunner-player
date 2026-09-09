@@ -29,7 +29,9 @@ const ROUTES = {
   characters: renderCharacters,
   rules: renderRules,
   settings: renderSettings,
-  wizard: (m) => renderWizard(m, { restart: true }),
+  // No restart: an in-progress draft survives navigation and reload; the wizard
+  // clears it itself on finish or on backing out of step 1. [playtest journal]
+  wizard: (m) => renderWizard(m),
   sheet: renderSheet,
   combat: renderCombat,
   solo: (m) => renderSolo(m, () => render("solo")),

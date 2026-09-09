@@ -436,6 +436,7 @@ function chooseSource(ch, item, commit, rerender) {
         (needsRoll ? D.ACQUISITION.failureNote : "No Connections roll needed at this availability — it is simply bought.")));
       const buy = (c) => {
         c.state[src.currency] = Math.max(0, (c.state[src.currency] || 0) - pay);
+        if (src.currency === "promotionPoints") c.state.spent.pp += pay;
         c.inventory.items.push({ key: item.key, name: item.name, equipped: false });
         (c.advancementLog ||= []).push(`Acquired ${item.name} (−${pay} ${src.symbol}).`);
       };
@@ -723,7 +724,7 @@ function learnSpecialty(ch, commit) {
     const list = el("div", { class: "picker" });
     for (const sp of available) list.append(el("button", { class: "list__row", onClick: () => {
       close();
-      commit((c) => { c.state.promotionPoints -= D.SPECIALTY_LEARN_COST_PP; c.specialties.push(sp.key); reclampVitals(c); (c.advancementLog ||= []).push(`Learned ${sp.name} (−5 PP).`); });
+      commit((c) => { c.state.promotionPoints -= D.SPECIALTY_LEARN_COST_PP; c.state.spent.pp += D.SPECIALTY_LEARN_COST_PP; c.specialties.push(sp.key); reclampVitals(c); (c.advancementLog ||= []).push(`Learned ${sp.name} (−5 PP).`); });
       showToast(`Learned ${sp.name}.`);
     } }, el("span", { class: "list__main" }, sp.name), el("span", { class: "list__sub muted" }, sp.text)));
     body.append(list);
@@ -741,7 +742,7 @@ function raiseSkill(ch, commit) {
       const afford = ch.state.humanityPoints >= cost;
       list.append(el("button", { class: "list__row", disabled: !afford || null, onClick: () => {
         close();
-        commit((c) => { c.state.humanityPoints -= cost; c.skills[s.key] = R.stepLevel(c.skills[s.key], +1); reclampVitals(c); (c.advancementLog ||= []).push(`${s.name} ${lv}→${c.skills[s.key]} (−${cost} Humanity).`); });
+        commit((c) => { c.state.humanityPoints -= cost; c.state.spent.humanity += cost; c.skills[s.key] = R.stepLevel(c.skills[s.key], +1); reclampVitals(c); (c.advancementLog ||= []).push(`${s.name} ${lv}→${c.skills[s.key]} (−${cost} Humanity).`); });
         showToast(`${s.name} raised to ${R.stepLevel(lv, +1)}.`);
       } }, el("span", { class: "list__main" }, `${s.name} ${lv} → ${R.stepLevel(lv, +1)}`), el("span", { class: "list__sub muted" }, `${cost} Humanity${afford ? "" : " — not enough"}`)));
     }

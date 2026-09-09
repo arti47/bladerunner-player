@@ -230,14 +230,18 @@ test("normalizeCharacter back-fills defaults and never crashes on empty input", 
   assert.ok(c.state.health <= maxHealth(c) && c.state.health >= 0);
 });
 
-test("v4 schema: journal[] + secretReplicant back-filled, preserved, never crashes on legacy data", () => {
-  assert.equal(SCHEMA_VERSION, 4);
+test("v5 schema: journal[]/secretReplicant/state.spent back-filled, preserved, never crashes on legacy data", () => {
+  assert.equal(SCHEMA_VERSION, 5);
   assert.deepEqual(normalizeCharacter({}).journal, []);            // default
   assert.deepEqual(normalizeCharacter({ journal: undefined }).journal, []); // legacy (pre-v3)
   const entry = { id: "j1", ts: 123, text: "found a clue" };
   assert.deepEqual(normalizeCharacter({ journal: [entry] }).journal, [entry]); // preserved
   assert.equal(normalizeCharacter({}).secretReplicant, false);      // v4 default
   assert.equal(normalizeCharacter({ secretReplicant: true }).secretReplicant, true);
+  // v5: the spend counters back-fill even inside an old state object (spread keeps it whole).
+  assert.deepEqual(normalizeCharacter({}).state.spent, { pp: 0, humanity: 0 });
+  assert.deepEqual(normalizeCharacter({ state: { health: 3 } }).state.spent, { pp: 0, humanity: 0 });
+  assert.deepEqual(normalizeCharacter({ state: { spent: { pp: 5 } } }).state.spent, { pp: 5, humanity: 0 });
   assert.equal(normalizeCharacter({ nature: "human" }).nature, "human"); // reveal flips this to replicant
 });
 
