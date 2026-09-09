@@ -2233,3 +2233,293 @@ test("a placed explosive resolves at a chosen Blast Power [Ch08]", async (t) => 
   assert.ok(/Damage to target: \d+/.test(res) || /Failure/.test(res), res.slice(0, 120));
   await page.keyboard.press("Escape");
 });
+
+// ---------------------------------------------------------------------------
+// The 2026-09-09 playtest audit fixes (15 findings). Each check fails if the
+// finding comes back.
+// ---------------------------------------------------------------------------
+
+// A downed adversary is exactly who you finish off — every target list filtered
+// them out, so ranged, spill and opposed melee all lost the target. [1]
+test("a Broken combatant is still a target [§3.7]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?brk#combat`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store, Combat } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Shooter", attributes: { STR: "C", AGI: "B", INT: "C", EMP: "C" },
+      skills: { firearms: "C" }, inventory: { items: [{ key: "pkd_blaster", name: "PK-D 5223 Blaster (.44 Special)", equipped: true }] } });
+    const saved = Store.save(ch); Store.setActiveId(saved.id);
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "c1", kind: "pc", charId: saved.id, name: "Shooter", health: 5, maxHealth: 5, card: 1, conditions: {}, criticalInjuries: [] },
+      { id: "c2", kind: "npc", npcKey: "street_thug", name: "Street Thug", health: 0, maxHealth: 5, card: 2, conditions: {},
+        criticalInjuries: [{ id: "i1", injury: "Severed leg", type: "piercing", roll: 5, lethal: true, deathSave: "round", instantKill: false, healing: "—", effect: "Crawling only." }] },
+    ] });
+  });
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(300);
+
+  // [2] the dying NPC says it is dying, and offers the roll it owes.
+  const cardText = await page.$$eval(".combatant", (n) => n.map((x) => x.textContent).join(" | "));
+  assert.match(cardText, /lethal — round save/, `a lethal crit must say so: ${cardText.slice(0, 200)}`);
+  assert.ok(await page.getByRole("button", { name: /Death save/ }).count(), "a dying NPC can roll its death save");
+  assert.ok(await page.getByRole("button", { name: /Stabilize/ }).count(), "…and be stabilized");
+
+  // [13] the initiative card is a real button with a name, not a bare span.
+  assert.ok(await page.getByRole("button", { name: /initiative card for Street Thug/ }).count(), "initiative is a named control");
+
+  // [1] the Broken thug is offered as a target.
+  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.waitForTimeout(250);
+  await page.click('.list__row:has-text("PK-D 5223 Blaster")');
+  await page.waitForTimeout(250);
+  const chips = await page.$$eval(".modal .chip", (n) => n.map((x) => x.textContent));
+  assert.ok(chips.some((c) => /Street Thug/.test(c) && /Broken/.test(c)), `Broken target offered: ${chips.join(" | ")}`);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => localStorage.removeItem("brp:combat"));
+});
+
+// A dead Blade Runner kept rolling, and Solo kept handing them cases. [3]
+test("a dead Blade Runner cannot act, and says what to do instead", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?dead#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Late Runner", nature: "replicant", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" },
+      skills: { observation: "C" }, state: { dead: true, promotionPoints: 0 } });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?dead2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  assert.ok(await page.getByRole("button", { name: /New Blade Runner/ }).count(), "the banner offers the wizard, not just a sentence");
+  await page.getByRole("button", { name: /Roll Observation/ }).first().click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.$$eval(".modal", (n) => n.length), 0, "a dead character rolls nothing");
+  assert.match(await page.$eval("#toast-region", (n) => n.textContent), /is dead/, "and is told why");
+
+  // Guided play refuses to open a new case for a corpse.
+  await page.goto(`${base}/index.html?dead3#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  const play = await page.$eval(".panel", (n) => n.textContent);
+  assert.match(play, /is dead/, play.slice(0, 160));
+  assert.ok(!/Get me a case/.test(play), "no new case for a dead detective");
+
+  // The character list marks them. [3]
+  await page.goto(`${base}/index.html?dead4#characters`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.match(await page.$eval(".list", (n) => n.textContent), /Deceased/, "the roster says so");
+});
+
+// Guided play rolled its own dice and never told the record. [4] [10]
+test("guided play writes its rolls to the roll log, and an unpushed 1 is not a bane", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?gp#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.removeItem("brp:rolllog");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Guided", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: { observation: "C" } });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({
+      panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "",
+      caseOpen: { no: 1, title: "Rain Dogs", assignment: "Find the missing tech.", opened: Date.now(), openStats: { pp: 0, humanity: 0 } },
+      play: { stage: "here", location: "A wet alley", found: 0, suspects: [], pending: null },
+    }));
+  });
+  await page.goto(`${base}/index.html?gp2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { Math.random = () => 0; });   // every die shows a 1: a failure carrying banes
+  await page.getByRole("button", { name: /Look the place over/ }).first().click();
+  await page.waitForTimeout(300);
+  const log = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:rolllog") || "[]"));
+  assert.ok(log.length >= 1, "a guided roll reaches the global roll log");
+  assert.match(log[0].label, /Observation/, log[0].label);
+  assert.ok(!/bane/.test(log[0].text), `an unpushed 1 costs nothing, so it is not logged as a bane: ${log[0].text}`);
+});
+
+// Following a thread never read the archive it sits next to. [5]
+test("‘follow a thread’ offers the filed cases", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?thread#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.setItem("brp:cases", JSON.stringify({ nextNo: 3, files: [
+      { id: "f1", no: 2, title: "Nightshade", assignment: "Trace the source.", culprit: "Wade Kawasaki", outcome: "Filed unsolved", shifts: 5, pp: -3, humanity: 1, opened: Date.now() - 9e6, closed: Date.now(), character: "Remedy" },
+    ] }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "case", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?thread2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: /Seed from an old case/ }).first().click();
+  await page.waitForTimeout(250);
+  const dlg = await page.$eval(".modal", (n) => n.textContent);
+  assert.match(dlg, /#2 Nightshade/, `the archive is named, not ignored: ${dlg.slice(0, 160)}`);
+  await page.click(".picker .list__row");
+  await page.waitForTimeout(300);
+  const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
+  assert.match(notes, /From case #2 Nightshade/, notes.slice(-200));
+  assert.match(notes, /Wade Kawasaki/, "and carries how it ended");
+});
+
+// A wreck is a state; Engaged IS caught. [6]
+test("a chase keeps a wrecked vehicle, and Engaged is caught", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?wreck#combat`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:chase", JSON.stringify({ active: true, env: "ground", round: 1, distIdx: 0, obstacle: null,
+      prey: null, pursuer: null, vehicles: { prey: "ground_car", pursuer: "spinner" }, hull: { prey: 0, pursuer: 4 }, log: [] }));
+  });
+  await page.goto(`${base}/index.html?wreck2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(350);
+  const chase = await page.$eval(".chase, .card:has(.chase-veh)", (n) => n.textContent).catch(async () => page.$eval("body", (n) => n.textContent));
+  assert.match(chase, /Wrecked/, "the wreck stays on screen, not in a toast that fades");
+  const driving = page.locator('.chase-veh').first().locator('.btn:text-is("🎲 Driving")');
+  assert.equal(await driving.isDisabled(), true, "you cannot drive a wreck");
+  assert.match(chase, /Caught/, "at Engaged the chase says caught");
+  assert.ok(await page.getByRole("button", { name: /Free attack/ }).count(), "and offers the free attack the rule grants");
+  await page.evaluate(() => localStorage.removeItem("brp:chase"));
+});
+
+// The record must quote what was actually paid, not the sticker price. [7]
+test("a failed hypothesis reports the Promotion Points actually lost", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?pp#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Remedy", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {}, state: { promotionPoints: 1 } });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({
+      panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "",
+      caseOpen: { no: 1, title: "Rain Dogs", assignment: "Find the tech.", opened: Date.now(), openStats: { pp: 1, humanity: 0 } },
+      play: { stage: "accuse", location: "An alley", found: 1,
+        suspects: [{ id: "s1", name: "Wade Kawasaki", detail: "Fixer — twitchy.", clues: 0, die: "D6" }], pending: null },
+    }));
+  });
+  await page.goto(`${base}/index.html?pp2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { Math.random = () => 0; });     // no successes: the check fails
+  await page.getByRole("button", { name: /Put it to the test/ }).first().click();
+  await page.waitForTimeout(400);
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  const pp = await page.evaluate(async () => { const { Store } = await import("/src/store.js"); return Store.getActive().state.promotionPoints; });
+  assert.equal(pp, 0, "one Promotion Point is all there was to lose");
+  assert.match(st.scratchpad, /-1 Promotion/, `the note quotes what was paid, not −3: ${st.scratchpad.slice(-160)}`);
+});
+
+// Ticking an award closed the list it was in. [8]
+test("an award checklist stays open while you tick it", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?awd#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "wrap", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?awd2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.locator('details:has-text("Humanity Gain")').first().locator("summary").click();
+  await page.waitForTimeout(200);
+  await page.locator('details:has-text("Humanity Gain") .check-row input').first().check();
+  await page.waitForTimeout(350);
+  const open = await page.$eval('details:has-text("Humanity Gain")', (d) => d.open);
+  assert.equal(open, true, "the list a tick belongs to must still be open after the tick");
+});
+
+// A Board roll fired from a dialog landed in a bucket every tab rendered. [9]
+test("a Case Board result stays on the Board tab", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?bd#solo`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "board", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "",
+      results: { "__panel:board": [{ id: "r1", title: "CONNECTION", html: "<p>C1 ↔ S2</p>", pinLine: "[Board] C1 ↔ S2", ts: Date.now() }] } }));
+  });
+  await page.goto(`${base}/index.html?bd2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  const slots = () => page.$$eval(".panel .result-slot", (n) => n.map((x) => x.textContent));
+  assert.ok((await slots()).some((s) => /C1 ↔ S2/.test(s)), "the board result shows on the board");
+  for (const tab of ["Case", "Shift", "Leads", "Wrap"]) {
+    await page.locator(`.segnav__pill:text-is("${tab}")`).first().click();
+    await page.waitForTimeout(250);
+    assert.ok(!(await slots()).some((s) => /C1 ↔ S2/.test(s)), `${tab} must not carry the board's result`);
+  }
+});
+
+// A cancelled name prompt used to leave a briefing for a case that never was. [11]
+test("cancelling the case name leaves no briefing in the notes", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?brief#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Briefed", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {} });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?brief2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: /Get me a case/ }).first().click();
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  assert.ok(!st.caseOpen, "no case opened");
+  assert.ok(!/CASE BRIEFING/.test(st.scratchpad || ""), `and no briefing written: ${(st.scratchpad || "").slice(0, 120)}`);
+});
+
+// Offline, the account panel sat on "Connecting…" for ever. [12]
+test("cloud sync that cannot connect says so and offers a retry", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?off#settings`, { waitUntil: "load" });
+  await page.waitForTimeout(1200);
+  const txt = await page.$eval("body", (n) => n.textContent);
+  assert.ok(/could not connect/.test(txt) || /Cloud sync is off/.test(txt),
+    `an unreachable backend must be reported: ${txt.slice(0, 200)}`);
+});
+
+// The wizard shipped nameless characters. [14]
+test("the wizard will not finish an unnamed Blade Runner", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?wiz#wizard`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /Roll me a whole Blade Runner/ }).first().click();
+  await page.waitForTimeout(300);
+  // Back up to Identity and clear the name: Next must gate.
+  await page.getByRole("button", { name: /‹ Back/ }).first().click();
+  await page.waitForTimeout(250);
+  const name = page.locator(".field input").first();
+  await name.fill("");
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator(".wiz__nav .btn--primary").isDisabled(), true, "an unnamed character cannot advance");
+  await name.fill("Rachael Deckard");
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator(".wiz__nav .btn--primary").isDisabled(), false, "a named one can");
+});
+
+// A Replicant at zero Promotion Points owes a Baseline Test. [15]
+test("a Replicant at 0 Promotion Points is told a Baseline Test is due", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?bl#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Nexus", nature: "replicant", attributes: { STR: "B", AGI: "B", INT: "C", EMP: "C" },
+      skills: {}, state: { promotionPoints: 0 } });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "shift", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "" }));
+  });
+  await page.goto(`${base}/index.html?bl2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  assert.match(await page.$eval(".solo-status", (n) => n.textContent), /Baseline Test due/, "the trigger is announced where you play");
+  // …and the question-odds picker has a name. [13]
+  await page.locator('.segnav__pill:text-is("Scene")').first().click();
+  await page.waitForTimeout(300);
+  assert.ok(await page.locator('select[aria-label*="Question odds"]').count(), "the odds select is named");
+});

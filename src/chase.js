@@ -7,7 +7,7 @@ import { el, uid, rollDie, STORAGE_PREFIX } from "./core.js";
 import * as D from "../data.js";
 import { showToast, sectionTitle, resultSlot, renderToHtml, modal } from "./ui.js";
 import { RollLog, Store } from "./store.js";
-import { openSkillRoll, proceduralRoll } from "./roller.js";
+import { openSkillRoll, proceduralRoll, openWeaponPicker } from "./roller.js";
 
 const KEY = STORAGE_PREFIX + "chase";
 const ENVIRONMENTS = [
@@ -110,13 +110,18 @@ export function renderChaseCard(rerender) {
           const cur = x.hull?.[side] ?? v.hull;
           const next = Math.max(0, Math.min(v.hull, cur + d));
           x.hull = { ...(x.hull || {}), [side]: next };
-          if (next === 0) showToast(`${label}'s ${v.name} is wrecked.`, { kind: "warn" });
+          if (next === 0) { x.log.unshift({ id: uid(), text: `R${x.round} ${label}'s ${v.name} is wrecked` }); showToast(`${label}'s ${v.name} is wrecked.`, { kind: "warn" }); }
         });
+        // A wreck is a state the card must keep showing — a toast that fades is
+        // not an answer to "what happened to my car". [playtest audit]
+        const wrecked = hull <= 0;
+        if (wrecked) row.append(el("div", { class: "badge badge--danger" },
+          `☠ Wrecked — the ${v.name} is out of the chase. Continue on foot, or end it.`));
         row.append(el("div", { class: "rec-actions" },
           el("button", { class: "btn btn--sm btn--ghost", onClick: () => bump(-1), "aria-label": `${label} hull down` }, "− Hull"),
           el("button", { class: "btn btn--sm btn--ghost", onClick: () => bump(+1), "aria-label": `${label} hull up` }, "＋ Hull"),
-          el("button", { class: "btn btn--sm btn--roll", onClick: () => driveRoll(v) }, "🎲 Driving"),
-          el("button", { class: "btn btn--sm btn--roll", onClick: () => vehicleWeapon(side, v) }, "⚔ Vehicle weapon")));
+          el("button", { class: "btn btn--sm btn--roll", disabled: wrecked || null, onClick: () => driveRoll(v) }, "🎲 Driving"),
+          el("button", { class: "btn btn--sm btn--roll", disabled: wrecked || null, onClick: () => vehicleWeapon(side, v) }, "⚔ Vehicle weapon")));
       }
       vcard.append(row);
     }
@@ -196,6 +201,18 @@ export function renderChaseCard(rerender) {
     el("div", { class: "rec-actions" },
       el("button", { class: "btn btn--sm", onClick: () => commit((s) => { s.distIdx = Math.max(-1, s.distIdx - 1); flagOutcome(s); }) }, "− Closer (pursuer)"),
       el("button", { class: "btn btn--sm", onClick: () => commit((s) => { s.distIdx = Math.min(RANGE_KEYS.length, s.distIdx + 1); flagOutcome(s); }) }, "+ Farther (prey)"))));
+  if (st.distIdx <= 0) {
+    const caught = el("div", { class: "card card--target-dmg" });
+    caught.append(el("div", { class: "card__eyebrow" }, "Caught"), el("p", {}, D.CHASE.caught));
+    caught.append(el("div", { class: "rec-actions" },
+      el("button", { class: "btn btn--sm btn--roll", onClick: () => {
+        const ch = Store.getActive();
+        if (!ch) { showToast("No active character to roll for.", { kind: "warn" }); return; }
+        openWeaponPicker(ch, rerender);
+      } }, "⚔ Free attack (no defence roll)"),
+      el("button", { class: "btn btn--sm btn--ghost", onClick: () => commit((s) => { s.distIdx = 1; }) }, "They break away again")));
+    card.append(caught);
+  }
   card.append(el("div", { class: "muted sheet__note" }, `Caught: ${D.CHASE.caught}`));
   card.append(el("div", { class: "muted sheet__note" }, `Escape: ${D.CHASE.escape}`));
 
@@ -210,7 +227,9 @@ export function renderChaseCard(rerender) {
 }
 
 function flagOutcome(s) {
-  if (s.distIdx < 0) showToast(`Caught — ${D.CHASE.caught}`, { kind: "warn", timeout: 5000 });
+  // Engaged IS caught — the card says so, and the toast used to wait one press
+  // longer than the rule it quotes. [playtest audit]
+  if (s.distIdx <= 0) showToast(`Caught — ${D.CHASE.caught}`, { kind: "warn", timeout: 5000 });
   else if (s.distIdx >= RANGE_KEYS.length) showToast(`The prey is away — ${D.CHASE.escape}`, { kind: "warn", timeout: 5000 });
 }
 const skillName = (key) => D.SKILLS.find((s) => s.key === key)?.name || key;

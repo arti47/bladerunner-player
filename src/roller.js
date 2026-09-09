@@ -149,15 +149,25 @@ function diceRow(dice) {
   }
   return row;
 }
-function outcomeLine(succ, banes) {
+function outcomeLine(succ, banes, pushed = false) {
   const ok = succ >= 1, crit = succ >= 2;
   return el("div", { class: "roll-outcome" },
     el("span", { class: "roll-outcome__main " + (ok ? "is-succ" : "is-fail") }, ok ? (crit ? "Critical success" : "Success") : "Failure"),
-    el("span", { class: "muted" }, `${succ} success${succ === 1 ? "" : "es"}${banes ? ` · ${banes} bane${banes === 1 ? "" : "s"}` : ""}`));
+    el("span", { class: "muted" }, `${succ} success${succ === 1 ? "" : "es"}${pushed && banes ? ` · ${banes} bane${banes === 1 ? "" : "s"}` : ""}`));
+}
+
+// A dead Blade Runner takes no more actions — the sheet's DECEASED banner is the
+// only thing left to act on (§3.7).
+const isDead = (ch) => !!ch?.state?.dead;
+function blockIfDead(ch) {
+  if (!isDead(ch)) return false;
+  showToast(`${ch.name} is dead — create a new Blade Runner from the wizard.`, { kind: "warn" });
+  return true;
 }
 
 // ---- skill roll -----------------------------------------------------------
 export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
+  if (blockIfDead(ch)) return;
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
   const sk = R.skill(skillKey);
@@ -198,7 +208,7 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
       const result = (b) => {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
         b.append(diceRow(st.dice));
-        b.append(outcomeLine(succ, banes));
+        b.append(outcomeLine(succ, banes, st.pushed));
         b.append(nextSteps(ch, sk, succ, (node) => b.insertBefore(node, b.lastChild)));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
@@ -208,7 +218,7 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
           const risk = applyPushRisk(ch, attrKey, nb);
           let msg = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
           if (st.keyMemory && ns < 1) { ch.state.resolve = Math.max(0, ch.state.resolve - 1); reclampVitals(ch); Store.save(ch); msg += " Key memory failed: +1 stress."; }
-          logRoll({ label: `${sk.name} (push)`, text: outcomeSummary(ns, nb), charId: ch.id, charName: ch.name, source: "sheet" });
+          logRoll({ label: `${sk.name} (push)`, text: outcomeSummary(ns, nb, true), charId: ch.id, charName: ch.name, source: "sheet" });
           st.note = msg; paint();
         } }, "↻ Push the roll"));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
@@ -226,6 +236,7 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
 // Base Dice; most successes wins; a tie goes to the side being opposed. Only the
 // initiator may push.
 export function openOpposedSkillRoll(ch, onDone) {
+  if (blockIfDead(ch)) return;
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
   const st = { mine: "manipulation", theirSkillKey: "insight", theirAttr: "C", theirSkill: "C",
@@ -304,6 +315,7 @@ function levelPicker(label, value, onPick) {
 // critical outside combat can be cashed in on the Solo Mode table, so that roll
 // is offered right here rather than sending you to another screen.
 function nextSteps(ch, sk, succ, addResult) {
+  ch = ch || null;
   if (succ < 1) return el("div", { class: "roll-next muted" },
     "Failed — push it (each 1 left in the pool costs you), or take the failure and let it cost you something in the fiction.");
   const box = el("div", { class: "roll-next" });
@@ -315,7 +327,7 @@ function nextSteps(ch, sk, succ, addResult) {
     box.append(el("button", { class: "btn btn--sm btn--roll", onClick: () => {
       const roll = rollDie(CRITICAL_SUCCESS.length);
       const res = CRITICAL_SUCCESS[roll - 1];
-      logRoll({ label: `Crit Success — ${sk.name}`, text: `D${CRITICAL_SUCCESS.length}=${roll} · ${res.name}`, charId: ch.id, charName: ch.name, source: "sheet" });
+      logRoll({ label: `Crit Success — ${sk.name}`, text: `D${CRITICAL_SUCCESS.length}=${roll} · ${res.name}`, charId: ch?.id || null, charName: ch?.name || null, source: "sheet" });
       addResult(el("div", { class: "roll-next__crit" },
         el("strong", {}, res.name), el("p", {}, res.text),
         el("div", { class: "roll-eyebrow" }, "Bonus"), el("p", { class: "muted" }, res.bonus)));
@@ -371,7 +383,7 @@ export function proceduralRoll(ch, { skillKey, title, adv = 0, dis = 0, allowPus
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.msg = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
-          logRoll({ label: `${title || sk.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
+          logRoll({ label: `${title || sk.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice), true), charId: ch.id, charName: ch.name, source: "sheet" });
           paint();
         } }, "↻ Push"));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => { close(); onResult && onResult({ successes: sumSucc(st.dice), banes: sumBane(st.dice), pushed: st.pushed }); } }, "Apply result"));
@@ -400,6 +412,7 @@ function matchWeapon(item, allWeapons) {
 }
 
 export function openWeaponPicker(ch, onDone) {
+  if (blockIfDead(ch)) return;
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
   const allWeapons = D.WEAPONS || [...(D.WEAPONS_MELEE || []), ...(D.WEAPONS_RANGED || [])];
@@ -492,6 +505,7 @@ export function resolveBlastPower(weapon, onPicked) {
 }
 
 export function openAttackRoll(ch, weapon, onDone) {
+  if (blockIfDead(ch)) return;
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
   if (needsBlastPower(weapon)) { resolveBlastPower(weapon, (w) => openAttackRoll(ch, w, onDone)); return; }
@@ -525,7 +539,7 @@ export function openAttackRoll(ch, weapon, onDone) {
       const result = (b) => {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
         b.append(diceRow(st.dice));
-        b.append(outcomeLine(succ, banes));
+        b.append(outcomeLine(succ, banes, st.pushed));
         if (succ >= 1) b.append(damageBlock(ch, weapon, succ));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
@@ -533,7 +547,7 @@ export function openAttackRoll(ch, weapon, onDone) {
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.note = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
-          logRoll({ label: `Attack — ${weapon.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
+          logRoll({ label: `Attack — ${weapon.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice), true), charId: ch.id, charName: ch.name, source: "sheet" });
           paint();
         } }, "↻ Push the roll"));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
@@ -776,8 +790,8 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
       const result = (b) => {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
         b.append(diceRow(st.dice));
-        b.append(outcomeLine(succ, banes));
-        b.append(nextSteps(ch, sk, succ, (node) => b.insertBefore(node, b.lastChild)));
+        b.append(outcomeLine(succ, banes, st.pushed));
+        b.append(nextSteps(rc.pc || null, sk, succ, (node) => b.insertBefore(node, b.lastChild)));
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
         if (!st.pushed && canPush(rc) && pushable(st.dice)) actions.append(el("button", { class: "btn btn--roll", onClick: () => {
@@ -797,6 +811,73 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
         } }, "↻ Push the roll"));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
         b.append(actions);
+      };
+      paint();
+    }
+  });
+}
+
+// Death save / stabilize for a combatant in the tracker (§3.7). The sheet has
+// these for a PC; a dying NPC owed a save every interval with nowhere to roll it.
+export function rollCombatDeathProcedure(c, inj, mode, commit) {
+  const rc = resolveCombatant(c);
+  const sk = R.skill(mode === "save" ? "stamina" : "medical_aid");
+  const attrLv = rc.attributes[sk.attr] || "C";
+  const skLv = rc.skills[sk.key] || "D";
+  const broken = c.health <= 0;
+  const st = { adv: 0, dis: mode === "save" ? 0 : (broken ? 0 : 1), phase: "config", dice: null };
+  modal({
+    title: `${mode === "save" ? "Death save" : "Stabilize"} — ${c.name}`,
+    render(body, close) {
+      const paint = () => { body.replaceChildren(); (st.phase === "config" ? config : result)(body, close); };
+      const config = (b) => {
+        b.append(el("p", { class: "muted" }, mode === "save"
+          ? `${inj.injury} is lethal — one ${sk.name} save every ${inj.deathSave}. Success: they linger and save again. Failure: they die.`
+          : `${sk.name} takes one ${inj.deathSave}. Success raises the interval a category; a treated Shift-crit ends the saves. Treating yourself while not Broken is at disadvantage.`));
+        b.append(el("p", { class: "muted" }, `${R.attrDisplay(sk.attr)} d${dsize(attrLv)} + d${dsize(skLv)}.`));
+        b.append(advControls(st, { adv: 0, dis: 0 }, paint));
+        b.append(netBadge(netOf(st.adv, st.dis)));
+        b.append(el("div", { class: "modal__actions" },
+          el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
+          el("button", { class: "btn btn--primary", onClick: () => {
+            st.dice = poolFor(dsize(attrLv), dsize(skLv), netOf(st.adv, st.dis));
+            logRoll({ label: `${mode === "save" ? "Death save" : "Stabilize"} — ${c.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: c.charId || null, charName: c.name, source: "combat" });
+            st.phase = "result"; paint();
+          } }, "⚄ Roll")));
+      };
+      const result = (b) => {
+        const succ = sumSucc(st.dice);
+        b.append(diceRow(st.dice));
+        b.append(outcomeLine(succ, sumBane(st.dice), false));
+        b.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--primary", onClick: () => {
+          close();
+          if (mode === "save") {
+            if (succ >= 1) showToast(`${c.name} lingers — save again next ${inj.deathSave}.`);
+            else {
+              commit((s) => {
+                const t = s.combatants.find((x) => x.id === c.id);
+                if (t) { t.health = 0; t.dead = true; }
+              });
+              if (c.kind === "pc" && c.charId) { const pc = Store.get(c.charId); if (pc) { pc.state.dead = true; pc.state.health = 0; Store.save(pc); } }
+              showToast(`${c.name} dies.`, { kind: "error", timeout: 5000 });
+            }
+          } else if (succ >= 1) {
+            let msg = "";
+            commit((s) => {
+              const t = s.combatants.find((x) => x.id === c.id);
+              const i = (t?.criticalInjuries || []).find((x) => x.id === inj.id);
+              if (!i) return;
+              if (i.deathSave === "round") { i.deathSave = "shift"; msg = "Stabilized up to a Shift interval."; }
+              else { i.stabilized = true; msg = "Stabilized — no further death saves needed."; }
+            });
+            if (c.kind === "pc" && c.charId) {
+              const pc = Store.get(c.charId);
+              const pi = pc && (pc.state.criticalInjuries || []).find((x) => x.id === inj.id);
+              if (pi) { if (pi.deathSave === "round") pi.deathSave = "shift"; else pi.stabilized = true; Store.save(pc); }
+            }
+            showToast(msg || "Stabilized.");
+          } else showToast("Stabilize failed — try again after the next death save.", { kind: "warn" });
+        } }, "Done")));
       };
       paint();
     }
@@ -854,7 +935,7 @@ function openRangedAttack(c, rc, w, commit) {
   const sk = R.skill(skKey);
   const attrLv = rc.attributes.AGI || "C";
   const skLv = rc.skills[skKey] || "D";
-  const enemies = Combat.get().combatants.filter((x) => x.id !== c.id && x.health > 0);
+  const enemies = Combat.get().combatants.filter((x) => x.id !== c.id);
   const st = { adv: 0, dis: 0, aiming: false, fullAuto: false, phase: "config", dice: null, pushed: false, note: null,
     targetId: enemies[0]?.id || null, armorRes: null, applied: false };
   const targetOf = () => Combat.get().combatants.find((x) => x.id === st.targetId) || null;
@@ -895,7 +976,7 @@ function openRangedAttack(c, rc, w, commit) {
       const result = (b) => {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
         b.append(diceRow(st.dice));
-        b.append(outcomeLine(succ, banes));
+        b.append(outcomeLine(succ, banes, st.pushed));
         if (succ >= 1) {
           const target = targetOf();
           const raw = typeof w.damage === "number" ? w.damage + Math.max(0, succ - 1) : 1;
@@ -949,7 +1030,7 @@ function openRangedAttack(c, rc, w, commit) {
 function spillRow(attacker, primary, extra, commit) {
   const box = el("div", { class: "card card--target-dmg" });
   box.append(el("div", { class: "card__eyebrow" }, `Full auto — spill ${extra} extra success${extra === 1 ? "" : "es"}`));
-  const others = Combat.get().combatants.filter((x) => x.id !== attacker.id && x.id !== primary?.id && x.health > 0);
+  const others = Combat.get().combatants.filter((x) => x.id !== attacker.id && x.id !== primary?.id);
   if (!others.length) { box.append(el("p", { class: "muted" }, "No other targets in the line of fire.")); return box; }
   const st = { left: extra };
   const list = el("div", { class: "rec-actions" });
@@ -977,7 +1058,7 @@ function targetPicker(st, enemies, paint) {
     const conds = Object.keys(e.conditions || {}).filter((k) => e.conditions[k]).length;
     chips.append(el("button", { class: "chip" + (st.targetId === e.id ? " chip--on" : ""),
       onClick: () => { st.targetId = e.id; st.armorRes = null; paint(); } },
-      `${e.name} ♥${e.health}${conds ? " ⚑" : ""}`));
+      `${e.name} ♥${e.health}${e.health <= 0 ? " Broken" : ""}${conds ? " ⚑" : ""}`));
   }
   return el("div", { class: "field" }, el("label", { class: "field__label" }, "Target"), chips);
 }
@@ -1009,7 +1090,7 @@ function applyDamageRow(target, dmg, commit, st) {
 }
 
 function openOpposedMelee(c, rc, w, commit) {
-  const enemies = Combat.get().combatants.filter((x) => x.id !== c.id && x.health > 0);
+  const enemies = Combat.get().combatants.filter((x) => x.id !== c.id);
   if (!enemies.length) {
     showToast("No active opponents in combat to oppose.", { kind: "warn" });
     return;

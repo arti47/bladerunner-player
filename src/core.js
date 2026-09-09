@@ -44,10 +44,12 @@ export function successesFor(face) { return face >= 10 ? 2 : face >= 6 ? 1 : 0; 
 // Roll an array of die sizes; return per-die results with success counts.
 
 // One-line outcome summary for the roll log: "Critical success · 2 successes · 1 bane".
-export function outcomeSummary(succ, banes) {
+// A 1 only costs anything on a PUSHED roll (§3.1), so banes are reported only
+// when the roll was actually pushed — an unpushed 1 is just a low die.
+export function outcomeSummary(succ, banes, pushed = false) {
   const base = succ >= 2 ? "Critical success" : succ >= 1 ? "Success" : "Failure";
   const s = `${base} · ${succ} success${succ === 1 ? "" : "es"}`;
-  return banes ? `${s} · ${banes} bane${banes === 1 ? "" : "s"}` : s;
+  return pushed && banes ? `${s} · ${banes} bane${banes === 1 ? "" : "s"}` : s;
 }
 
 // ---- notes ----------------------------------------------------------------

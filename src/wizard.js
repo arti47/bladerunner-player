@@ -68,8 +68,17 @@ function paint(mount) {
       ? el("button", { class: "btn btn--primary", disabled: !canNext || null, onClick: () => next(mount) }, "Next ›")
       : el("button", { class: "btn btn--primary", onClick: () => finish() }, "Create Blade Runner"));
   wrap.append(nav);
+  // Typing a name must un-gate Next without a repaint (a repaint would take the
+  // caret out of the field mid-word).
+  navSync = () => {
+    const b = nav.querySelector(".btn--primary");
+    if (b && draft.step < STEPS.length - 1) b.disabled = !stepReady(STEPS[draft.step]);
+  };
   mount.append(wrap);
 }
+
+let navSync = null;
+const refreshNav = () => { try { navSync && navSync(); } catch {} };
 
 function stepReady(step) {
   if (step.validate) return step.validate(draft).ok;
@@ -77,6 +86,9 @@ function stepReady(step) {
     case "nature": return !!draft.nature;
     case "archetype": return !!draft.archetype;
     case "years": return !!draft.years;
+    // A nameless character is carried through the whole app as "Unnamed Blade
+    // Runner" — the one field that must be filled. [playtest audit]
+    case "identity": return !!(draft.identity.name || "").trim();
     default: return true;
   }
 }
@@ -325,8 +337,10 @@ function syncRelationship() {
 // ---- Step 9: Identity -----------------------------------------------------
 function stepIdentity(body, rerender) {
   const arch = R.archetype(draft.archetype);
-  body.append(field("Name", draft.identity.name, (v) => { draft.identity.name = v; },
+  body.append(field("Name", draft.identity.name, (v) => { draft.identity.name = v; refreshNav(); },
     arch.names.some(Boolean) ? () => { draft.identity.name = pick(arch.names.filter(Boolean)); rerender(); } : null));
+  if (!(draft.identity.name || "").trim())
+    body.append(el("p", { class: "muted sheet__note" }, "A name is required — type one, or press 🎲 to roll one from your archetype's table."));
   body.append(field("Appearance", draft.identity.appearance, (v) => { draft.identity.appearance = v; },
     arch.appearance.length ? () => { const r = d3(); draft.identity.appearance = arch.appearance[r - 1]; rerender(); } : null, true));
   body.append(field("Signature item", draft.identity.signatureItem, (v) => { draft.identity.signatureItem = v; },

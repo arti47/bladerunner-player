@@ -10,7 +10,7 @@ import { Store, Combat } from "./store.js";
 import { maxHealth, reclampVitals } from "./derived.js";
 import { modal, showToast, confirmModal } from "./ui.js";
 import { Sync } from "./sync.js";
-import { rollCombatAttack, rollCombatSkill, armorForCombatant as armorFor, rollCritOnCombatant } from "./roller.js";
+import { rollCombatAttack, rollCombatSkill, armorForCombatant as armorFor, rollCritOnCombatant, rollCombatDeathProcedure } from "./roller.js";
 import { renderChaseCard } from "./chase.js";
 import { Settings } from "./settings.js";
 import { navigate } from "./router.js";
@@ -99,14 +99,15 @@ function combatantCard(c, isTurn, commit) {
   const card = el("div", { class: "card combatant" + (isTurn ? " combatant--turn" : "") + (broken ? " combatant--broken" : "") });
   const armor = armorFor(c);
   card.append(el("div", { class: "combatant__top" },
-    el("span", { class: "combatant__init" + (c.card ? "" : " combatant__init--none"), title: "Initiative card",
+    el("button", { class: "combatant__init" + (c.card ? "" : " combatant__init--none"), title: "Initiative card",
+      "aria-label": `initiative card for ${c.name}${c.card ? ` — currently #${c.card}` : " — not set"}`,
       onClick: () => editCard(c, commit) }, c.card ? `#${c.card}` : "—"),
     el("span", { class: "combatant__name" }, c.name, el("span", { class: "muted combatant__kind" }, ` · ${c.kind === "pc" ? "PC" : "NPC"}`)),
     el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${c.name}`, onClick: () => commit((s) => { s.combatants = s.combatants.filter((x) => x.id !== c.id); }) }, "✕")));
   card.append(el("div", { class: "combatant__vitals" },
     el("span", { class: "track__num track__num--health" }, `♥ ${c.health}/${c.maxHealth}`),
     armor ? el("span", { class: "pip", title: `${armor.name} — roll ${D.ARMOR_DICE}× d${D.LEVEL_DIE[armor.rating]} when hit` }, `🛡 ${armor.rating}`) : null,
-    broken ? el("span", { class: "badge badge--danger" }, "Broken") : null,
+    c.dead ? el("span", { class: "badge badge--danger" }, "☠ Dead") : broken ? el("span", { class: "badge badge--danger" }, "Broken") : null,
     el("span", { class: "stepper__ctrl" },
       el("button", { class: "btn btn--sm", "aria-label": `damage ${c.name}`, onClick: () => damageCombatant(c, commit) }, "−"),
       el("button", { class: "btn btn--sm", "aria-label": `heal ${c.name}`, onClick: () => commit((s) => adjust(s, c.id, +1)) }, "+"))));
@@ -124,8 +125,17 @@ function combatantCard(c, isTurn, commit) {
       }) }, cond.name));
   }
   card.append(chips);
-  for (const inj of c.criticalInjuries || [])
-    card.append(el("div", { class: "muted sheet__note" }, `☠ ${inj.injury} — ${inj.effect}`));
+  // A lethal critical owes a save every interval (§3.7) — say so, and offer the roll.
+  for (const inj of c.criticalInjuries || []) {
+    const lethalTxt = inj.instantKill ? " · instant kill" : inj.lethal ? ` · lethal — ${inj.deathSave} save` : "";
+    card.append(el("div", { class: "muted sheet__note" },
+      `☠ ${inj.injury}${lethalTxt}${inj.stabilized ? " · stabilized" : ""} — ${inj.effect}`));
+    if (inj.lethal && !inj.instantKill && !inj.stabilized && !c.dead) {
+      card.append(el("div", { class: "rec-actions" },
+        el("button", { class: "btn btn--sm btn--roll", onClick: () => rollCombatDeathProcedure(c, inj, "save", commit) }, "Death save (STAMINA)"),
+        el("button", { class: "btn btn--sm", onClick: () => rollCombatDeathProcedure(c, inj, "stabilize", commit) }, "Stabilize (MEDICAL AID)")));
+    }
+  }
   card.append(el("div", { class: "rec-actions combatant__actions" },
     el("button", { class: "btn btn--sm btn--roll", onClick: () => rollCombatAttack(c, commit) }, "⚔ Attack"),
     el("button", { class: "btn btn--sm", onClick: () => rollCombatSkill(c, commit) }, "🎲 Skill")));

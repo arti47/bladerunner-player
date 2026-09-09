@@ -14,10 +14,10 @@
 
 import * as S from "../data-solo.js";
 import * as D from "../data.js";
-import { el, rollDie, successesFor } from "./core.js";
+import { el, rollDie, successesFor, outcomeSummary } from "./core.js";
 import { showToast, promptModal } from "./ui.js";
 import { lookupRange, rollColumn, skill as findSkill } from "./rules.js";
-import { Store } from "./store.js";
+import { Store, RollLog } from "./store.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { rollClue, rollSuspect } from "./board.js";
 
@@ -65,6 +65,19 @@ export function renderPlayPanel(root, ctx) {
         "The app can roll you a complete, legal one — name, background, skills and gear — in one press. You can change any of it later."],
       choices: [["⚄ Roll me a detective", () => navigate("wizard")]],
       footer: "Takes about ten seconds. Then come straight back here.",
+    });
+    return;
+  }
+
+  // ---- dead: nothing else happens until there is a new detective ----------
+  if (ch.state?.dead) {
+    ask({
+      eyebrow: "End of the line",
+      title: `${ch.name} is dead`,
+      prose: ["That case ended the way some of them do. Nothing more happens on this sheet — no rolls, no Shifts, no new case.",
+        "Roll up a replacement and pick the thread back up; your closed case files stay in the record."],
+      choices: [["⚄ Roll me a new detective", () => navigate("wizard")],
+        ["Look at the old sheet", () => navigate("sheet"), "sm ghost"]],
     });
     return;
   }
@@ -128,9 +141,9 @@ export function renderPlayPanel(root, ctx) {
       prose: [p.lastNarration || "You're here. Nothing has jumped out at you yet.",
         found >= ACTIONS_PER_LOCATION ? "You've turned this place over pretty thoroughly. Somewhere else might be more use." : null],
       choices: [
-        ...ACTIONS.map((a) => [a.verb, () => doAction(a), "primary"]),
+        ...ACTIONS.map((a) => [a.verb, () => doAction(a), found >= ACTIONS_PER_LOCATION ? "sm ghost" : "primary"]),
         suspects.length ? [`🎯 I think ${suspects[0].name} did it`, () => set({ stage: "accuse" }), "sm"] : null,
-        ["🚕 Go somewhere else", nextShift, "sm ghost"],
+        ["🚕 Go somewhere else", nextShift, found >= ACTIONS_PER_LOCATION ? "primary" : "sm ghost"],
       ],
       footer: `Health ${ch.state.health}/${maxHealth(ch)} · Resolve ${ch.state.resolve}/${maxResolve(ch)}${suspects.length ? ` · ${suspects.length} name${suspects.length === 1 ? "" : "s"} so far` : ""}`,
     });
@@ -186,10 +199,13 @@ export function renderPlayPanel(root, ctx) {
   // ---- the moves ----------------------------------------------------------
 
   async function startCase() {
-    const b = rollBriefing();
+    // Roll it, but keep it out of the notes until the case is actually taken —
+    // a cancelled name prompt used to leave a briefing for a case that never was.
+    const b = rollBriefing({ write: false });
     const title = await promptModal("Give the case a name you'll recognise later.",
       { title: "Name the case", value: b.assignment.split(/[,.;]/)[0].slice(0, 40), okLabel: "Take the case" });
     if (title === null) return;
+    b.commit();
     openCase({ title: (title || "Untitled case").trim(), assignment: b.assignment });
     set({ ...blank(), stage: "plan", leadHint: `Why it matters: ${b.relevance} Already going wrong: ${b.complication}` });
     showToast("Case open. Pick somewhere to start.");
@@ -200,7 +216,9 @@ export function renderPlayPanel(root, ctx) {
   // A person you can picture: a real name off the Core table, an occupation, a
   // quirk, and the Solo book's read on what they are like.
   function rollPerson() {
-    const npc = rollMainNpc();
+    const taken = new Set((p.suspects || []).map((s) => s.name));
+    let npc = rollMainNpc();
+    for (let i = 0; i < 8 && taken.has(npc.name); i++) npc = rollMainNpc(); // two people, one name reads as a bug
     const flavour = rollSuspect();
     return { name: npc.name, detail: `${npc.occ} — ${npc.quirk}. ${flavour.detail}` };
   }
@@ -233,10 +251,12 @@ export function renderPlayPanel(root, ctx) {
       const ev = S.COUNTDOWN_EVENT[rollDie(12) - 1];
       st.timerDie = S.ESCALATION_STEPS[0];
       say(`• Interruption: ${ev.name} — ${ev.examples}`);
+      log("Countdown Event Check — guided play", `Event fires · ${ev.name}`);
       return ev;
     }
     const i = S.ESCALATION_STEPS.indexOf(st.timerDie);
     if (i !== -1 && i < S.ESCALATION_STEPS.length - 1) st.timerDie = S.ESCALATION_STEPS[i + 1];
+    log("Countdown Event Check — guided play", `No event · timer now ${st.timerDie}`);
     return null;
   }
 
@@ -250,10 +270,16 @@ export function renderPlayPanel(root, ctx) {
   }
   function countSucc(faces) { return faces.reduce((n, f) => n + successesFor(f), 0); }
 
+  function log(label, text) {
+    try { RollLog.add({ label, text, charId: ch.id, charName: ch.name, source: "solo" }); } catch { /* best effort */ }
+  }
+
   function doAction(action) {
     const sizes = poolFor(action.key);
     const faces = sizes.map((size) => rollDie(size));
-    finishRoll(action, { sizes, faces }, countSucc(faces), false);
+    const succ = countSucc(faces);
+    log(`${findSkill(action.key).name} — guided play`, outcomeSummary(succ, 0));
+    finishRoll(action, { sizes, faces }, succ, false);
   }
 
   // Push: re-roll every die that is not showing a 1; the 1s left behind are what
@@ -269,8 +295,13 @@ export function renderPlayPanel(root, ctx) {
       if (physical) ch.state.health = Math.max(0, ch.state.health - banes);
       else ch.state.resolve = Math.max(0, ch.state.resolve - banes);
       Store.save(ch);
+      // What a push costs must be visible in the record, not only in prose. [audit]
+      say(`• Pushed ${findSkill(action.key).name}: ${banes} ${physical ? "Health" : "Resolve"} lost.`);
+      showToast(`Push cost ${banes} ${physical ? "Health" : "Resolve"}.`, { kind: "warn" });
     }
-    finishRoll(action, { sizes, faces: rolled }, countSucc(rolled), true, banes, physical);
+    const psucc = countSucc(rolled);
+    log(`${findSkill(action.key).name} (push) — guided play`, outcomeSummary(psucc, banes, true));
+    finishRoll(action, { sizes, faces: rolled }, psucc, true, banes, physical);
   }
 
   function finishRoll(action, roll, succ, pushed, banes = 0, physical = false) {
@@ -342,8 +373,12 @@ export function renderPlayPanel(root, ctx) {
     const dice = sizes.map((size) => rollDie(size));
     const succ = dice.reduce((n, f) => n + successesFor(f), 0);
     const out = succ >= 2 ? S.HYPOTHESIS_CHECK.crit : succ >= 1 ? S.HYPOTHESIS_CHECK.success : S.HYPOTHESIS_CHECK.failure;
-    applyPoints(ch, { pp: out.pp });
-    pinNote(`Accused ${s.name} — ${out.name} (${out.pp >= 0 ? "+" : ""}${out.pp} Promotion)`);
+    // applyPoints floors at 0, so report what was actually paid, not the sticker
+    // price — the case file quotes this line. [audit]
+    const applied = applyPoints(ch, { pp: out.pp });
+    const ppReal = applied && typeof applied.pp === "number" ? applied.pp : out.pp;
+    log(`Hypothesis Check — ${s.name}`, `${dice.join("/")} · ${out.name} (${ppReal >= 0 ? "+" : ""}${ppReal} Promotion)`);
+    pinNote(`Accused ${s.name} — ${out.name} (${ppReal >= 0 ? "+" : ""}${ppReal} Promotion)`);
     if (out.pp > 0) {
       set({
         stage: "solved",
@@ -351,14 +386,14 @@ export function renderPlayPanel(root, ctx) {
           culprit: s.name,
           outcome: succ >= 2 ? "Airtight. They never saw it coming." : "It held up. Just.",
           title: `It was ${s.name}`,
-          prose: `The evidence holds. ${out.text} You take ${out.pp} Promotion Points for closing it.`,
+          prose: `The evidence holds. ${out.text} You take ${ppReal} Promotion Points for closing it.`,
         },
       });
     } else {
       set({
         stage: "here",
         suspects: (p.suspects || []).slice(1),
-        lastNarration: `You were wrong about ${s.name}. It cost you ${Math.abs(out.pp)} Promotion Points, and the real answer is still out there.`,
+        lastNarration: `You were wrong about ${s.name}. It cost you ${Math.abs(ppReal)} Promotion Points, and the real answer is still out there.`,
       });
     }
   }

@@ -18,7 +18,7 @@
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal } from "./ui.js";
 import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
@@ -33,7 +33,7 @@ const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo 
                                  // so starting a fresh case cannot wipe your record
 const LOG_CAP = 50;
 const RESULT_HISTORY = 3;   // results kept per card, so draws can be compared
-const LOOSE = "__panel";    // bucket for rolls fired outside any card
+const LOOSE_PREFIX = "__panel";   // bucket for rolls fired outside any card — one per tab
 const SEGMENTS = [
   { key: "play", label: "▶ Play", hint: "guided play — one question at a time" },
   { key: "case", label: "Case", hint: "open a new case file" },
@@ -199,6 +199,10 @@ export function renderSolo(mount, rerender) {
   clear(mount);
   const st = readSoloState();
 
+  const loose = () => `${LOOSE_PREFIX}:${st.panel || "play"}`;
+  // Legacy single loose bucket (shared by every tab) — drop it once.
+  if (st.results && st.results[LOOSE_PREFIX]) { delete st.results[LOOSE_PREFIX]; writeSoloState(st); }
+
   const record = (label, text, pin) => {
     st.log = st.log || [];
     st.log.unshift({ id: uid(), label, text, pin: pin || `[${label}] ${text}`, ts: Date.now() });
@@ -224,7 +228,7 @@ export function renderSolo(mount, rerender) {
     const pinLine = pin || `[${label}] ${text}`;
     // A roll fired from outside a card (a bare <details>, a stray row) still has
     // to show its result — park it on the panel rather than vanishing into a toast.
-    const key = slot || cardTitleOf(activeBtn) || LOOSE;
+    const key = slot || cardTitleOf(activeBtn) || loose();
     if (key) {
       st.results = st.results || {};
       const list = resultList(key);
@@ -266,9 +270,11 @@ export function renderSolo(mount, rerender) {
       `Did that end the case? If so ${ch.name} takes ${sign} Promotion Point${Math.abs(pp) === 1 ? "" : "s"} now. Otherwise skip it and apply it when the case closes.`,
       { title: `${sign} Promotion Points`, okLabel: `Apply ${sign} PP`, cancelLabel: "Not yet" });
     if (!ok) return;
-    applyPoints(ch, { pp });
-    record("Promotion", `${sign} PP · ${ch.name}`, `[Promotion] ${sign} PP — ${why}`);
-    showToast(`${ch.name}: ${sign} Promotion Points (now ${ch.state.promotionPoints}).`);
+    const got = applyPoints(ch, { pp });
+    const real = got.pp >= 0 ? `+${got.pp}` : `${got.pp}`;
+    const capped = got.pp !== pp ? ` (asked ${sign}, floored at 0)` : "";
+    record("Promotion", `${real} PP · ${ch.name}${capped}`, `[Promotion] ${real} PP — ${why}${capped}`);
+    showToast(`${ch.name}: ${real} Promotion Points (now ${ch.state.promotionPoints}).`);
   }
   // ---- a case has a beginning, a middle and an end -------------------------
   // Opening records what the case IS and the character's points at the time, so
@@ -342,10 +348,13 @@ export function renderSolo(mount, rerender) {
 
   // Points never go below zero (§3.10). Saves the character.
   function applyPoints(ch, { pp = 0, humanity = 0 }) {
-    ch.state.promotionPoints = Math.max(0, (ch.state.promotionPoints || 0) + pp);
-    ch.state.humanityPoints = Math.max(0, (ch.state.humanityPoints || 0) + humanity);
+    const pp0 = ch.state.promotionPoints || 0, hum0 = ch.state.humanityPoints || 0;
+    ch.state.promotionPoints = Math.max(0, pp0 + pp);
+    ch.state.humanityPoints = Math.max(0, hum0 + humanity);
     Store.save(ch);
-    return ch;
+    // The floor means the swing you asked for is not always the swing you got —
+    // callers quote this in the notes and the case file, so return the truth.
+    return { ch, pp: ch.state.promotionPoints - pp0, humanity: ch.state.humanityPoints - hum0 };
   }
 
   // header + segmented nav
@@ -408,6 +417,16 @@ export function renderSolo(mount, rerender) {
       cell(`${used}/${limit} to Downtime`, atLimit ? "warn" : ""),
       cell(`⏱ ${st.timerDie}`),
     );
+    if (ch.state.dead) wrap.append(el("button", {
+      class: "solo-status__cell solo-status__link warn",
+      onClick: () => navigate("sheet"),
+    }, "☠ Deceased — roll a new detective"));
+    // A Replicant at zero Promotion Points owes a Baseline Test (§3.10) — the
+    // sheet has the button, but nothing ever said the trigger had been met.
+    else if (ch.nature === "replicant" && (ch.state.promotionPoints || 0) === 0) wrap.append(el("button", {
+      class: "solo-status__cell solo-status__link warn",
+      onClick: () => navigate("sheet"),
+    }, "⚠ Baseline Test due"));
     const banked = Board.checks();
     if (banked) wrap.append(el("button", {
       class: "solo-status__cell solo-status__link",
@@ -502,16 +521,16 @@ export function renderSolo(mount, rerender) {
       });
     }
     // Results with no owning card hang at the end of the panel.
-    for (const r of resultList(LOOSE)) {
+    for (const r of resultList(loose())) {
       live += 1;
       panelEl.append(resultSlot({ title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts, onPin: pinNote,
-        onDismiss: () => { st.results[LOOSE] = resultList(LOOSE).filter((x) => x.id !== r.id); if (!st.results[LOOSE].length) delete st.results[LOOSE]; writeSoloState(st); rerender(); } }));
+        onDismiss: () => { st.results[loose()] = resultList(loose()).filter((x) => x.id !== r.id); if (!st.results[loose()].length) delete st.results[loose()]; writeSoloState(st); rerender(); } }));
     }
     if (!live) return;
     const shown = [...panelEl.querySelectorAll(".card")]
       .map((c) => c.querySelector(".sheet__section")?.textContent)
       .filter((k) => k && resultList(k).length)
-      .concat(resultList(LOOSE).length ? [LOOSE] : []);
+      .concat(resultList(loose()).length ? [loose()] : []);
     panelEl.append(el("div", { class: "btn-row result-clear" },
       btn(`\u2715 Clear ${live === 1 ? "this result" : "these " + live + " results"}`, () => {
         for (const key of shown) delete st.results[key];
@@ -574,13 +593,21 @@ export function renderSolo(mount, rerender) {
     for (const m of S.CASE_START_METHODS) {
       const row = el("div", { class: "solo-method" },
         el("div", {}, el("strong", {}, m.name), " — ", el("span", { class: "muted" }, m.text)));
-      if (m.key === "gut" || m.key === "thread") {
-        row.append(btn(m.key === "gut" ? "✍ Seed a note" : "✍ Seed from an old case", () => {
-          addNote(m.key === "gut"
-            ? `=== NEW CASE — ${new Date().toLocaleDateString()} (trust your gut) ===\n• The case as you see it: \n\n`
-            : `=== NEW CASE — ${new Date().toLocaleDateString()} (following a thread) ===\n• Unresolved thread from an earlier case: \n• Why it warrants a new investigation: \n\n`);
+      if (m.key === "gut") {
+        row.append(btn("✍ Seed a note", () => {
+          addNote(`=== NEW CASE — ${new Date().toLocaleDateString()} (trust your gut) ===\n• The case as you see it: \n\n`);
           showToast("Case note added.");
         }, "sm ghost"));
+      }
+      // Following a thread means following an OLD case — so name them. The
+      // archive and this button used to sit in the same panel, unconnected.
+      if (m.key === "thread") {
+        const filed = Cases.read().files;
+        if (!filed.length) {
+          row.append(el("p", { class: "muted small" }, "No closed cases yet — this way in opens up once you have filed one."));
+        } else {
+          row.append(btn("✍ Seed from an old case", () => pickThread(filed), "sm ghost"));
+        }
       }
       methods.append(row);
     }
@@ -726,19 +753,40 @@ export function renderSolo(mount, rerender) {
       root.append(arch);
     }
 
+    // Pick a filed case, and seed the new one from what it left unfinished.
+    function pickThread(filed) {
+      modal({ title: "Follow a thread", render(body, close) {
+        body.append(el("p", { class: "muted" }, "Which closed case leaves something unfinished? Its answer, and what it cost, become the seed for this one."));
+        const list = el("div", { class: "picker" });
+        for (const f of filed) {
+          list.append(el("button", { class: "list__row", onClick: () => {
+            close();
+            addNote(`=== NEW CASE — ${new Date().toLocaleDateString()} (following a thread) ===\n• From case #${f.no} ${f.title}${f.assignment ? ` — ${f.assignment}` : ""}\n• How it ended: ${f.culprit || "unsolved"}${f.outcome ? ` — ${f.outcome}` : ""}\n• Unresolved thread from it: \n• Why it warrants a new investigation: \n\n`);
+            showToast(`Seeded from case #${f.no}.`);
+          } },
+            el("span", { class: "list__main" }, `#${f.no} ${f.title}`),
+            el("span", { class: "list__sub muted" }, `${f.shifts} Shift${f.shifts === 1 ? "" : "s"} · answer: ${f.culprit || "unsolved"}`)));
+        }
+        body.append(list);
+        body.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
+      } });
+    }
+
     // Roll the briefing (or not) and open the case in one move.
     async function openBriefedCase(withBriefing) {
-      let assignment = "";
+      let assignment = "", block = null;
       if (withBriefing) {
         const a = rollAssignment(), r = pick(S.CASE_BRIEFING.relevance), cx = pick(S.CASE_BRIEFING.complication), h = pick(S.CASE_BRIEFING.hook);
         assignment = a;
-        st.scratchpad = appendToNotes(st.scratchpad, `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${cx}\n• Personal Hook: ${h}`);
-        writeSoloState(st);
+        // Held back until the case is actually taken — a cancelled prompt used to
+        // leave a briefing in the notes for a case that never opened. [audit]
+        block = `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${a}\n• Relevance: ${r}\n• Complication: ${cx}\n• Personal Hook: ${h}`;
       }
       const suggested = assignment ? assignment.split(/[,.;]/)[0].slice(0, 40) : "";
       const title = await promptModal("Name this case — something you will recognise later.",
         { title: "Name the case", value: suggested, okLabel: "Open the case" });
       if (title === null) return;
+      if (block) st.scratchpad = appendToNotes(st.scratchpad, block);
       openCase({ title: (title || suggested || "Untitled case").trim(), assignment });
       st.panel = "shift";
       writeSoloState(st);
@@ -829,7 +877,7 @@ export function renderSolo(mount, rerender) {
           btn("📌 Pin it to the notes", () => pinNote(`[Countdown] ${ev.name}: ${ev.examples}`), "sm ghost")));
       root.append(card2);
     }
-    const oddsSelect = el("select", { class: "input roll-select" },
+    const oddsSelect = el("select", { class: "input roll-select", id: "solo-odds", "aria-label": "Question odds — how likely a yes is" },
       el("option", { value: "normal" }, "Normal odds (1D10)"),
       el("option", { value: "high" }, "High prob (2D10 keep highest)"),
       el("option", { value: "low" }, "Low prob (2D10 keep lowest)"));
@@ -852,7 +900,7 @@ export function renderSolo(mount, rerender) {
         }),
         btn("🎲 Crit Success (D8)", () => { const roll = rollDie(8); const res = S.CRITICAL_SUCCESS[roll - 1]; show({ label: "Crit Success", text: res.name, pin: `[Crit Success] ${res.name} — ${res.bonus}`, title: `Critical Success — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res.name), el("p", {}, res.text), el("div", { class: "roll-eyebrow" }, "Bonus"), el("p", { class: "muted" }, res.bonus)) }); }),
         btnNamed("🎲 Cipher", "Roll the Cipher oracle — two words to interpret", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher Oracle", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })),
-      el("div", { class: "roll-row" }, el("span", { class: "muted roll-row__label" }, "Question odds:"), oddsSelect),
+      el("div", { class: "roll-row" }, el("label", { class: "muted roll-row__label", for: "solo-odds" }, "Question odds:"), oddsSelect),
       el("p", { class: "muted roll-note" }, S.QUESTION_ODDS_NOTE),
       rollHere()));
 
@@ -904,10 +952,22 @@ export function renderSolo(mount, rerender) {
       rollBriefing, rollMainNpc,
       endShift: () => {
         const ch = Store.getActive();
-        if (ch) { applyInvestigationShift(ch); Store.save(ch); }
-        st.shiftNo = (st.shiftNo || 1) + 1;
+        const closed = st.shiftNo || 1;
+        st.shiftNo = closed + 1;
         st.shiftFlags = {};
+        st.pendingEvent = null;
         writeSoloState(st);
+        if (!ch) return;
+        // Same transition the Wrap tab runs — and it must be as visible here,
+        // because passing the Downtime limit costs Resolve.  [playtest audit]
+        const r = applyInvestigationShift(ch);
+        Store.save(ch);
+        record("Shift", `Shift ${closed} closed · ${r.shifts}/${r.limit} since Downtime${r.overLimit ? " · +1 stress" : ""}`,
+          `[Shift ${closed}] closed — ${r.shifts}/${r.limit} Shifts since Downtime${r.overLimit ? " (+1 stress)" : ""}`);
+        if (r.overLimit || r.brokenHeal) showToast([
+          r.overLimit ? "Over the Downtime limit: +1 stress — take Downtime soon." : "",
+          r.brokenHeal ? `Broken and alone: +${r.brokenHeal} Health.` : ""].filter(Boolean).join(" "),
+          { kind: r.overLimit ? "warn" : "info" });
       },
     });
     root.append(el("p", { class: "muted small play__escape" },
@@ -915,13 +975,16 @@ export function renderSolo(mount, rerender) {
   }
 
   // The Solo briefing, rolled as one block and written to the notes.
-  function rollBriefing() {
+  // `write` is deferred by the guided panel: it names the case first, and a
+  // briefing for a case you then cancel has no business in the record. [audit]
+  function rollBriefing({ write = true } = {}) {
     const g = rollDie(6) <= 3 ? 0 : 1, d = rollDie(10);
     const assignment = S.CASE_BRIEFING.assignment[g * 10 + (d - 1)];
     const relevance = pick(S.CASE_BRIEFING.relevance), complication = pick(S.CASE_BRIEFING.complication), hook = pick(S.CASE_BRIEFING.hook);
-    st.scratchpad = appendToNotes(st.scratchpad, `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${assignment}\n• Relevance: ${relevance}\n• Complication: ${complication}\n• Personal Hook: ${hook}`);
-    writeSoloState(st);
-    return { assignment, relevance, complication, hook };
+    const block = `=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${assignment}\n• Relevance: ${relevance}\n• Complication: ${complication}\n• Personal Hook: ${hook}`;
+    const commit = () => { st.scratchpad = appendToNotes(st.scratchpad, block); writeSoloState(st); };
+    if (write) commit();
+    return { assignment, relevance, complication, hook, block, commit };
   }
 
   // ---- BOARD: a house aid, not part of the printing -----------------------
@@ -1013,8 +1076,12 @@ export function renderSolo(mount, rerender) {
       grid(btn("🎲 Downtime Event (D12)", () => { const roll = rollDie(12); const ev = S.DOWNTIME_EVENT[roll - 1]; show({ label: "Downtime Event", text: `D12→${roll}`, pin: `[Downtime] Home: ${ev.home} / Street: ${ev.street}`, title: `Downtime Event — ${roll} (D12)`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, "At Home"), el("p", {}, ev.home), el("div", { class: "roll-eyebrow" }, "On the Street"), el("p", {}, ev.street)) }); }))));
 
     const c = stepCard(7, "Award your points", "Tick these as they happen, then apply the total — the app does the counting.");
+    st.checkOpen = st.checkOpen || {};
     const mk = (title, items, map, keyName) => {
-      const box = el("details", { class: "rules__group" });
+      // Ticking re-renders the panel; without a remembered open state the list
+      // closed on every single tick.  [playtest audit]
+      const box = el("details", { class: "rules__group", open: st.checkOpen[keyName] || null });
+      box.addEventListener("toggle", () => { st.checkOpen[keyName] = box.open; writeSoloState(st); });
       box.append(el("summary", {}, `${title} (${Object.values(map).filter(Boolean).length}/${items.length})`));
       const list = el("div", { class: "check-list" });
       items.forEach((text, idx) => {
@@ -1045,9 +1112,11 @@ export function renderSolo(mount, rerender) {
           const ok = await confirmModal(`Give ${ch.name} ${bits}, and clear the checklists?`,
             { title: "Apply your awards", okLabel: "Apply" });
           if (!ok) return;
-          applyPoints(ch, { pp: ppTotal, humanity: hum });
+          const got = applyPoints(ch, { pp: ppTotal, humanity: hum });
+          const real = [got.humanity ? `+${got.humanity} Humanity` : null,
+            got.pp ? `${got.pp > 0 ? "+" : ""}${got.pp} Promotion` : null].filter(Boolean).join(" and ") || "nothing (floored at 0)";
           st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
-          record("Awards", bits, `[Awards] ${ch.name}: ${bits}`);
+          record("Awards", real, `[Awards] ${ch.name}: ${real}`);
           showToast(`${ch.name}: ${bits}. Promotion ${ch.state.promotionPoints}, Humanity ${ch.state.humanityPoints}.`);
         }, "primary"),
         btn("Open sheet to spend them →", () => navigate("sheet"), "sm ghost")));

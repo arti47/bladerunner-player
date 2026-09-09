@@ -8,7 +8,7 @@
 import { FIREBASE_ENABLED, firebaseConfig } from "../firebase-config.js";
 
 const SDK = "https://www.gstatic.com/firebasejs/10.12.2"; // modular ESM CDN
-const S = { ready: false, app: null, auth: null, db: null, storage: null, fn: {}, uid: null, campaignId: null, role: "player", joinCode: null };
+const S = { ready: false, failed: false, error: null, app: null, auth: null, db: null, storage: null, fn: {}, uid: null, campaignId: null, role: "player", joinCode: null };
 const subs = { auth: new Set(), party: new Set(), combat: new Set(), character: new Set(), status: new Set() };
 const unsub = { party: null, combat: null, character: null };
 let echoGuard = 0; // suppress re-emitting our own writes back into the UI
@@ -25,6 +25,8 @@ export const makeJoinCode = () => `${pick(CODE_WORDS.a)}-${pick(CODE_WORDS.b)}-$
 export const Sync = {
   get enabled() { return !!FIREBASE_ENABLED; },
   get ready() { return S.ready; },
+  get failed() { return S.failed; },
+  get error() { return S.error; },
   get uid() { return S.uid; },
   get campaignId() { return S.campaignId; },
   get role() { return S.role; },
@@ -42,15 +44,22 @@ function emit(set, ...args) { for (const cb of set) { try { cb(...args); } catch
 const status = () => emit(subs.status);
 
 // ---- boot -----------------------------------------------------------------
+// A connection that never arrives must say so: offline (or blocked) the SDK
+// import simply hangs or throws, and the UI used to sit on "Connecting…" for
+// ever with nothing to press. [playtest audit]
+const CONNECT_TIMEOUT_MS = 12000;
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timed out")), ms))]);
+
 export async function initSync() {
   if (!FIREBASE_ENABLED) return false; // local-only: never import the SDK
+  S.failed = false; S.error = null;
   try {
-    const [app, auth, db, storage] = await Promise.all([
+    const [app, auth, db, storage] = await withTimeout(Promise.all([
       import(`${SDK}/firebase-app.js`),
       import(`${SDK}/firebase-auth.js`),
       import(`${SDK}/firebase-database.js`),
       import(`${SDK}/firebase-storage.js`),
-    ]);
+    ]), CONNECT_TIMEOUT_MS);
     S.app = app.initializeApp(firebaseConfig);
     S.auth = auth.getAuth(S.app);
     S.db = db.getDatabase(S.app);
@@ -62,15 +71,21 @@ export async function initSync() {
       status();
       if (user) restoreCampaign();
     });
-    await auth.signInAnonymously(S.auth);
+    await withTimeout(auth.signInAnonymously(S.auth), CONNECT_TIMEOUT_MS);
     S.ready = true;
     status();
     return true;
   } catch (e) {
-    console.warn("Sync unavailable — staying local-only:", e?.message || e);
+    S.failed = true;
+    S.error = e?.message || String(e);
+    console.warn("Sync unavailable — staying local-only:", S.error);
+    status();
     return false;
   }
 }
+
+// Offered by Settings when the first attempt failed (offline, blocked, timed out).
+export async function retrySync() { return initSync(); }
 
 // ---- auth / account -------------------------------------------------------
 export async function linkGoogle() {

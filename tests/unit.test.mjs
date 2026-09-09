@@ -188,8 +188,11 @@ test("outcomeSummary spelling + pluralization (roll-log text)", () => {
   assert.equal(core.outcomeSummary(0, 0), "Failure · 0 successes");
   assert.equal(core.outcomeSummary(1, 0), "Success · 1 success");
   assert.equal(core.outcomeSummary(2, 0), "Critical success · 2 successes");
-  assert.equal(core.outcomeSummary(0, 2), "Failure · 0 successes · 2 banes");
-  assert.equal(core.outcomeSummary(3, 1), "Critical success · 3 successes · 1 bane");
+  // Banes only cost anything on a PUSHED roll (§3.1), so an unpushed 1 is not
+  // reported as a bane — it was, and the roll log lied about what a roll cost.
+  assert.equal(core.outcomeSummary(0, 2), "Failure · 0 successes");
+  assert.equal(core.outcomeSummary(0, 2, true), "Failure · 0 successes · 2 banes");
+  assert.equal(core.outcomeSummary(3, 1, true), "Critical success · 3 successes · 1 bane");
   for (const n of [0, 1, 2, 3]) assert.ok(!core.outcomeSummary(n, 0).includes("succes "), "no 'succes' typo");
 });
 

@@ -519,7 +519,12 @@ function dangerZone(ch, mount) {
 
 // ---- Critical injuries + guided death procedure (§3.7) --------------------
 function deceasedBanner() {
-  return el("div", { class: "card" }, el("div", { class: "badge badge--danger deceased" }, "☠ DECEASED — this Blade Runner has died. Create a new one from the wizard."));
+  return el("div", { class: "card" },
+    el("div", { class: "badge badge--danger deceased" }, "☠ DECEASED — this Blade Runner has died. No more rolls, Shifts or advancement."),
+    el("p", { class: "muted" }, "Roll up a replacement, or switch to another character you have already built."),
+    el("div", { class: "rec-actions" },
+      el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "＋ New Blade Runner"),
+      el("button", { class: "btn btn--sm btn--ghost", onClick: () => navigate("characters") }, "Switch character")));
 }
 function criticalInjuriesSection(ch, commit, rerender) {
   const card = el("div", { class: "card" }, sectionTitle("Critical Injuries"));

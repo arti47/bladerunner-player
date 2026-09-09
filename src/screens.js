@@ -9,7 +9,7 @@ import { Settings, TOGGLES, applyTheme } from "./settings.js";
 import { showToast, promptModal, confirmModal, rollLogCard } from "./ui.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
-import { Sync, linkGoogle, createCampaign, joinCampaign, leaveCampaign, accountLabel } from "./sync.js";
+import { Sync, linkGoogle, createCampaign, joinCampaign, leaveCampaign, accountLabel, retrySync } from "./sync.js";
 import { checkForUpdates, applyUpdate } from "./update.js";
 
 function screen(title, ...blocks) {
@@ -119,8 +119,8 @@ export function renderCharacters(mount) {
   if (!chars.length) list.append(el("p", { class: "muted" }, "No characters yet. Create your first Blade Runner."));
   for (const ch of chars) {
     list.append(el("button", { class: "list__row", onClick: () => { Store.setActiveId(ch.id); navigate("sheet"); } },
-      el("span", { class: "list__main" }, ch.name),
-      el("span", { class: "list__sub muted" }, `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}`)));
+      el("span", { class: "list__main" }, ch.name, ch.state?.dead ? el("span", { class: "badge badge--danger", style: "margin-left:.5rem" }, "☠ Deceased") : null),
+      el("span", { class: "list__sub muted" }, `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}${ch.state?.dead ? " · deceased" : ""}`)));
   }
   mount.append(screen("Characters",
     el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "＋ New Blade Runner"),
@@ -296,7 +296,21 @@ function accountSection() {
     card.append(el("p", { class: "muted" }, "Cloud sync is off — everything is stored locally on this device. To play with a shared party and combat tracker, add your Firebase keys to firebase-config.js and set FIREBASE_ENABLED = true (see README)."));
     return card;
   }
-  if (!Sync.ready) { card.append(el("p", { class: "muted" }, "Connecting to cloud sync…")); return card; }
+  if (!Sync.ready) {
+    if (Sync.failed) {
+      // The raw reason goes in the tooltip: some of them are long unbroken URLs,
+      // which is a horizontal-overflow hazard at 360px.
+      card.append(el("p", { class: "muted", title: Sync.error || "" },
+        "Cloud sync could not connect — you are offline, or the connection is blocked. The app works fully on this device: characters, cases and rolls are all stored locally."));
+      card.append(el("button", { class: "btn btn--sm", onClick: async () => {
+        showToast("Trying to reach cloud sync…");
+        const ok = await retrySync();
+        showToast(ok ? "Cloud sync connected." : "Still no connection — carrying on locally.", { kind: ok ? "info" : "warn" });
+        navigate("settings");
+      } }, "Try again"));
+    } else card.append(el("p", { class: "muted" }, "Connecting to cloud sync…"));
+    return card;
+  }
 
   card.append(el("div", { class: "muted sheet__note" }, `Signed in: ${accountLabel()}`));
   if (accountLabel().startsWith("Anonymous"))
