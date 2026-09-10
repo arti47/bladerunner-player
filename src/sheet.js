@@ -122,7 +122,7 @@ export function renderSheet(mount) {
 
   if (Settings.solo()) wrap.append(backToSolo());
   wrap.append(sheetHeader(ch, arch, y, commit));
-  if (ch.state.dead) wrap.append(deceasedBanner());
+  if (ch.state.dead) wrap.append(deceasedBanner(ch, commit, rerender));
   wrap.append(vitalsSection(ch, commit));
   wrap.append(criticalInjuriesSection(ch, commit, rerender));
   if (isBrokenByStress(ch) && !ch.state.dead) wrap.append(stressSection(ch, commit));
@@ -450,13 +450,19 @@ function chooseSource(ch, item, commit, rerender) {
                 adv: st.double && D.ACQUISITION.doublePaymentAdvantage ? 1 : 0,
                 note: `${pay} ${src.symbol} on the table. ${tier ? tier.time + " to arrive." : ""}`,
                 onResult: ({ successes }) => {
+                  // "A Shift to arrive" is a real Shift, won or lost — it never
+                  // moved the cadence before. [playtest journal, finding 14]
+                  let r;
                   if (successes >= 1) {
-                    commit(buy);
-                    showToast(`Acquired ${item.name} for ${pay} ${src.symbol}.`);
+                    commit((c) => { buy(c); r = applyInvestigationShift(c); });
+                    showToast(`Acquired ${item.name} for ${pay} ${src.symbol}. ${tier ? tier.time : "One Shift"} spent.`
+                      + (r?.overLimit ? " Over the Downtime limit: +1 stress." : ""), { timeout: 4500 });
                   } else {
-                    commit((c) => { c.state.shiftsSinceDowntime = (c.state.shiftsSinceDowntime || 0) + 1; });
-                    showToast(D.ACQUISITION.failureNote, { kind: "warn", timeout: 4000 });
+                    commit((c) => { r = applyInvestigationShift(c); });
+                    showToast(D.ACQUISITION.failureNote + (r?.overLimit ? " Over the Downtime limit: +1 stress." : ""),
+                      { kind: "warn", timeout: 4500 });
                   }
+                  promptShiftSaves(ch, commit, rerender);
                   rerender();
                 },
               });
@@ -492,7 +498,15 @@ function flavorField(label, value, onSave, big = false) {
   const input = el(big ? "textarea" : "input", { class: "input", rows: big ? 4 : null, id, "aria-label": label });
   input.value = value || "";
   if (!big) input.type = "text";
-  input.addEventListener("blur", () => { if (input.value !== (value || "")) onSave(input.value); });
+  input.addEventListener("blur", (e) => {
+    if (input.value === (value || "")) return;
+    // Tabbing out re-rendered the sheet under the element about to take focus,
+    // which dropped it on BODY. Save, then put focus where it was going.
+    const next = e.relatedTarget;
+    onSave(input.value);
+    if (next && document.contains(next)) { try { next.focus(); } catch {} }
+    else if (next && next.id) { try { document.getElementById(next.id)?.focus(); } catch {} }
+  });
   return el("div", { class: "field" }, el("label", { class: "field__label", for: id }, label), input);
 }
 
@@ -519,13 +533,24 @@ function dangerZone(ch, mount) {
 }
 
 // ---- Critical injuries + guided death procedure (§3.7) --------------------
-function deceasedBanner() {
-  return el("div", { class: "card" },
+function deceasedBanner(ch, commit, rerender) {
+  const card = el("div", { class: "card" },
     el("div", { class: "badge badge--danger deceased" }, "☠ DECEASED — this Blade Runner has died. No more rolls, Shifts or advancement."),
     el("p", { class: "muted" }, "Roll up a replacement, or switch to another character you have already built."),
     el("div", { class: "rec-actions" },
       el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "＋ New Blade Runner"),
       el("button", { class: "btn btn--sm btn--ghost", onClick: () => navigate("characters") }, "Switch character")));
+  // A misclick killed a character with no confirm and no way back; healing the
+  // injury left the banner standing. [playtest journal, finding 4]
+  if (ch && commit) card.append(el("div", { class: "rec-actions" },
+    el("button", { class: "btn btn--sm btn--ghost", onClick: async () => {
+      if (!await confirmModal(`Bring ${ch.name} back? Use this only if the death was a misclick — it clears the DECEASED state and leaves the injuries as they are.`,
+        { title: "Undo the death", okLabel: "They live" })) return;
+      commit((c) => { c.state.dead = false; if (c.state.health <= 0) c.state.health = 1; });
+      showToast(`${ch.name} is alive again.`);
+      rerender && rerender();
+    } }, "↺ Undo — that was a misclick")));
+  return card;
 }
 function criticalInjuriesSection(ch, commit, rerender) {
   const card = el("div", { class: "card" }, sectionTitle("Critical Injuries"));
@@ -640,9 +665,9 @@ function recoverySection(ch, commit, rerender) {
   const limit = downtimeLimit(ch);
   card.append(el("div", { class: "muted sheet__note" }, `Shifts since Downtime: ${ch.state.shiftsSinceDowntime || 0} / ${limit} before stress.`));
   const rows = el("div", { class: "rec-actions" });
-  rows.append(el("button", { class: "btn btn--sm", disabled: ch.state.dead || null, onClick: () => downtimeShift(ch, commit, false) }, "Downtime Shift"));
-  rows.append(el("button", { class: "btn btn--sm", disabled: ch.state.dead || null, onClick: () => downtimeShift(ch, commit, true) }, "Downtime + medical care"));
-  rows.append(el("button", { class: "btn btn--sm btn--ghost", disabled: ch.state.dead || null, onClick: () => investigationShift(ch, commit) }, "Investigation Shift"));
+  rows.append(el("button", { class: "btn btn--sm", disabled: ch.state.dead || null, onClick: () => downtimeShift(ch, commit, false, rerender) }, "Downtime Shift"));
+  rows.append(el("button", { class: "btn btn--sm", disabled: ch.state.dead || null, onClick: () => downtimeShift(ch, commit, true, rerender) }, "Downtime + medical care"));
+  rows.append(el("button", { class: "btn btn--sm btn--ghost", disabled: ch.state.dead || null, onClick: () => investigationShift(ch, commit, rerender) }, "Investigation Shift"));
   card.append(rows);
   if (isBrokenByDamage(ch) && !ch.state.dead)
     card.append(el("button", { class: "btn btn--sm btn--roll", onClick: () => firstAid(ch, commit, rerender) }, "First Aid (MEDICAL AID) — revive the Broken"));
@@ -652,24 +677,45 @@ function recoverySection(ch, commit, rerender) {
     const hwrap = el("div", { class: "chips" });
     for (const h of heals) {
       const used = ch.state.shiftUses?.[h.key];
+      // Spending it at full Health/Resolve heals nothing and burns the use, so
+      // refuse rather than take it. [playtest journal, finding 13]
+      const wouldHeal = (h.health ? ch.state.health < maxHealth(ch) : false) || (h.resolve ? ch.state.resolve < maxResolve(ch) : false);
       hwrap.append(el("button", { class: "chip" + (used ? " choice--disabled" : ""), disabled: used || null,
-        onClick: () => commit((c) => { applyHeal(c, h); (c.state.shiftUses ||= {})[h.key] = true; showToast(`${h.label}: ${h.desc}`); }) }, `${h.label}${used ? " ✓" : ""}`));
+        title: !wouldHeal && !used ? "Nothing to heal right now — this would be spent for nothing." : h.desc,
+        onClick: () => {
+          if (!wouldHeal) { showToast(`Nothing to heal — ${h.label} keeps until you need it.`, { kind: "warn" }); return; }
+          commit((c) => { applyHeal(c, h); (c.state.shiftUses ||= {})[h.key] = true; showToast(`${h.label}: ${h.desc}`); });
+        } }, `${h.label}${used ? " ✓" : ""}`));
     }
     card.append(el("div", { class: "muted sheet__note" }, "Once per Shift:"), hwrap);
   }
   return card;
 }
 const downtimeLimit = (ch) => downtimeLimitFor(ch);   // §3.8 transitions live in derived.js
-function downtimeShift(ch, commit, care) {
+function downtimeShift(ch, commit, care, rerender) {
   let r;
   commit((c) => { r = applyDowntimeShift(c, care); });
   showToast(`Downtime Shift: +${r.health} Health, +${r.resolve} Resolve.`);
+  promptShiftSaves(ch, commit, rerender);
 }
-function investigationShift(ch, commit) {
+// A lethal, unstabilized critical injury owes a save every Shift (§3.7). Nothing
+// ever asked for it. [playtest journal, finding 10]
+export function shiftIntervalSaves(ch) {
+  return (ch.state?.criticalInjuries || []).filter((i) => i.lethal && !i.instantKill && !i.stabilized && i.deathSave === "shift");
+}
+function promptShiftSaves(ch, commit, rerender) {
+  const due = shiftIntervalSaves(ch);
+  if (!due.length || ch.state.dead) return;
+  showToast(`${due.length === 1 ? "A wound owes" : `${due.length} wounds owe`} a death save this Shift.`, { kind: "warn", timeout: 5000 });
+  deathSave(ch, due[0], commit, rerender || (() => {}));
+}
+
+function investigationShift(ch, commit, rerender) {
   let r;
   commit((c) => { r = applyInvestigationShift(c); });
   showToast([r.overLimit ? "Investigation Shift — over the limit: +1 stress." : "Investigation Shift logged.",
     r.brokenHeal ? `Broken and alone: +${r.brokenHeal} Health.` : ""].filter(Boolean).join(" "));
+  promptShiftSaves(ch, commit, rerender);
 }
 function firstAid(ch, commit, rerender) {
   const advGlue = itemsInclude(ch, ["glue"]) ? 1 : 0;
@@ -912,7 +958,8 @@ function journalSection(ch, commit) {
     if (text && text.trim()) commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: text.trim() }); });
   } }, "＋ Add entry"));
   if (!entries.length) { card.append(el("p", { class: "muted sheet__note" }, "No journal entries yet. Press Add entry, or pin a roll from the Roll Log.")); return card; }
-  for (const e of entries) {
+  // Oldest first, like the case notes and the roll log — one reading order.
+  for (const e of [...entries].sort((a, z) => (a.ts || 0) - (z.ts || 0))) {
     card.append(el("div", { class: "journal__entry" },
       el("div", { class: "journal__head" },
         el("span", { class: "muted journal__ts" }, new Date(e.ts).toLocaleString()),

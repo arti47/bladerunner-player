@@ -49,7 +49,7 @@ const LEGACY_PANELS = { start: "case", track: "leads", session: "wrap" };
 
 function readSoloState() {
   const base = { timerDie: "D6", hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {},
-    log: [], panel: "play", scratchpad: "", shiftNo: 1, shiftFlags: {}, selectedTheme: null,
+    log: [], panel: "play", scratchpad: "", shiftNo: 1, shiftFlags: {}, selectedTheme: null, coreAssignment: null,
     pendingEvent: null, lastSkill: null, caseOpen: null };
   try {
     const raw = localStorage.getItem(SOLO_KEY);
@@ -200,6 +200,13 @@ export function renderSolo(mount, rerender) {
   const st = readSoloState();
 
   const loose = () => `${LOOSE_PREFIX}:${st.panel || "play"}`;
+  // A lethal wound owes a save every Shift (§3.7) — say so where the Shift ends.
+  function warnShiftSaves(ch) {
+    const due = (ch?.state?.criticalInjuries || []).filter((i) => i.lethal && !i.instantKill && !i.stabilized && i.deathSave === "shift");
+    if (!due.length || ch.state.dead) return;
+    st.scratchpad = appendToNotes(st.scratchpad, `• [Death save due] ${due.map((d) => d.injury).join(", ")} — roll it on the sheet.`);
+    showToast(`${due[0].injury}: a death save is due this Shift — roll it on the sheet.`, { kind: "warn", timeout: 5500 });
+  }
   // Legacy single loose bucket (shared by every tab) — drop it once.
   if (st.results && st.results[LOOSE_PREFIX]) { delete st.results[LOOSE_PREFIX]; writeSoloState(st); }
 
@@ -274,6 +281,7 @@ export function renderSolo(mount, rerender) {
     const real = got.pp >= 0 ? `+${got.pp}` : `${got.pp}`;
     const capped = got.pp !== pp ? ` (asked ${sign}, floored at 0)` : "";
     record("Promotion", `${real} PP · ${ch.name}${capped}`, `[Promotion] ${real} PP — ${why}${capped}`);
+    pinNote(`[Promotion] ${ch.name}: ${real} PP — ${why}${capped}`);
     showToast(`${ch.name}: ${real} Promotion Points (now ${ch.state.promotionPoints}).`);
   }
   // ---- a case has a beginning, a middle and an end -------------------------
@@ -291,6 +299,11 @@ export function renderSolo(mount, rerender) {
       character: ch?.name || null,
     };
     st.shiftNo = 1;
+    // A new case starts clean: the previous case's leads, once-per-Shift markers
+    // and pending event belong to the case that closed. [playtest journal, 11]
+    st.shiftFlags = {};
+    st.pendingEvent = null;
+    st.hypotheses = [];
     writeSoloState(st);
   }
 
@@ -566,7 +579,7 @@ export function renderSolo(mount, rerender) {
       start.append(el("div", { class: "btn-row" },
         ch ? btn("⚡ Open a case — roll the briefing", () => openBriefedCase(true), "primary")
            : btn("Create a Blade Runner →", () => navigate("wizard"), "primary"),
-        ch ? btn("✍ Open a blank case", () => openBriefedCase(false), "sm ghost") : null));
+        ch ? btn(st.coreAssignment ? "✍ Open the case you just generated" : "✍ Open a blank case", () => openBriefedCase(false), "sm ghost") : null));
       root.append(start);
     } else {
       // Where you left off: what this case IS, not just how healthy you are.
@@ -660,6 +673,8 @@ export function renderSolo(mount, rerender) {
           const list = GM.CASE_ASSIGNMENT[theme] || [];
           if (!list.length) { showToast("Roll a Theme first.", { kind: "warn" }); return; }
           const roll = rollDie(list.length); const t = list[roll - 1];
+          // Remembered so a case opened by this route files with its assignment.
+          st.coreAssignment = t; writeSoloState(st);
           show({ label: "Assignment", text: t, pin: `[Assignment] ${t}`, title: `Assignment — ${roll} (D${list.length})`, render: (b) => b.append(el("div", { class: "roll-eyebrow" }, theme), el("p", { class: "roll-prose" }, t)) });
         }),
         btn("🎲 Sector (D8)", () => { const roll = rollDie(8); const res = lookupRange(GM.CASE_SECTOR, roll); show({ label: "Sector", text: res?.sector || "?", pin: `[Sector] ${res?.sector || "?"}`, title: `Sector — ${roll} (D8)`, render: (b) => b.append(el("h3", { class: "roll-result" }, res?.sector || "Unknown")) }); }),
@@ -780,7 +795,7 @@ export function renderSolo(mount, rerender) {
 
     // Roll the briefing (or not) and open the case in one move.
     async function openBriefedCase(withBriefing) {
-      let assignment = "", block = null;
+      let assignment = st.coreAssignment || "", block = null;
       if (withBriefing) {
         const a = rollAssignment(), r = pick(S.CASE_BRIEFING.relevance), cx = pick(S.CASE_BRIEFING.complication), h = pick(S.CASE_BRIEFING.hook);
         assignment = a;
@@ -805,6 +820,8 @@ export function renderSolo(mount, rerender) {
       window.scrollTo(0, 0);
     }
 
+    // The Core generator's assignment is remembered so "Open a blank case" can
+    // file it — the case file is what outlives the session. [journal, finding 12]
     function rollTable(label, arr, die) {
       const roll = rollDie(die); const t = arr[roll - 1];
       show({ label, text: t, title: `${label} — ${roll} (D${die})`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) });
@@ -911,7 +928,7 @@ export function renderSolo(mount, rerender) {
 
     // Step 4a - resolving the action itself.
     root.append(stepCard(4, "Roll it out",
-      "Skill rolls happen on your character sheet. These answer the questions around the roll.",
+      "Roll the skill right here — the same dice your sheet would throw. The rest answer the questions around the roll.",
       grid(btn("🎲 Question Check", () => {
           const odds = oddsSelect.value; let roll = rollDie(10); let d = `${roll}`;
           if (odds === "high") { const a = rollDie(10), c = rollDie(10); roll = Math.max(a, c); d = `${a},${c}→${roll}`; }
@@ -1072,6 +1089,7 @@ export function renderSolo(mount, rerender) {
         if (!ch) { showToast(`Shift ${closed} closed. No active character to log it against.`, { kind: "warn" }); rerender(); return; }
         const r = applyInvestigationShift(ch);
         Store.save(ch);
+        warnShiftSaves(ch);
         record("Shift", `Shift ${closed} closed \u00b7 ${r.shifts}/${r.limit} since Downtime${r.overLimit ? " \u00b7 +1 stress" : ""}`,
           `[Shift ${closed}] closed \u2014 ${r.shifts}/${r.limit} Shifts since Downtime${r.overLimit ? " (+1 stress)" : ""}`);
         showToast([`Shift closed \u2014 now Shift ${st.shiftNo}.`,
@@ -1088,12 +1106,13 @@ export function renderSolo(mount, rerender) {
         st.shiftFlags = {};
         st.pendingEvent = null;
         writeSoloState(st);
+        warnShiftSaves(ch);
         record("Downtime", `+${r.health} Health, +${r.resolve} Resolve \u00b7 counter reset`, `[Downtime] +${r.health} Health, +${r.resolve} Resolve`);
         showToast(`Downtime Shift: +${r.health} Health, +${r.resolve} Resolve.`);
       }, "ghost")));
     endCard.append(el("p", { class: "muted small" }, "No Countdown Event Check on a Downtime Shift."));
     if (st.caseOpen) endCard.append(el("div", { class: "btn-row" },
-      btn("✔ The case is solved — close it", closeCase, "sm ghost")));
+      btn("✔ Close the case (solved or cold)", closeCase, "sm ghost")));
     root.append(endCard);
 
     root.append(stepCard(7, "Downtime scene", "Roll how the off-hours go.",
@@ -1141,6 +1160,7 @@ export function renderSolo(mount, rerender) {
             got.pp ? `${got.pp > 0 ? "+" : ""}${got.pp} Promotion` : null].filter(Boolean).join(" and ") || "nothing (floored at 0)";
           st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
           record("Awards", real, `[Awards] ${ch.name}: ${real}`);
+          pinNote(`[Awards] ${ch.name}: ${real}`);
           showToast(`${ch.name}: ${bits}. Promotion ${ch.state.promotionPoints}, Humanity ${ch.state.humanityPoints}.`);
         }, "primary"),
         btn("Open sheet to spend them →", () => navigate("sheet"), "sm ghost")));
@@ -1211,7 +1231,7 @@ export function renderSolo(mount, rerender) {
         st.hypotheses = [];
         st.humanityChecks = {}; st.promoGainChecks = {}; st.promoLoseChecks = {};
         st.timerDie = S.ESCALATION_STEPS[0];
-        st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null; st.pendingEvent = null;
+        st.shiftNo = 1; st.shiftFlags = {}; st.selectedTheme = null; st.coreAssignment = null; st.pendingEvent = null;
         st.caseOpen = null;              // closed case FILES live in brp:cases and survive
         st.play = null;                  // the guided loop starts over with the case
         st.panel = "case";              // a new case starts on the Case tab

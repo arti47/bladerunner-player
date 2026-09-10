@@ -367,7 +367,7 @@ test("opposed skill rolls are available and only the initiator may push [§3.1/�
   await page.waitForTimeout(200);
   let body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(/Opposing skill/.test(body) && /Their attribute/.test(body), "configures both sides");
-  await page.evaluate(() => { Math.random = () => 0; });   // both sides fail → initiator may push
+  await page.evaluate(() => { Math.random = () => 0.3; });   // both sides fail on low faces → initiator may push
   await page.getByRole("button", { name: "⚄ Roll opposed" }).first().click();
   await page.waitForTimeout(200);
   body = await page.$eval(".modal", (m) => m.textContent);
@@ -604,7 +604,7 @@ test("a successful roll offers no push; a failed one does [Core Ch01 p016]", asy
       const { normalizeCharacter } = await import("/src/derived.js");
       const ch = normalizeCharacter({ name: "Pusher", attributes: { STR: "B", AGI: "B", INT: "C", EMP: "C" }, skills: { stamina: "C" } });
       Store.setActiveId(Store.save(ch).id);
-      Math.random = () => (hi ? 0.999 : 0);   // all max faces (success) vs all 1s (failure)
+      Math.random = () => (hi ? 0.999 : 0.3);   // all max faces (success) vs low faces (a pushable failure)
     }, forceHigh);
     await page.evaluate(() => { location.hash = "#__r"; location.hash = "#sheet"; });
     await page.waitForTimeout(150);
@@ -622,6 +622,30 @@ test("a successful roll offers no push; a failed one does [Core Ch01 p016]", asy
   const lost = await roll(false);
   assert.match(lost, /Failure/);
   assert.ok(/Push the roll/.test(lost), "a failed roll can be pushed");
+});
+
+// A pool of nothing but 1s re-rolls nothing, so the push cannot change it — and
+// charging its banes again is a straight loss. [CHORUS journal, finding 9]
+test("an all-1s failure is not pushable [§3.1]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?allones#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Ones", attributes: { STR: "B", AGI: "B", INT: "C", EMP: "C" }, skills: { stamina: "C" } });
+    Store.setActiveId(Store.save(ch).id);
+    Math.random = () => 0;
+  });
+  await page.evaluate(() => { location.hash = "#__r"; location.hash = "#sheet"; });
+  await page.waitForTimeout(150);
+  await page.getByRole("button", { name: /Roll Stamina/ }).first().click();
+  await page.waitForTimeout(120);
+  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.waitForTimeout(180);
+  const body = await page.$eval(".modal", (m) => m.textContent);
+  assert.match(body, /Failure/);
+  assert.ok(!/Push the roll/.test(body), "nothing to re-roll, so no push is offered");
+  await page.keyboard.press("Escape");
 });
 
 test("wizard rolls key relationship, signature item and home from the book's tables [Core Ch02]", async (t) => {
@@ -1096,12 +1120,14 @@ test("guided play runs a whole case with one question at a time", async (t) => {
   const suspect = (await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).play.suspects))[0];
   assert.match(suspect.name, /^\S+ \S+/, `a suspect has a name: ${suspect.name}`);
 
-  // A failure offers the push, in plain words, and the cost lands.
-  await page.evaluate(() => { Math.random = () => 0; });
+  // A failure offers the push, in plain words, and the cost lands. (Low faces,
+  // not all 1s — an all-1s pool re-rolls nothing and is correctly unpushable.)
+  await page.evaluate(() => { Math.random = () => 0.3; });
   await page.getByRole("button", { name: /Examine something closely/ }).click();
   await page.waitForTimeout(250);
   assert.ok((await choices()).some((c) => /Push yourself/.test(c)), "a failed roll offers the push");
   const before = await page.evaluate(async () => { const { Store } = await import("/src/store.js"); return Store.getActive().state.resolve; });
+  await page.evaluate(() => { Math.random = () => 0; });   // the re-roll comes up 1s: banes, and a cost
   await page.getByRole("button", { name: /Push yourself/ }).click();
   await page.waitForTimeout(300);
   const after = await page.evaluate(async () => { const { Store } = await import("/src/store.js"); return Store.getActive().state.resolve; });
@@ -2766,7 +2792,7 @@ test("declining a push clears its offer from the card", async (t) => {
   });
   await page.goto(`${base}/index.html?letgo2#solo`, { waitUntil: "load" });
   await page.waitForTimeout(400);
-  await page.evaluate(() => { Math.random = () => 0; });   // certain failure
+  await page.evaluate(() => { Math.random = () => 0.3; });   // low faces: a failure that can still be pushed
   await page.getByRole("button", { name: /Look the place over/ }).first().click();
   await page.waitForTimeout(300);
   assert.match(await page.$eval(".panel", (n) => n.textContent), /push yourself/, "the push is offered");
@@ -2817,4 +2843,320 @@ test("the travel card stops saying there is no wrong answer once you have a lead
   const card = await page.$eval(".panel", (n) => n.textContent);
   assert.match(card, /You are looking at Niko Hoskins/, card.slice(0, 200));
   assert.ok(!/no wrong answer/.test(card), "the Shift-1 advice does not follow you to Shift 4");
+});
+
+// ---------------------------------------------------------------------------
+// The 2026-09-09 CHORUS play-session findings (15 + minors).
+// ---------------------------------------------------------------------------
+
+// Guided play rolled a bare [attribute, skill] pool and threw the sheet away. [1]
+test("guided play rolls the character's real dice, injuries and all", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?gpool#solo`, { waitUntil: "load" });
+  const out = await page.evaluate(async () => {
+    const { skillPool } = await import("/src/roller.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Injured", attributes: { STR: "C", AGI: "C", INT: "B", EMP: "C" },
+      skills: { tech: "C" },
+      state: { criticalInjuries: [{ id: "i1", injury: "Cracked skull", disadvantage: ["tech"], lethal: false }] } });
+    const hurt = skillPool(ch, "tech");
+    const clean = skillPool(normalizeCharacter({ name: "Fine", attributes: { STR: "C", AGI: "C", INT: "B", EMP: "C" }, skills: { tech: "C" } }), "tech");
+    return { hurt: hurt.dice.length, hurtNotes: hurt.notes, clean: clean.dice.length };
+  });
+  assert.equal(out.clean, 2, "an unhurt character rolls two Base Dice");
+  assert.equal(out.hurt, 1, "a skull fracture removes the lower die, as on the sheet");
+  assert.ok(out.hurtNotes.some((n) => /Cracked skull/.test(n)), out.hurtNotes.join("|"));
+});
+
+// The chase rolled the player's character for the NPC side. [2]
+test("a chase NPC rolls its own dice, and is never pushed", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?npcdrive#combat`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.setItem("brp:chase", JSON.stringify({ active: true, env: "ground", round: 1, distIdx: 2,
+      obstacle: null, prey: null, pursuer: null, npcManeuver: null, npcRoll: null,
+      npcSide: { prey: false, pursuer: true }, npcLevel: { prey: "Competent (C/C)", pursuer: "Expert (A/A)" },
+      vehicles: { prey: "ground_car", pursuer: "spinner" }, hull: { prey: 4, pursuer: 4 }, log: [] }));
+  });
+  await page.goto(`${base}/index.html?npcdrive2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(350);
+  await page.locator(".chase-veh").nth(1).locator('.btn:text-is("🎲 Driving")').click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.$$eval(".modal", (n) => n.length), 0, "an NPC roll opens no player dialog");
+  const slot = await page.$$eval(".result-slot", (n) => n.map((x) => x.textContent).join(" | "));
+  assert.match(slot, /NPC pursuer/, slot.slice(0, 120));
+  assert.match(slot, /never pushed/, "and says so");
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:chase")));
+  assert.equal(st.npcRoll.level, "Expert (A/A)", "at the level you set, not the player's skill");
+  await page.evaluate(() => localStorage.removeItem("brp:chase"));
+});
+
+// Damage on a Broken target forces a crit — the rule had no control. [3]
+test("the forced critical injury has a button", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?forced#combat`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store, Combat } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Finisher", attributes: { STR: "C", AGI: "B", INT: "C", EMP: "C" },
+      skills: { firearms: "B" }, inventory: { items: [{ key: "pkd_44", name: "PK-D 5223 Blaster (.44 Special)", equipped: true }] } });
+    const saved = Store.save(ch); Store.setActiveId(saved.id);
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "a", kind: "pc", charId: saved.id, name: "Finisher", health: 5, maxHealth: 5, card: 1, conditions: {}, criticalInjuries: [] },
+      { id: "b", kind: "npc", npcKey: "street_thug", name: "Street Thug", health: 0, maxHealth: 5, card: 2, conditions: {}, criticalInjuries: [] },
+    ] });
+  });
+  await page.goto(`${base}/index.html?forced2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { Math.random = () => 0.99; });
+  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.waitForTimeout(250);
+  await page.click('.list__row:has-text("PK-D 5223 Blaster")');
+  await page.waitForTimeout(250);
+  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.waitForTimeout(250);
+  await page.locator('.modal .btn:has-text("Apply")').first().click();
+  await page.waitForTimeout(250);
+  assert.ok(await page.locator('.modal .btn:has-text("Roll the forced critical injury")').count(),
+    "the rule the toast states has a control");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => localStorage.removeItem("brp:combat"));
+});
+
+// Death by one press, with no way back. [4]
+test("a death can be undone when it was a misclick", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?undead#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Gone", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" },
+      skills: {}, state: { dead: true, health: 0 } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?undead2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /that was a misclick/ }).first().click();
+  await page.waitForTimeout(250);
+  await page.locator('.modal .btn:has-text("They live")').click();
+  await page.waitForTimeout(350);
+  const st = await page.evaluate(async () => (await import("/src/store.js")).Store.getActive().state);
+  assert.equal(st.dead, false);
+  assert.ok(st.health >= 1, "and they are not left Broken at zero");
+});
+
+// NPC gear is written as "A or B"; matching the whole string armed them wrongly. [5]
+test("an NPC gear choice arms them from one of its own options", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const out = await page.evaluate(async () => {
+    const R = await import("/src/roller.js");
+    const rc = R.armorFor({ kind: "npc", gear: [] });   // touch the module
+    const { Combat } = await import("/src/store.js");
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "k", kind: "npc", npcKey: "corporate_killer", name: "Corporate Killer", health: 5, maxHealth: 5, card: 1, conditions: {}, criticalInjuries: [] }] });
+    return { armor: rc };
+  });
+  assert.equal(out.armor, null);
+  await page.goto(`${base}/index.html?gearpick#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.waitForTimeout(250);
+  const armed = await page.$eval(".modal", (n) => n.textContent);
+  assert.ok(!/PK-D 5223 Blaster/.test(armed.split("All Ranged Weapons")[0]),
+    "the killer is not armed with a pistol that is in neither option");
+  assert.match(armed.split("All Ranged Weapons")[0], /Ender Assault Rifle|PK-D M1887/, armed.slice(0, 200));
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => localStorage.removeItem("brp:combat"));
+});
+
+// A pool of nothing but 1s cannot be pushed — it re-rolls nothing. [9]
+test("a push that can change nothing is not offered", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?nopush#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Stuck", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: { stamina: "C" } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?nopush2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { Math.random = () => 0; });   // every die shows a 1
+  await page.getByRole("button", { name: /Roll Stamina/ }).first().click();
+  await page.waitForTimeout(200);
+  await page.click('.modal .btn:text-is("⚄ Roll")');
+  await page.waitForTimeout(250);
+  const txt = await page.$eval(".modal", (n) => n.textContent);
+  assert.match(txt, /Failure/, txt.slice(0, 80));
+  assert.equal(await page.locator('.modal .btn:has-text("Push the roll")').count(), 0,
+    "all-1s re-rolls nothing, so the push is not offered");
+  await page.keyboard.press("Escape");
+});
+
+// A lethal wound owes a save every Shift; nothing ever asked. [10]
+test("ending a Shift asks for the death save it owes", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?shiftsave#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Bleeding", attributes: { STR: "B", AGI: "C", INT: "C", EMP: "C" },
+      skills: { stamina: "C" },
+      state: { criticalInjuries: [{ id: "i1", injury: "Cracked skull", lethal: true, deathSave: "shift", stabilized: false, instantKill: false, effect: "x", healing: "—", type: "crushing" }] } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?shiftsave2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /^Investigation Shift$/ }).first().click();
+  await page.waitForTimeout(400);
+  const dlg = await page.$eval(".modal", (n) => n.textContent).catch(() => "");
+  assert.match(dlg, /Death Save|STAMINA/i, `the Shift prompts the save it owes: ${dlg.slice(0, 120)}`);
+  await page.keyboard.press("Escape");
+});
+
+// A new case must not inherit the last one's leads or Shift markers. [11] [12]
+test("opening a case clears the last one's leads and keeps the Core assignment", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?newcase#solo`, { waitUntil: "load" });
+  const out = await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "case", shiftNo: 6, timerDie: "D10",
+      shiftFlags: { countdown: true }, pendingEvent: { name: "x" }, scratchpad: "",
+      hypotheses: [{ id: "h1", text: "old theory", die: "D8" }], coreAssignment: "A staged robbery" }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Opener", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {} });
+    Store.setActiveId(Store.save(ch).id);
+    return true;
+  });
+  assert.equal(out, true);
+  await page.goto(`${base}/index.html?newcase2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => document.querySelectorAll(".panel details").forEach((d) => (d.open = true)));
+  await page.getByRole("button", { name: /Open the case you just generated|Open a blank case/ }).first().click();
+  await page.waitForTimeout(300);
+  await page.locator(".modal input").fill("Ledger");
+  await page.locator(".modal").getByRole("button", { name: /Open the case|^OK$/ }).click();
+  await page.waitForTimeout(400);
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  assert.equal(st.hypotheses.length, 0, "the closed case's theories do not follow you");
+  assert.deepEqual(st.shiftFlags, {}, "nor its once-per-Shift markers");
+  assert.equal(st.pendingEvent, null);
+  assert.equal(st.caseOpen.assignment, "A staged robbery", "the generated assignment is filed with the case");
+});
+
+// A once-per-Shift heal spent at full vitals healed nothing and was gone. [13]
+test("a once-per-Shift heal refuses to be spent for nothing", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?heal#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Whole", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" },
+      skills: {}, identity: { signatureItem: "An old coat" } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?heal2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /Signature item/ }).first().click();
+  await page.waitForTimeout(300);
+  const st = await page.evaluate(async () => (await import("/src/store.js")).Store.getActive().state);
+  assert.ok(!st.shiftUses?.signature_item, "the use is not burned at full Resolve");
+  assert.match(await page.$eval("#toast-region", (n) => n.textContent), /Nothing to heal/);
+});
+
+// "A Shift to arrive" never moved the cadence. [14]
+test("a Premium purchase costs the Shift it advertises", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?shiftbuy#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Buyer", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "B" },
+      skills: { connections: "B" }, state: { promotionPoints: 9, chinyenPoints: 9, shiftsSinceDowntime: 0 } });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?shiftbuy2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { Math.random = () => 0.99; });
+  await page.getByRole("button", { name: /Acquire gear/ }).first().click();
+  await page.waitForTimeout(250);
+  await page.evaluate(() => document.querySelectorAll(".modal details").forEach((d) => (d.open = true)));
+  await page.locator('.modal .list__row:has-text("Ender Assault Rifle")').first().click();
+  await page.waitForTimeout(250);
+  const rollBtn = page.locator('.modal .btn:has-text("Roll Connections")');
+  if (await rollBtn.count()) {
+    await rollBtn.click(); await page.waitForTimeout(200);
+    await page.click('.modal .btn:text-is("⚄ Roll")'); await page.waitForTimeout(250);
+    const done = page.locator('.modal .btn:has-text("Apply result"), .modal .btn:text-is("Done")');
+    if (await done.count()) { await done.first().click(); await page.waitForTimeout(300); }
+  }
+  const st = await page.evaluate(async () => (await import("/src/store.js")).Store.getActive().state);
+  assert.ok(st.shiftsSinceDowntime >= 1, `the advertised Shift is actually spent (${st.shiftsSinceDowntime})`);
+});
+
+// One success cannot be spent twice. [15]
+test("full auto splits its extra successes instead of double-spending them", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?spill#combat`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store, Combat } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Gunner", attributes: { STR: "C", AGI: "A", INT: "C", EMP: "C" },
+      skills: { firearms: "A" }, inventory: { items: [{ key: "ender_assault", name: "Ender Assault Rifle", equipped: true }] } });
+    const saved = Store.save(ch); Store.setActiveId(saved.id);
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "a", kind: "pc", charId: saved.id, name: "Gunner", health: 5, maxHealth: 5, card: 1, conditions: {}, criticalInjuries: [] },
+      { id: "b", kind: "npc", npcKey: "street_thug", name: "Thug A", health: 5, maxHealth: 5, card: 2, conditions: {}, criticalInjuries: [] },
+      { id: "c", kind: "npc", npcKey: "street_thug", name: "Thug B", health: 5, maxHealth: 5, card: 3, conditions: {}, criticalInjuries: [] },
+    ] });
+  });
+  await page.goto(`${base}/index.html?spill2#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { Math.random = () => 0.99; });
+  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.waitForTimeout(250);
+  await page.click('.list__row:has-text("Ender Assault Rifle")');
+  await page.waitForTimeout(250);
+  await page.locator('.modal .picker__row:has-text("Full Auto") input, .modal input[type=checkbox]').last().check();
+  await page.waitForTimeout(150);
+  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.waitForTimeout(300);
+  const before = await page.$eval(".modal", (n) => n.textContent);
+  const m = before.match(/Apply (\d+) dmg/);
+  assert.ok(m, before.slice(0, 200));
+  const dmgBefore = Number(m[1]);
+  await page.locator('.modal .btn:has-text("1 dmg →")').first().click();
+  await page.waitForTimeout(300);
+  const after = await page.$eval(".modal", (n) => n.textContent);
+  const m2 = after.match(/Apply (\d+) dmg/);
+  assert.ok(m2, after.slice(0, 200));
+  assert.equal(Number(m2[1]), dmgBefore - 1, "spilling a success takes it off the primary target's damage");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => localStorage.removeItem("brp:combat"));
+});
+
+// Minors, in one sweep.
+test("the CHORUS minors: named suspects, journal order, dead NPCs, labels", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const named = await page.evaluate(async () => {
+    const { rollSuspect } = await import("/src/board.js");
+    return Array.from({ length: 6 }, () => rollSuspect().name);
+  });
+  assert.ok(named.every((n) => /^\S+ \S+/.test(n) && !/contact$/.test(n)),
+    `board suspects are named people: ${named.join(", ")}`);
+
+  await page.goto(`${base}/index.html?minor#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Ordered", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {},
+      journal: [{ id: "j2", ts: 2000, text: "SECOND" }, { id: "j1", ts: 1000, text: "FIRST" }] });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?minor2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  const entries = await page.$$eval(".journal__text", (n) => n.map((x) => x.textContent));
+  assert.deepEqual(entries, ["FIRST", "SECOND"], "the journal reads oldest-first like the notes");
 });

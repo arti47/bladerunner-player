@@ -3,7 +3,7 @@
 // maneuver, the Game Runner reveals a D12 obstacle, then maneuvers resolve —
 // prey first, pursuer last. Rendered as a card on the Combat screen; state in
 // `brp:chase` so a chase survives a reload.
-import { el, uid, rollDie, STORAGE_PREFIX } from "./core.js";
+import { el, uid, rollDie, successesFor, STORAGE_PREFIX } from "./core.js";
 import * as D from "../data.js";
 import { showToast, sectionTitle, resultSlot, renderToHtml, modal } from "./ui.js";
 import { RollLog, Store } from "./store.js";
@@ -32,7 +32,8 @@ export const Chase = {
 };
 function blank() {
   return { active: false, env: "foot", round: 1, distIdx: RANGE_KEYS.indexOf("short"), obstacle: null, prey: null, pursuer: null,
-    npcManeuver: null, vehicles: { prey: null, pursuer: null }, hull: { prey: null, pursuer: null }, log: [] };
+    npcManeuver: null, npcRoll: null, npcSide: { prey: false, pursuer: false }, npcLevel: { prey: S.NPC_SKILL_DEFAULT, pursuer: S.NPC_SKILL_DEFAULT },
+    vehicles: { prey: null, pursuer: null }, hull: { prey: null, pursuer: null }, log: [] };
 }
 const vehicle = (key) => D.VEHICLES.find((v) => v.key === key) || null;
 const SIDES = [["prey", "Prey"], ["pursuer", "Pursuer"]];
@@ -134,6 +135,23 @@ export function renderChaseCard(rerender) {
         x.hull = { ...(x.hull || {}), [side]: nv ? nv.hull : null };
       }));
       row.append(sel);
+      // Who is behind the wheel: your character, or somebody the dice run?
+      const isNpc = !!st.npcSide?.[side];
+      const who = el("div", { class: "chips" },
+        el("button", { class: "chip" + (!isNpc ? " chip--on" : ""),
+          onClick: () => commit((x) => { x.npcSide = { ...(x.npcSide || {}), [side]: false }; }) }, "Your character"),
+        el("button", { class: "chip" + (isNpc ? " chip--on" : ""),
+          onClick: () => commit((x) => { x.npcSide = { ...(x.npcSide || {}), [side]: true }; }) }, "An NPC"));
+      row.append(who);
+      if (isNpc) {
+        const lvlSel = el("select", { class: "input roll-select", "aria-label": `${label} NPC skill level` });
+        for (const lv of S.NPC_SKILL_LEVEL)
+          lvlSel.append(el("option", { value: lv.name, selected: (st.npcLevel?.[side] || S.NPC_SKILL_DEFAULT) === lv.name || null },
+            `${lv.name} — ${lv.dice}`));
+        lvlSel.addEventListener("change", () => commit((x) => { x.npcLevel = { ...(x.npcLevel || {}), [side]: lvlSel.value }; }));
+        row.append(el("div", { class: "roll-row" },
+          el("label", { class: "muted roll-row__label" }, "NPC skill:"), lvlSel));
+      }
       if (v) {
         const hull = st.hull?.[side] ?? v.hull;
         row.append(el("div", { class: "chase-veh__stats muted" },
@@ -152,7 +170,7 @@ export function renderChaseCard(rerender) {
         row.append(el("div", { class: "rec-actions" },
           el("button", { class: "btn btn--sm btn--ghost", onClick: () => bump(-1), "aria-label": `${label} hull down` }, "− Hull"),
           el("button", { class: "btn btn--sm btn--ghost", onClick: () => bump(+1), "aria-label": `${label} hull up` }, "＋ Hull"),
-          el("button", { class: "btn btn--sm btn--roll", disabled: wrecked || null, onClick: () => driveRoll(v) }, "🎲 Driving"),
+          el("button", { class: "btn btn--sm btn--roll", disabled: wrecked || null, onClick: () => driveRoll(v, side) }, "🎲 Driving"),
           el("button", { class: "btn btn--sm btn--roll", disabled: wrecked || null, onClick: () => vehicleWeapon(side, v) }, "⚔ Vehicle weapon")));
       }
       vcard.append(row);
@@ -161,19 +179,55 @@ export function renderChaseCard(rerender) {
   }
 
   // DRIVING rolls off the vehicle's Maneuverability rather than the default.
-  function driveRoll(v) {
+  // An NPC rolls the vehicle's Maneuverability + their own skill level, and is
+  // never pushed (Solo Mode p.010).
+  function driveRoll(v, side) {
+    if (st.npcSide?.[side]) { npcRoll(side, "Driving", v.maneuverability); return; }
     const ch = Store.getActive();
     if (!ch) { showToast("No active character to roll for.", { kind: "warn" }); return; }
     openSkillRoll(ch, "driving", rerender, { maneuver: v.maneuverability });
+  }
+
+  // A roll made by somebody who is not your character: two dice off the Solo
+  // Mode NPC skill level (and the vehicle, when one applies), no push, no key
+  // memory. The result lands inline like every other chase roll.
+  function npcRoll(side, label, maneuver) {
+    const lvName = st.npcLevel?.[side] || S.NPC_SKILL_DEFAULT;
+    const lv = S.NPC_SKILL_LEVEL.find((x) => x.name === lvName) || S.NPC_SKILL_LEVEL[0];
+    const skillSize = D.LEVEL_DIE[levelForDie(lv.dice)];
+    const attrSize = maneuver ? D.LEVEL_DIE[maneuver] : skillSize;
+    const faces = [attrSize, skillSize].map((size) => rollDie(size));
+    const succ = faces.reduce((n, f) => n + successesFor(f), 0);
+    const text = `${faces.join(" / ")} · ${succ >= 2 ? "Critical success" : succ >= 1 ? "Success" : "Failure"} · ${succ} success${succ === 1 ? "" : "es"}`;
+    commit((x) => {
+      x.npcRoll = { side, label, text, level: lv.name };
+      x.log.unshift({ id: uid(), text: `R${x.round} NPC ${side} ${label}: ${text}` });
+    });
+    try { RollLog.add({ label: `NPC ${side} ${label} (${lv.name})`, text, source: "combat" }); } catch {}
+  }
+  // "Competent (C/C) (D8/D8)" → "C"
+  function levelForDie(dice) {
+    const m = String(dice).match(/D(\d+)/i);
+    const size = m ? Number(m[1]) : 8;
+    return Object.entries(D.LEVEL_DIE).find(([, v]) => v === size)?.[0] || "C";
+  }
+  if (st.npcRoll) {
+    card.append(resultSlot({
+      title: `NPC ${st.npcRoll.side} — ${st.npcRoll.label} (${st.npcRoll.level})`,
+      html: renderToHtml((b) => b.append(el("p", { class: "roll-prose" }, st.npcRoll.text),
+        el("p", { class: "muted small" }, "NPC rolls are never pushed."))),
+      onDismiss: () => commit((x) => { x.npcRoll = null; }),
+    }));
   }
 
   // Shooting from a vehicle: FIREARMS, then the damage lands on the other side's
   // Hull (armor is applied by the Game Runner — the book leaves vehicle armor to
   // narration rather than the personal-armor dice).
   function vehicleWeapon(side, v) {
+    const other = side === "prey" ? "pursuer" : "prey";
+    if (st.npcSide?.[side]) { npcVehicleWeapon(side, other); return; }
     const ch = Store.getActive();
     if (!ch) { showToast("No active character to roll for.", { kind: "warn" }); return; }
-    const other = side === "prey" ? "pursuer" : "prey";
     modal({
       title: `${v.name} — open fire`,
       render(body, close) {
@@ -206,6 +260,41 @@ export function renderChaseCard(rerender) {
         body.append(list, el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
       },
     });
+  }
+
+  // An NPC gunner: pick the weapon, roll their own dice, land it on the other
+  // side's Hull. No push, no key memory — neither belongs to them.
+  function npcVehicleWeapon(side, other) {
+    modal({ title: `NPC ${side} — open fire`, render(body, close) {
+      const list = el("div", { class: "picker" });
+      for (const w of D.VEHICLE_WEAPONS) {
+        list.append(el("button", { class: "picker__row picker__row--btn", onClick: () => {
+          close();
+          if (typeof w.damage !== "number") { showToast(`${w.name}: ${w.note || "no direct damage"}`, { timeout: 5000 }); return; }
+          const lvName = st.npcLevel?.[side] || S.NPC_SKILL_DEFAULT;
+          const lv = S.NPC_SKILL_LEVEL.find((x) => x.name === lvName) || S.NPC_SKILL_LEVEL[0];
+          const size = D.LEVEL_DIE[levelForDie(lv.dice)];
+          const faces = [size, size].map((sz) => rollDie(sz));
+          const succ = faces.reduce((n, f) => n + successesFor(f), 0);
+          if (succ < 1) {
+            commit((x) => { x.npcRoll = { side, label: w.name, text: `${faces.join(" / ")} · Failure`, level: lv.name }; });
+            return;
+          }
+          const dmg = w.damage + (succ - 1);
+          commit((x) => {
+            const tv = vehicle(x.vehicles?.[other]);
+            x.npcRoll = { side, label: w.name, text: `${faces.join(" / ")} · Hit for ${dmg}`, level: lv.name };
+            if (!tv) return;
+            const cur = x.hull?.[other] ?? tv.hull;
+            const next = Math.max(0, cur - dmg);
+            x.hull = { ...(x.hull || {}), [other]: next };
+            x.log.unshift({ id: uid(), text: `R${x.round} NPC ${side} ${w.name} hit for ${dmg} — ${tv.name} Hull ${next}/${tv.hull}` });
+          });
+        } }, el("span", {}, el("strong", {}, w.name), " — ",
+          el("span", { class: "muted" }, `${typeof w.damage === "number" ? `Damage ${w.damage}` : "Special"}`))));
+      }
+      body.append(list, el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
+    } });
   }
 
   // 2 — obstacle. The roll lands inline under the button (same surface as the
@@ -249,7 +338,7 @@ export function renderChaseCard(rerender) {
   card.append(el("div", { class: "muted sheet__note" }, `Escape: ${D.CHASE.escape}`));
 
   card.append(el("div", { class: "rec-actions" },
-    el("button", { class: "btn btn--primary btn--sm", onClick: () => commit((s) => { s.round++; s.obstacle = null; s.prey = null; s.pursuer = null; s.npcManeuver = null; showToast(`Chase round ${s.round}.`); }) }, "Next round ›"),
+    el("button", { class: "btn btn--primary btn--sm", onClick: () => commit((s) => { s.round++; s.obstacle = null; s.prey = null; s.pursuer = null; s.npcManeuver = null; s.npcRoll = null; showToast(`Chase round ${s.round}.`); }) }, "Next round ›"),
     el("button", { class: "btn btn--sm btn--danger", onClick: () => { Chase.clear(); rerender(); } }, "End chase")));
 
   const proc = el("details", { class: "rules__group" }, el("summary", {}, "Chase procedure"));

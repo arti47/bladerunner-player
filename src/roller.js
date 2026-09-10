@@ -61,7 +61,11 @@ const netOf = (adv, dis) => Math.sign(adv - dis); // cancel 1:1, cap at one (Ch0
 const canPush = (rc) => rc?.kind !== "npc";
 // "If you FAIL a Base Dice roll, you can push the roll." [Ch01 p016 / Ch03]
 // A roll that already succeeded is finished — no push, no bane risk.
-const pushable = (dice) => !D.PUSH_FAILED_ROLLS_ONLY || sumSucc(dice) < 1;
+// A push re-rolls every die that is neither a locked 1 nor already a success —
+// so a pool of nothing but 1s cannot change, and offering the push there only
+// charges the banes again. [playtest journal, finding 9]
+const rerollable = (dice) => dice.some((d) => !d.bane && d.succ === 0);
+const pushable = (dice) => (!D.PUSH_FAILED_ROLLS_ONLY || sumSucc(dice) < 1) && rerollable(dice);
 
 // Aiming grants advantage to the NEXT single shot only, then is spent. [Ch08 Careful Aim]
 function consumeAiming(ch, skillKey) {
@@ -74,6 +78,36 @@ function consumeAiming(ch, skillKey) {
 // ---- armor  [Ch04 / §3.7] -------------------------------------------------
 // The armor a combatant is wearing (one suit only — the best rated one carried
 // and, for PCs, equipped). NPC gear names are matched against the armor table.
+// The one place the engine's own state maths is exposed to another module:
+// guided play (§3.18) builds the same pool the sheet does, with the same
+// automatic advantages and disadvantages, and reports what it applied.
+export function skillPool(ch, skillKey, { adv = 0, dis = 0 } = {}) {
+  const sk = R.skill(skillKey);
+  const a = autoFor(ch, skillKey);
+  const net = netOf(a.adv + adv, a.dis + dis);
+  const attrSize = dsize(ch.attributes[sk.attr] || "C");
+  const skillSize = dsize(ch.skills[skillKey] || "D");
+  const dice = poolFor(attrSize, skillSize, net);
+  consumeAiming(ch, skillKey);
+  return { dice, net, notes: autoNotes(ch, skillKey, a),
+    sizes: dice.map((d) => d.size), faces: dice.map((d) => d.face),
+    successes: sumSucc(dice), banes: sumBane(dice) };
+}
+// Re-roll a guided pool exactly as a push does: 1s lock, successes keep.
+export function pushPoolPublic(dice) { return pushPool(dice); }
+export const poolIsPushable = (dice) => pushable(dice);
+// Plain-language list of what the character's own state did to the roll.
+function autoNotes(ch, skillKey, a) {
+  const notes = [];
+  if (ch.state?.conditions?.aiming && skillKey === "firearms") notes.push("Aiming: +1");
+  for (const c of D.CONDITIONS)
+    if (ch.state?.conditions?.[c.key] && c.effect?.selfMeleeDisadvantage && skillKey === "hand_to_hand") notes.push(`${c.name}: −1`);
+  for (const inj of ch.state?.criticalInjuries || [])
+    if ((inj.disadvantage || []).includes(skillKey)) notes.push(`${inj.injury}: −1`);
+  if (ch.state?.criticalStress?.skillDisadvantage) notes.push(`${ch.state.criticalStress.name}: −1`);
+  return notes;
+}
+
 export function armorFor(rc) {
   const names = rc.kind === "pc"
     ? (rc.pc?.inventory?.items || []).filter((it) => it.equipped).map((it) => it.key || it.name)
@@ -395,9 +429,20 @@ export function proceduralRoll(ch, { skillKey, title, adv = 0, dis = 0, allowPus
 }
 
 // ---- attack roll ----------------------------------------------------------
+// NPC gear lines are written as choices ("Ender Assault Rifle or PK-D M1887 20
+// Gauge"); matching the whole string let a fuzzy rule hit the back half and arm
+// them with a weapon from neither option. [playtest journal, finding 5]
 function matchWeapon(item, allWeapons) {
   if (!item) return null;
-  const lower = (item.name || "").toLowerCase().trim();
+  const raw = (item.name || "").trim();
+  if (!item.key && / or /i.test(raw)) {
+    for (const half of raw.split(/ or /i)) {
+      const hit = matchWeapon({ name: half.trim() }, allWeapons);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const lower = raw.toLowerCase();
   let w = allWeapons.find((x) => (item.key && x.key === item.key) || x.name?.toLowerCase() === lower);
   if (!w && (lower.includes("pk-d") || lower.includes("blaster"))) {
     w = allWeapons.find((x) => x.key === "pkd_44");
@@ -708,6 +753,32 @@ function resolveCombatant(c) {
   return { pc: null, kind: "npc", name: c.name, id: c.id, nature: c.nature || "human", attributes, skills, armedWeapons: weapons, inventoryWeapons: [], weapons, gear: npc.gear || [] };
 }
 
+// A combatant's OWN condition chips (Aiming, Prone) were read for the target and
+// never for the attacker, so the tracker rolled different dice than the sheet for
+// the same state. [playtest journal, finding 7]
+function selfCombatMods(c, skillKey) {
+  const conds = c?.conditions || {};
+  let adv = 0, dis = 0; const notes = [];
+  if (conds.aiming && skillKey === "firearms") { adv++; notes.push("Aiming: +1"); }
+  for (const cond of D.CONDITIONS) {
+    if (!conds[cond.key]) continue;
+    if (cond.effect?.selfMeleeDisadvantage && skillKey === "hand_to_hand") { dis++; notes.push(`${cond.name}: −1`); }
+  }
+  // A critical injury on the card disadvantages the skills it names, exactly as
+  // it does on the sheet.
+  for (const inj of c?.criticalInjuries || [])
+    if ((inj.disadvantage || []).includes(skillKey)) { dis++; notes.push(`${inj.injury}: −1`); }
+  return { adv, dis, notes };
+}
+// Aiming is spent by the shot it helped, on a tracker card as on a sheet.
+function consumeCombatAiming(c, skillKey, commit) {
+  if (skillKey !== "firearms" || !c?.conditions?.aiming) return;
+  commit((s) => {
+    const t = s.combatants.find((x) => x.id === c.id);
+    if (t?.conditions) { t.conditions = { ...t.conditions }; delete t.conditions.aiming; }
+  });
+}
+
 // Armor worn by a tracker combatant (used by the combat card + attack flows).
 export function armorForCombatant(c) {
   try { return armorFor(resolveCombatant(c)); } catch { return null; }
@@ -745,6 +816,7 @@ export function rollCritOnCombatant(c, commit) {
 }
 
 export function rollCombatSkill(c, commit) {
+  if (c.dead) { showToast(`${c.name} is dead — no more rolls.`, { kind: "warn" }); return; }
   if (c.health <= 0) { showToast(`${c.name} is Broken — skill rolls blocked.`, { kind: "warn" }); return; }
   const rc = resolveCombatant(c);
   modal({
@@ -885,6 +957,7 @@ export function rollCombatDeathProcedure(c, inj, mode, commit) {
 }
 
 export function rollCombatAttack(c, commit) {
+  if (c.dead) { showToast(`${c.name} is dead — no more attacks.`, { kind: "warn" }); return; }
   if (c.health <= 0) { showToast(`${c.name} is Broken — attack rolls blocked.`, { kind: "warn" }); return; }
   const rc = resolveCombatant(c);
   modal({
@@ -911,6 +984,8 @@ export function rollCombatAttack(c, commit) {
       };
       body.append(list);
       body.append(group("All Ranged Weapons", D.WEAPONS_RANGED));
+      body.append(group("Thrown / explosives", D.EXPLOSIVES.filter((e) => e.thrown)));
+      body.append(group("Placed charges", D.EXPLOSIVES.filter((e) => !e.thrown)));
       body.append(group("All Melee Weapons", D.WEAPONS_MELEE));
       body.append(el("div", { class: "modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel")));
     }
@@ -956,10 +1031,12 @@ function openRangedAttack(c, rc, w, commit) {
             checkbox(st.fullAuto, () => { st.fullAuto = !st.fullAuto; paint(); }),
             el("span", {}, el("strong", {}, "Full Auto"), " — ", el("span", { class: "muted" }, "+1 advantage, +1 stress for PCs, spill extra hits to secondary targets"))));
         }
+        const sm = selfCombatMods(c, skKey);
         b.append(advControls(st, { adv: 0, dis: 0 }, paint));
         if (tm.notes.length) b.append(el("div", { class: "muted roll-auto" }, "Target state — " + tm.notes.join("; ")));
-        const autoAdv = (st.aiming ? 1 : 0) + (st.fullAuto ? 1 : 0) + tm.adv;
-        const net = netOf(autoAdv + st.adv, st.dis + tm.dis);
+        if (sm.notes.length) b.append(el("div", { class: "muted roll-auto" }, "Your state — " + sm.notes.join("; ")));
+        const autoAdv = (st.aiming ? 1 : 0) + (st.fullAuto ? 1 : 0) + tm.adv + sm.adv;
+        const net = netOf(autoAdv + st.adv, st.dis + tm.dis + sm.dis);
         b.append(netBadge(net));
         b.append(el("div", { class: "modal__actions" },
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
@@ -969,6 +1046,7 @@ function openRangedAttack(c, rc, w, commit) {
               reclampVitals(rc.pc); Store.save(rc.pc);
             }
             st.dice = poolFor(dsize(attrLv), dsize(skLv), net);
+            consumeCombatAiming(c, skKey, commit);   // the aim is spent on this shot
             logRoll({ label: `Ranged ${w.name} → ${targetOf()?.name || "no target"}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
             st.phase = "result"; paint();
           } }, "⚄ Attack")));
@@ -979,7 +1057,12 @@ function openRangedAttack(c, rc, w, commit) {
         b.append(outcomeLine(succ, banes, st.pushed));
         if (succ >= 1) {
           const target = targetOf();
-          const raw = typeof w.damage === "number" ? w.damage + Math.max(0, succ - 1) : 1;
+          const extras = Math.max(0, succ - 1);
+          // An extra success buys EITHER +1 damage here or one damage spilled onto
+          // another target — never both. [playtest journal, finding 15]
+          if (st.spilled == null) st.spilled = 0;
+          const spent = st.fullAuto ? Math.min(st.spilled, extras) : 0;
+          const raw = typeof w.damage === "number" ? w.damage + (extras - spent) : 1;
           let final = raw;
           if (target) {
             const armor = armorFor(resolveCombatant(target));
@@ -995,7 +1078,7 @@ function openRangedAttack(c, rc, w, commit) {
               onApplyCrit: target ? (entry, type, face) => applyCritToCombatant(target, entry, type, face, commit) : null }));
           if (target) b.append(applyDamageRow(target, final, commit, st));
           // Full auto spills extra successes onto secondary targets (§3.12).
-          if (st.fullAuto && succ > 1) b.append(spillRow(c, target, succ - 1, commit));
+          if (st.fullAuto && extras > 0) b.append(spillRow(c, target, extras, commit, st, paint));
         }
         if (st.note) b.append(el("div", { class: "roll-risk" }, st.note));
         const actions = el("div", { class: "modal__actions" });
@@ -1027,28 +1110,36 @@ function openRangedAttack(c, rc, w, commit) {
 // line of fire (§3.12). The book leaves the split to the table, so this is a
 // house aid — it applies one damage per success you assign, and is labelled as
 // such in the UI.
-function spillRow(attacker, primary, extra, commit) {
+function spillRow(attacker, primary, extra, commit, atk, paint) {
   const box = el("div", { class: "card card--target-dmg" });
-  box.append(el("div", { class: "card__eyebrow" }, `Full auto — spill ${extra} extra success${extra === 1 ? "" : "es"}`));
+  box.append(el("div", { class: "card__eyebrow" }, `Full auto — ${extra} extra success${extra === 1 ? "" : "es"} to spend`));
   const others = Combat.get().combatants.filter((x) => x.id !== attacker.id && x.id !== primary?.id);
   if (!others.length) { box.append(el("p", { class: "muted" }, "No other targets in the line of fire.")); return box; }
-  const st = { left: extra };
+  const st = { left: extra - (atk?.spilled || 0) };
   const list = el("div", { class: "rec-actions" });
-  const note = el("div", { class: "muted sheet__note" }, `House aid: 1 damage per success assigned. ${st.left} left.`);
+  const note = el("div", { class: "muted sheet__note" },
+    `Each extra success is EITHER +1 damage to ${primary?.name || "the target"} OR 1 damage here. ${st.left} left to spend.`);
   for (const o of others) {
-    list.append(el("button", { class: "btn btn--sm btn--danger", onClick: () => {
+    const friendly = o.kind === "pc";
+    list.append(el("button", { class: "btn btn--sm " + (friendly ? "btn--ghost" : "btn--danger"),
+      disabled: atk?.applied || null,
+      title: friendly ? "This is a player character — friendly fire." : null,
+      onClick: () => {
       if (st.left <= 0) return;
       st.left--;
+      if (atk) { atk.spilled = (atk.spilled || 0) + 1; }
       commit((s) => { const t = s.combatants.find((x) => x.id === o.id); if (t) t.health = Math.max(0, t.health - 1); });
       if (o.kind === "pc" && o.charId) {
         const pc = Store.get(o.charId);
         if (pc) { pc.state.health = Math.max(0, pc.state.health - 1); reclampVitals(pc); Store.save(pc); }
       }
-      note.textContent = `House aid: 1 damage per success assigned. ${st.left} left.`;
+      note.textContent = `Each extra success is EITHER +1 damage to ${primary?.name || "the target"} OR 1 damage here. ${st.left} left to spend.`;
       showToast(`Spill: 1 damage to ${o.name}.`);
-    } }, `1 dmg → ${o.name}`));
+      if (paint) paint();      // the primary damage figure drops by the same success
+    } }, `1 dmg → ${o.name}${friendly ? " (friendly)" : ""}`));
   }
   box.append(list, note);
+  if (atk?.applied) box.append(el("p", { class: "muted small" }, "Damage is already applied — the split is locked in."));
   return box;
 }
 
@@ -1084,8 +1175,18 @@ function applyDamageRow(target, dmg, commit, st) {
     showToast(wasBroken
       ? `Applied ${dmg} damage to ${target.name} — already Broken: roll a critical injury.`
       : `Applied ${dmg} damage to ${target.name}.`, { kind: wasBroken ? "warn" : "info" });
+    // The rule was announced in a toast with nothing to press. Offer the roll it
+    // demands, right here. [playtest journal, finding 3]
+    if (wasBroken) {
+      const forced = el("div", { class: "rec-actions" },
+        el("button", { class: "btn btn--sm btn--roll", onClick: () => rollCritOnCombatant(target, commit) },
+          `☠ Roll the forced critical injury → ${target.name}`));
+      box.append(forced);
+    }
   } }, `Apply ${dmg} dmg → ${target.name} (♥ ${target.health})`);
   box.append(el("div", { class: "rec-actions" }, btn));
+  if (target.health <= 0) box.append(el("p", { class: "muted small" },
+    `${target.name} is already Broken — damage that lands forces a critical injury.`));
   return box;
 }
 
@@ -1183,7 +1284,12 @@ function runOpposedMeleeModal(c, rc, w, e, rEnemy, commit) {
           }
           b.append(applyDamageRow(e, dmg, commit, st));
         } else if (defSucc > attSucc) {
-          const defW = rEnemy.weapons[0] || { damage: 1 };
+          // The defender counters in CLOSE combat, so pick a melee weapon (or bare
+          // hands) — `weapons[0]` handed them a slung rifle's ranged Damage.
+          // [playtest journal, finding 6]
+          const melee = (rEnemy.weapons || []).filter((x) => D.WEAPONS_MELEE.some((m) => m.key === x.key));
+          const defW = melee.find((x) => x.key !== "unarmed") || melee[0]
+            || D.WEAPONS_MELEE.find((x) => x.key === "unarmed") || { name: "Unarmed", damage: 1 };
           const raw = (typeof defW.damage === "number" ? defW.damage : 1) + Math.max(0, defSucc - attSucc - 1);
           let dmg = raw;
           const attArmor = armorFor(rc);
@@ -1192,7 +1298,7 @@ function runOpposedMeleeModal(c, rc, w, e, rEnemy, commit) {
             b.append(armorBlock(st.armorRes, attArmor));
             dmg = st.armorRes.final;
           }
-          b.append(el("div", { class: "roll-outcome" }, el("span", { class: "roll-outcome__main is-fail" }, `${e.name} Counter-Hits!`), el("span", { class: "muted" }, `Hits ${c.name} for ${dmg} damage.`)));
+          b.append(el("div", { class: "roll-outcome" }, el("span", { class: "roll-outcome__main is-fail" }, `${e.name} Counter-Hits!`), el("span", { class: "muted" }, `${defW.name} hits ${c.name} for ${dmg} damage.`)));
           b.append(applyDamageRow(c, dmg, commit, st));
         } else {
           b.append(el("div", { class: "roll-outcome" }, el("span", { class: "roll-outcome__main" }, "Standoff Tie"), el("span", { class: "muted" }, "Neither side lands a hit.")));

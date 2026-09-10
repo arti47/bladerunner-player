@@ -14,6 +14,7 @@
 
 import * as H from "../data-house.js";
 import * as S from "../data-solo.js";
+import * as GM from "../data-gm.js";
 import { el, uid, rollDie } from "./core.js";
 import { modal, showToast, confirmModal, promptModal } from "./ui.js";
 import { rollColumn, rollGrouped, lookupRange } from "./rules.js";
@@ -138,7 +139,12 @@ export function rollSuspect() {
   const trait = rollGrouped(S.CHARACTER_TRAIT).entry;
   const nat = lookupRange(S.NPC_NATURE, rollDie(10));
   const skill = lookupRange(S.NPC_SKILL_LEVEL, rollDie(8));
-  return { name: `${trait} ${sphere} contact`, detail: `${nat.result}. ${skill.name} (${skill.dice}).` };
+  // A suspect you can picture needs a name, not a trait blob — Case Table 3 has
+  // them, and the guided panel already uses it. [playtest journal, minors]
+  const t = GM.CASE_MAIN_NPCS[rollDie(GM.CASE_MAIN_NPCS.length) - 1];
+  const pick = (arr) => arr[rollDie(arr.length) - 1];
+  const name = `${pick(t.firstName)} ${pick(t.lastName)}`;
+  return { name, detail: `${pick(t.occupation)} — ${trait} ${sphere}. ${nat.result}. ${skill.name} (${skill.dice}).` };
 }
 // Two words to interpret when you would rather write the box yourself.
 export function rollPrompt() {
@@ -280,7 +286,14 @@ export function renderBoardPanel(root, ctx) {
   function connectFlow(from = null) {
     const partnersFor = (src) => b.boxes.filter((x) => canConnect(src, x));
     const start = from || b.boxes.find((x) => partnersFor(x).length);
-    if (!start) { showToast("Nothing to connect yet — you need a clue and a suspect.", { kind: "warn" }); return; }
+    if (!start) {
+      const clues = b.boxes.filter((x) => x.kind === "clue").length;
+      const suspects = b.boxes.filter((x) => x.kind === "suspect").length;
+      showToast(clues && suspects
+        ? "Every clue is already connected to every suspect it can reach — add a box first."
+        : "Nothing to connect yet — you need a clue and a suspect.", { kind: "warn" });
+      return;
+    }
     const options = partnersFor(start);
     if (!options.length) { showToast(`${label(start)} is already connected to everything it can reach.`, { kind: "warn" }); return; }
 

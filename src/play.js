@@ -20,6 +20,7 @@ import { lookupRange, rollColumn, skill as findSkill } from "./rules.js";
 import { Store, RollLog } from "./store.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { rollClue, rollSuspect, Board, addBox, connect, byId, isFull } from "./board.js";
+import { skillPool, pushPoolPublic, poolIsPushable } from "./roller.js";
 import * as H from "../data-house.js";
 
 // The four things a detective does at a place, in the player's words, each
@@ -167,7 +168,7 @@ export function renderPlayPanel(root, ctx) {
     ask({
       eyebrow: r.ok ? "That worked" : "No luck",
       title: r.heading,
-      prose: [r.prose, r.detail],
+      prose: [r.prose, r.detail, r.stateNote ? `Your condition counted: ${r.stateNote}.` : null],
       choices: [
         r.ok ? ["✓ Write it down and carry on", keepResult] : null,
         // The Board's own economy was unreachable from the default panel: only
@@ -307,10 +308,6 @@ export function renderPlayPanel(root, ctx) {
   // 6+ is a success, and a failed roll may be pushed.
   // A pool is the attribute die plus the skill die, kept alongside the faces so a
   // push can re-roll the right sizes. [§3.1]
-  function poolFor(key) {
-    const sk = findSkill(key);
-    return [D.LEVEL_DIE[ch.attributes[sk.attr] || "C"], D.LEVEL_DIE[ch.skills[key] || "D"]];
-  }
   function countSucc(faces) { return faces.reduce((n, f) => n + successesFor(f), 0); }
 
 
@@ -348,12 +345,12 @@ export function renderPlayPanel(root, ctx) {
   }
 
   function doAction(action) {
-    const sizes = poolFor(action.key);
-    const faces = sizes.map((size) => rollDie(size));
-    const succ = countSucc(faces);
-    log(`${findSkill(action.key).name} — guided play`, outcomeSummary(succ, 0));
+    // The same pool the sheet builds — injuries, Aiming and critical stress all
+    // counted, and the aim spent. [playtest journal, finding 1]
+    const r = skillPool(ch, action.key);
+    log(`${findSkill(action.key).name} — guided play`, outcomeSummary(r.successes, 0));
     p.earned = false;
-    finishRoll(action, { sizes, faces }, succ, false);
+    finishRoll(action, { sizes: r.sizes, faces: r.faces, dice: r.dice, notes: r.notes }, r.successes, false);
   }
 
   // Push: re-roll every die that is not showing a 1; the 1s left behind are what
@@ -362,7 +359,8 @@ export function renderPlayPanel(root, ctx) {
     const r = p.pending;
     const action = ACTIONS.find((a) => a.key === r.key) || ACTIONS[0];
     const { sizes, faces } = r.roll;
-    const rolled = faces.map((f, i) => (f === D.PUSH_BANE_FACE ? f : rollDie(sizes[i])));
+    // A push keeps successes as well as locking 1s — the engine's own rule.
+    const rolled = faces.map((f, i) => (f === D.PUSH_BANE_FACE || successesFor(f) > 0 ? f : rollDie(sizes[i])));
     const banes = rolled.filter((f) => f === D.PUSH_BANE_FACE).length;
     const physical = ["STR", "AGI"].includes(findSkill(action.key).attr) && ch.nature !== "replicant";
     if (banes) {
@@ -390,7 +388,7 @@ export function renderPlayPanel(root, ctx) {
           prose: action.finds === "clue"
             ? `${finding.detail} What it means is up to you — say it out loud, then write it down.`
             : `${finding.detail} Decide how they're mixed up in this.`,
-          detail: pushed ? `You had to push for it.${cost}` : null,
+          detail: [(roll.notes || []).join(" · ") || null, pushed ? `You had to push for it.${cost}` : null].filter(Boolean).join(" ") || null,
         },
       });
     } else {
@@ -398,7 +396,9 @@ export function renderPlayPanel(root, ctx) {
         stage: "result",
         pending: {
           // A failed roll is exactly what the book lets you push. [§3.1]
-          ok: false, key: action.key, roll, canPush: !pushed,
+          ok: false, key: action.key, roll,
+          canPush: !pushed && roll.faces.some((f, i) => f !== D.PUSH_BANE_FACE && successesFor(f) === 0),
+          stateNote: (roll.notes || []).join(" · ") || null,
           heading: "Nothing useful",
           prose: pushed
             ? `Still nothing.${cost} Try somewhere else, or something else.`

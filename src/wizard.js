@@ -365,7 +365,9 @@ function stepIdentity(body, rerender) {
   body.append(field("Name", draft.identity.name, (v) => { draft.identity.name = v; refreshNav(); },
     arch.names.some(Boolean) ? () => { draft.identity.name = pick(arch.names.filter(Boolean)); rerender(); } : null));
   if (!(draft.identity.name || "").trim())
-    body.append(el("p", { class: "muted sheet__note" }, "A name is required — type one, or press 🎲 to roll one from your archetype's table."));
+    body.append(el("p", { class: "muted sheet__note" }, arch.names.some(Boolean)
+      ? "A name is required — type one, or press ⚄ to roll one from your archetype's table."
+      : "A name is required — this build has no name table, so type one."));
   body.append(field("Appearance", draft.identity.appearance, (v) => { draft.identity.appearance = v; },
     arch.appearance.length ? () => { const r = d3(); draft.identity.appearance = arch.appearance[r - 1]; rerender(); } : null, true));
   body.append(field("Signature item", draft.identity.signatureItem, (v) => { draft.identity.signatureItem = v; },
