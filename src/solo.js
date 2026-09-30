@@ -18,7 +18,7 @@
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, introLine, notesView, rowMenu } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, introLine, notesView, rowMenu, cardHeads, howNote, placeHow } from "./ui.js";
 import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY, stripGlyphs } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
@@ -29,7 +29,7 @@ import { Board, renderBoardPanel } from "./board.js";
 import { renderPlayPanel } from "./play.js";
 import { Chase } from "./chase.js";
 import { Settings } from "./settings.js";
-import { timerLadder, stamp } from "./art.js";
+import { timerLadder, stamp, avatar, sceneArt, emptyScene } from "./art.js";
 
 const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo state,
                                  // so starting a fresh case cannot wipe your record
@@ -385,7 +385,9 @@ export function renderSolo(mount, rerender) {
   // The page heading is for screen readers; the tab bar already names the screen.
   mount.append(el("h1", { class: "visually-hidden" }, "Solo Mode Assistant"));
   mount.append(statusStrip());
-  mount.append(segmentNav({ segments: SEGMENTS, active: st.panel, grid: true,
+  // A dot on the tabs whose step is already done this Shift (round 3).
+  const doneTabs = { case: !!st.caseOpen, shift: !!st.shiftFlags?.countdown, leads: !!st.shiftFlags?.review };
+  mount.append(segmentNav({ segments: SEGMENTS.map((s) => ({ ...s, done: doneTabs[s.key] })), active: st.panel, grid: true,
     // Switching tabs starts at the top; an in-panel roll keeps your place.
     onSelect: (k) => { st.panel = k; st.introSeen = true; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
   // First visit only: one line saying what this screen is, gone once you move on.
@@ -428,27 +430,33 @@ export function renderSolo(mount, rerender) {
     const limit = downtimeLimitFor(ch), used = ch.state.shiftsSinceDowntime || 0;
     const atLimit = used >= limit;
     const cell = (text, cls = "") => el("span", { class: "solo-status__cell " + cls }, text);
+    // Two short rows (round 3): who and which case, then the numbers — so
+    // nothing scrolls out of sight on a phone.
+    const stats = el("div", { class: "solo-status__stats" });
     wrap.append(
-      cell(st.caseOpen ? `#${st.caseOpen.no} ${st.caseOpen.title}` : "No case open", "solo-status__name"),
-      el("button", { class: "solo-status__cell solo-status__link solo-status__who", title: "Open the character sheet", onClick: () => navigate("sheet") }, ch.name),
+      el("div", { class: "solo-status__id" },
+        cell(st.caseOpen ? `#${st.caseOpen.no} ${st.caseOpen.title}` : "No case open", "solo-status__name"),
+        el("button", { class: "solo-status__cell solo-status__link solo-status__who", title: "Open the character sheet", onClick: () => navigate("sheet") }, ch.name)),
+      stats);
+    stats.append(
       cell(`♥ ${ch.state.health}/${maxHealth(ch)}`, ch.state.health <= 0 ? "warn" : ""),
       cell(`◈ ${ch.state.resolve}/${maxResolve(ch)}`, ch.state.resolve <= 0 ? "warn" : ""),
       cell(`Shift ${st.shiftNo || 1}`),
       cell(`${used}/${limit} to Downtime`, atLimit ? "warn" : ""),
       cell(`⏱ ${st.timerDie}`),
     );
-    if (ch.state.dead) wrap.append(el("button", {
+    if (ch.state.dead) stats.append(el("button", {
       class: "solo-status__cell solo-status__link warn",
       onClick: () => navigate("sheet"),
     }, "☠ Deceased — roll a new detective"));
     // A Replicant at zero Promotion Points owes a Baseline Test (§3.10) — the
     // sheet has the button, but nothing ever said the trigger had been met.
-    else if (ch.nature === "replicant" && (ch.state.promotionPoints || 0) === 0) wrap.append(el("button", {
+    else if (ch.nature === "replicant" && (ch.state.promotionPoints || 0) === 0) stats.append(el("button", {
       class: "solo-status__cell solo-status__link warn",
       onClick: () => navigate("sheet"),
     }, "⚠ Baseline Test due"));
     const banked = Board.checks();
-    if (banked) wrap.append(el("button", {
+    if (banked) stats.append(el("button", {
       class: "solo-status__cell solo-status__link",
       onClick: () => { st.panel = "board"; writeSoloState(st); rerender(); window.scrollTo(0, 0); },
     }, `🔍 ${banked}`));
@@ -499,6 +507,9 @@ export function renderSolo(mount, rerender) {
   const panel = el("div", { class: "panel" + (st.panel !== lastPanelKey ? " panel--enter" : "") });
   lastPanelKey = st.panel;
   ({ play: panelPlay, case: panelCase, shift: panelShift, scene: panelScene, board: panelBoard, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
+  cardHeads(panel);
+  // A faint drawing for the panel, in its first card's corner (round 3).
+  panel.querySelector(".card")?.append(sceneArt(st.panel, "card__art"));
   paintResults(panel);
   mount.append(panel);
 
@@ -517,12 +528,7 @@ export function renderSolo(mount, rerender) {
     for (const cardEl of panelEl.querySelectorAll(".card")) {
       const key = cardEl.querySelector(".sheet__section")?.textContent;
       // Collapsed "how to use this" note, so the buttons explain when to press them.
-      if (HOW[key]) {
-        cardEl.append(el("details", { class: "how" },
-          el("summary", {}, "How to use this"),
-          ...HOW[key].map(([what, when]) => el("p", { class: "how__line" },
-            el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
-      }
+      if (HOW[key]) placeHow(cardEl, howNote(HOW[key]));
       const list = key ? resultList(key) : [];
       if (!list.length) continue;
       live += list.length;
@@ -604,9 +610,9 @@ export function renderSolo(mount, rerender) {
       const boxes = (() => { try { return Board.get().boxes.length; } catch { return 0; } })();
       const head = card(`Case #${c.no} — ${c.title}`,
         `Opened ${new Date(c.opened).toLocaleDateString()}${c.character ? ` · ${c.character}` : ""}`);
-      head.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "Open case"));
+      // The folder tab says what this is; the title carries the number — one each.
       head.classList.add("card--case");
-      head.dataset.case = `CASE #${c.no}`;
+      head.dataset.case = "OPEN CASE";
       if (c.assignment) head.append(el("p", { class: "roll-prose" }, c.assignment));
       head.append(el("p", { class: "muted small" },
         `Shift ${st.shiftNo || 1} · ${openLeads} open lead${openLeads === 1 ? "" : "s"}${boxes ? ` · ${boxes} on the board` : ""}`));
@@ -872,8 +878,9 @@ export function renderSolo(mount, rerender) {
   // ---- SHIFT: steps 1–2 ---------------------------------------------------
   function panelShift(root) {
     const ch = Store.getActive();
-    const head = card(`Shift ${st.shiftNo}`, ch
-      ? `${ch.name} · ♥ ${ch.state.health}/${maxHealth(ch)} · ◈ ${ch.state.resolve}/${maxResolve(ch)} · ${ch.state.shiftsSinceDowntime || 0}/${downtimeLimitFor(ch)} Shifts since Downtime`
+    // The vitals and the Downtime count live in the status bar above every tab,
+    // so this card no longer repeats them (round 3).
+    const head = card(`Shift ${st.shiftNo}`, ch ? null
       : "No active character — vitals and the Shift counter are tracked on a character sheet.");
     if (ch && (ch.state.shiftsSinceDowntime || 0) >= downtimeLimitFor(ch)) {
       head.append(el("p", { class: "roll-result--warn" }, "At the Downtime limit — another investigation Shift costs you 1 stress."));
@@ -1087,11 +1094,14 @@ export function renderSolo(mount, rerender) {
     if (chip) review.append(el("div", { class: "chips" }, chip));
     const hypList = el("div", { class: "hyp-list" });
     if (!st.hypotheses.length) hypList.append(el("p", { class: "muted" }, "No active hypotheses."));
+    // A lead that names someone on the board wears their avatar.
+    const people = (() => { try { return Board.get().boxes.filter((b) => b.kind === "suspect").map((b) => b.name.split(" — ")[0]).filter(Boolean); } catch { return []; } })();
     st.hypotheses.forEach((h, i) => {
+      const who = people.find((n) => h.text.toLowerCase().includes(n.toLowerCase()));
       // Any add/upgrade/downgrade counts as this Shift's review (soft marker).
       const stepHyp = (dir) => { const idx = S.ESCALATION_STEPS.indexOf(h.die) + dir; if (idx >= 0 && idx < S.ESCALATION_STEPS.length) { h.die = S.ESCALATION_STEPS[idx]; setFlag("review"); writeSoloState(st); rerender(); } };
       hypList.append(el("div", { class: "hyp-row" },
-        el("div", { class: "hyp-row__main" }, el("strong", { class: "hyp-row__die" }, `[${h.die}]`), el("span", {}, h.text)),
+        el("div", { class: "hyp-row__main" }, who ? avatar(who, "hyp-row__avatar") : null, el("strong", { class: "hyp-row__die" }, `[${h.die}]`), el("span", {}, h.text)),
         el("div", { class: "btn-row hyp-row__acts" }, btn("🎲 Check", () => hypothesisCheck(h), "sm"),
           named(btn("▲", () => stepHyp(1), "sm ghost"), `Upgrade ${h.text}`), named(btn("▼", () => stepHyp(-1), "sm ghost"), `Downgrade ${h.text}`),
           named(btn("✕", () => { st.hypotheses.splice(i, 1); writeSoloState(st); rerender(); }, "sm ghost"), `Remove ${h.text}`))));
@@ -1305,7 +1315,7 @@ function btnNamed(label, spoken, onClick, variant = "roll") {
   return b;
 }
 function btn(label, onClick, variant = "roll") {
-  const cls = "btn " + variant.split(" ").map((v) => (v === "roll" ? "btn--roll" : v === "primary" ? "btn--primary" : v === "ghost" ? "btn--ghost" : v === "sm" ? "btn--sm" : "")).join(" ");
+  const cls = "btn " + variant.split(" ").map((v) => (v === "roll" ? "btn--roll" : v === "primary" ? "btn--primary" : v === "ghost" ? "btn--ghost" : v === "sm" ? "btn--sm" : v === "dest" ? "btn--dest" : "")).join(" ");
   // Record the button so a result raised by this click knows which card it
   // belongs to (and which button to press again on Reroll).
   const b = el("button", { class: cls.trim(), onClick: (e) => { activeBtn = b; onClick(e); } }, label);

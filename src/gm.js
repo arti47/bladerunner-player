@@ -12,10 +12,12 @@ import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes, guidanceChip, introLine, notesView } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes, introLine, notesView, rowMenu, cardHeads, howNote, placeHow } from "./ui.js";
 import { rollDie, uid, titleCase, clear, stripGlyphs } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { navigate } from "./router.js";
+import { Settings } from "./settings.js";
+import { avatar, sceneArt } from "./art.js";
 
 const GM_KEY = "brp:gm";
 const LOG_CAP = 50;
@@ -133,12 +135,22 @@ export function renderGm(mount, rerender) {
   };
 
   mount.append(el("h1", { class: "visually-hidden" }, "Game Master Screen"));
-  mount.append(el("div", { class: "screen-tools" }, el("div", { class: "chips autopin" },
-    el("button", {
-      class: "chip" + (st.autoPin ? " chip--on" : ""),
-      "aria-pressed": st.autoPin ? "true" : "false",
-      onClick: () => { st.autoPin = !st.autoPin; writeGmState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
-    }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)), guidanceChip()));
+  // The same one-line header Solo has: what is at the table, with the screen's two
+  // preferences behind its ⋯.  [UX round 3]
+  const fight = Combat.get();
+  const party = Store.list().length;
+  const g = Settings.guidance();
+  mount.append(el("div", { class: "solo-hud gm-hud" },
+    el("div", { class: "solo-status" },
+      el("span", { class: "solo-status__cell solo-status__name" }, "Game Master"),
+      el("span", { class: "solo-status__cell" }, `${party} character${party === 1 ? "" : "s"}`),
+      el("span", { class: "solo-status__cell" }, fight?.active ? `Fight · round ${fight.round || 1}` : "No fight")),
+    rowMenu("GM tools", [
+      { label: `📌 Auto-pin every roll to notes${st.autoPin ? " ✓" : ""}`, aria: "Auto-pin every roll to notes", cls: "autopin-toggle", pressed: !!st.autoPin,
+        onClick: () => { st.autoPin = !st.autoPin; writeGmState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); } },
+      { label: g ? "Guidance on — hide the how-to notes" : "Guidance off — show the how-to notes", cls: "guidance-chip", pressed: g,
+        onClick: () => { Settings.set("guidance", !Settings.guidance()); showToast(Settings.guidance() ? "Guidance on — each card explains itself." : "Guidance hidden. Turn it back on here or in Settings."); rerender(); } },
+    ])));
   mount.append(segmentNav({ segments: SEGMENTS, active: st.panel,
     // Switching tabs starts at the top; an in-panel roll keeps your place.
     onSelect: (k) => { st.panel = k; st.introSeen = true; writeGmState(st); rerender(); window.scrollTo(0, 0); } }));
@@ -148,6 +160,8 @@ export function renderGm(mount, rerender) {
   const panel = el("div", { class: "panel" + (st.panel !== lastPanelKey ? " panel--enter" : "") });
   lastPanelKey = st.panel;
   ({ prep: panelPrep, play: panelPlay, fight: panelFight, wrap: panelWrap, notes: panelNotes }[st.panel] || panelPrep)(panel);
+  cardHeads(panel);
+  panel.querySelector(".card")?.append(sceneArt(st.panel, "card__art"));
   paintResults(panel);
   mount.append(panel);
 
@@ -166,12 +180,7 @@ export function renderGm(mount, rerender) {
     for (const cardEl of panelEl.querySelectorAll(".card")) {
       const key = cardEl.querySelector(".sheet__section")?.textContent;
       // Collapsed "how to use this" note, so the buttons explain when to press them.
-      if (HOW[key]) {
-        cardEl.append(el("details", { class: "how" },
-          el("summary", {}, "How to use this"),
-          ...HOW[key].map(([what, when]) => el("p", { class: "how__line" },
-            el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
-      }
+      if (HOW[key]) placeHow(cardEl, howNote(HOW[key]));
       const list = key ? resultList(key) : [];
       if (!list.length) continue;
       live += list.length;
@@ -325,7 +334,9 @@ export function renderGm(mount, rerender) {
       const saveClamp = () => { reclampVitals(ch); Store.save(ch); rerender(); };
       rows.append(el("div", { class: "party-row" },
         el("div", { class: "party-row__head" },
-          el("div", {}, el("strong", { class: "party-row__name" }, ch.name), el("span", { class: "muted" }, ` ${archName(ch)} (${titleCase(ch.nature || "human")})`)),
+          el("div", { class: "party-row__who" },
+            ch.identity?.portraitUrl ? el("img", { class: "avatar", src: ch.identity.portraitUrl, alt: "" }) : avatar(ch.name),
+            el("div", {}, el("strong", { class: "party-row__name" }, ch.name), el("span", { class: "muted" }, ` ${archName(ch)} (${titleCase(ch.nature || "human")})`))),
           el("div", { class: "party-row__badges" }, el("span", { class: "pip" }, `PP ${s.promotionPoints || 0}`), el("span", { class: "pip" }, `¥ ${s.chinyenPoints || 0}`), el("span", { class: "pip" }, `HUM ${s.humanityPoints || 0}`))),
         el("div", { class: "party-row__vitals" },
           el("span", { class: "pip pip--health" }, `♥ ${s.health}/${mh}`), el("span", { class: "pip pip--resolve" }, `◈ ${s.resolve}/${mr}`),

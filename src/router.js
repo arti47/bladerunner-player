@@ -10,6 +10,7 @@ import { renderCombat } from "./combat.js";
 import { renderSolo } from "./solo.js";
 import { renderGm } from "./gm.js";
 import { renderTutorial } from "./tutorial.js";
+import { updateQuickRoll } from "./quick.js";
 
 const mount = () => $("#screen");
 
@@ -55,6 +56,7 @@ export function navigate(route) {
 // in-screen update would yank the page away from whatever you just pressed.
 let lastRoute = null;
 function render(route) {
+  updateQuickRoll(route);
   const fn = ROUTES[route] || ROUTES.home;
   const changed = route !== lastRoute;
   const y = window.scrollY;

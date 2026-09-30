@@ -39,29 +39,38 @@ function blank() {
 const vehicle = (key) => D.VEHICLES.find((v) => v.key === key) || null;
 const SIDES = [["prey", "Prey"], ["pursuer", "Pursuer"]];
 
+let setupOpen = false;
 export function renderChaseCard(rerender) {
   const st = Chase.get();
   const commit = (mutate) => { mutate(st); Chase.save(st); rerender(); };
   const card = el("div", { class: "card" }, sectionTitle("Chase"));
 
   if (!st.active) {
+    // Folded to one line until a chase actually starts (round 3): the setup
+    // sits behind "Set up a chase", and stays open across its own re-renders.
+    card.classList.add("chase-fold");
     card.append(el("p", { class: "muted" }, "Someone is running and someone is chasing. Start this only when that happens — otherwise ignore the card."));
-    card.append(el("details", { class: "how" },
+    const setup = el("details", { class: "chase-setup", open: setupOpen || null },
+      el("summary", { class: "btn btn--sm btn--ghost chase-setup__toggle" }, "Set up a chase"));
+    setup.addEventListener("toggle", () => { setupOpen = setup.open; });
+    card.append(setup);
+    const host = setup;
+    host.append(el("details", { class: "how" },
       el("summary", {}, "How a chase runs"),
       el("p", { class: "how__line" }, el("strong", {}, "Prey and pursuer"), " ", el("span", { class: "muted" }, "are the two sides: the one running, and the one chasing.")),
       el("p", { class: "how__line" }, el("strong", {}, "1. Set the environment and distance"), " ", el("span", { class: "muted" }, "— on foot, in a car, or in a Spinner, and how far apart you start.")),
       el("p", { class: "how__line" }, el("strong", {}, "2. Each side picks a maneuver"), " ", el("span", { class: "muted" }, "for the round, without knowing the other's.")),
       el("p", { class: "how__line" }, el("strong", {}, "3. 🎲 Reveal obstacle"), " ", el("span", { class: "muted" }, "throws something in the way — traffic, a fence, a crowd.")),
       el("p", { class: "how__line" }, el("strong", {}, "4. Move the distance"), " ", el("span", { class: "muted" }, "closer or farther by who won the exchange, then take the next round. Close all the way and the prey is caught; open it far enough and they are gone."))));
-    card.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Environment"),
+    host.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Environment"),
       el("div", { class: "chips" }, ...ENVIRONMENTS.map((e) =>
         el("button", { class: "chip" + (st.env === e.key ? " chip--on" : ""), onClick: () => commit((s) => { s.env = e.key; }) }, e.name)))));
-    card.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Starting distance"),
+    host.append(el("div", { class: "field" }, el("label", { class: "field__label" }, "Starting distance"),
       el("div", { class: "chips" }, ...D.RANGES.map((r, i) =>
         el("button", { class: "chip" + (st.distIdx === i ? " chip--on" : ""), disabled: r.key === "extreme" || null, title: r.desc,
           onClick: () => commit((s) => { s.distIdx = i; }) }, r.name)))));
-    card.append(el("div", { class: "muted sheet__note" }, D.CHASE.distance));
-    card.append(el("button", { class: "btn btn--primary btn--sm", onClick: () => commit((s) => { Object.assign(s, blank(), { active: true, env: s.env, distIdx: s.distIdx }); showToast("Chase started."); }) }, "▶ Start the chase"));
+    host.append(el("div", { class: "muted sheet__note" }, D.CHASE.distance));
+    host.append(el("button", { class: "btn btn--primary btn--sm", onClick: () => commit((s) => { Object.assign(s, blank(), { active: true, env: s.env, distIdx: s.distIdx }); showToast("Chase started."); }) }, "▶ Start the chase"));
     return card;
   }
 

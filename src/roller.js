@@ -238,8 +238,9 @@ function tumble(fresh) {
 function outcomeLine(succ, banes, pushed = false) {
   const ok = succ >= 1, crit = succ >= 2;
   announce(`${ok ? (crit ? "Critical success" : "Success") : "Failure"}, ${succ} success${succ === 1 ? "" : "es"}.`);
-  return el("div", { class: "roll-outcome" },
-    el("span", { class: "roll-outcome__main " + (ok ? "is-succ" : "is-fail") }, ok ? (crit ? "Critical success" : "Success") : "Failure"),
+  // data-count feeds the big numeral (CSS ::before) so the spoken/visible text is unchanged.
+  return el("div", { class: "roll-outcome" + (crit ? " roll-outcome--crit" : ok ? " roll-outcome--succ" : " roll-outcome--fail"), dataset: { count: String(succ) } },
+    el("span", { class: "roll-outcome__main " + (ok ? "is-succ" : "is-fail") + (crit ? " is-crit" : "") }, ok ? (crit ? "Critical success" : "Success") : "Failure"),
     el("span", { class: "muted" }, `${succ} success${succ === 1 ? "" : "es"}${pushed && banes ? ` · ${banes} bane${banes === 1 ? "" : "s"}` : ""}`));
 }
 
@@ -253,7 +254,9 @@ function blockIfDead(ch) {
 }
 
 // ---- skill roll -----------------------------------------------------------
-export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
+// quick: roll at once with only the automatic modifiers (tap-to-roll, round 3);
+// the full options dialog is still one long-press or the row's options button away.
+export function openSkillRoll(ch, skillKey, onDone, { maneuver = null, quick = false } = {}) {
   if (blockIfDead(ch)) return;
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
@@ -268,6 +271,15 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
     title: `Roll — ${sk.name}`,
     render(body, close) {
       const paint = () => { body.replaceChildren(); (st.phase === "config" ? config : result)(body, close); };
+      const rollNow = (a) => {
+        const km = st.keyMemory ? 1 : 0;
+        const n = netOf(a.adv + st.adv + km, a.dis + st.dis);
+        st.dice = poolFor(dsize(attrLevel()), dsize(ch.skills[skillKey]), n);
+        st.net = n;
+        consumeAiming(ch, skillKey); // spend the aim on this shot
+        logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet", dice: st.dice });
+        st.phase = "result"; paint();
+      };
       const config = (b) => {
         const a = auto();
         // The badge must include every source the roll itself uses — key memory included.
@@ -283,15 +295,7 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
         b.append(netBadge(net));
         b.append(el("div", { class: "modal__actions" },
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
-          el("button", { class: "btn btn--primary", onClick: () => {
-            const km = st.keyMemory ? 1 : 0;
-            const n = netOf(a.adv + st.adv + km, a.dis + st.dis);
-            st.dice = poolFor(dsize(attrLevel()), dsize(ch.skills[skillKey]), n);
-            st.net = n;
-            consumeAiming(ch, skillKey); // spend the aim on this shot
-            logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet", dice: st.dice });
-            st.phase = "result"; paint();
-          } }, "⚄ Roll")));
+          el("button", { class: "btn btn--primary", onClick: () => rollNow(a) }, "⚄ Roll")));
       };
       const result = (b) => {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
@@ -313,7 +317,7 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
         b.append(actions);
       };
-      paint();
+      if (quick && !isManeuver) rollNow(auto()); else paint();
     },
     onClose: () => onDone && onDone(),
   });

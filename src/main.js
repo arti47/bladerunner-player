@@ -1,6 +1,7 @@
 // main.js — entry point / boot.
 import { applyTheme, applyGuidance, applyRain, applyTextSize } from "./settings.js";
 import { bindGlobalKeys, bindSwipe, bindOfflineChip } from "./ui.js";
+import { bindPalette } from "./quick.js";
 import { skyline } from "./art.js";
 import { mountSprite } from "./icons.js";
 import { startRouter } from "./router.js";
@@ -34,6 +35,7 @@ function boot() {
   bindOfflineChip();
   startRouter();
   bindGlobalKeys();
+  bindPalette();
   bindSwipe();
   dismissSplash();
   registerServiceWorker();

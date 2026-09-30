@@ -1,7 +1,7 @@
 // screens.js — top-level screen renderers (home / characters / rules / settings)
 // + party banner. Wizard, sheet, combat, gm, solo mount from their own modules.
 import { el, clear, icon, titleCase } from "./core.js";
-import { emblem, natureMark, portraitPlaceholder, ringGauge } from "./art.js";
+import { emblem, natureMark, portraitPlaceholder, ringGauge, emptyScene } from "./art.js";
 import * as D from "../data.js";
 import * as S from "../data-solo.js";
 import { NPCS, NPC_BUILD } from "../data-npcs.js";
@@ -140,7 +140,7 @@ export function renderCharacters(mount) {
   clear(mount);
   const chars = Store.list();
   const list = el("div", { class: "list" });
-  if (!chars.length) list.append(el("p", { class: "muted empty empty--people" }, "No characters yet. Create your first Blade Runner."));
+  if (!chars.length) list.append(emptyScene("character", "empty-scene--center"), el("p", { class: "muted empty empty--people" }, "No characters yet. Create your first Blade Runner."));
   const activeId = Store.getActiveId();
   for (const ch of chars) {
     const face = ch.identity?.portraitUrl
@@ -316,14 +316,15 @@ const natLabel = (n) => (n === "any" ? "Any" : n === "human" ? "Human only" : "R
 // ---- SETTINGS -------------------------------------------------------------
 export function renderSettings(mount) {
   clear(mount);
-  const modes = el("div", { class: "settings" });
-  for (const t of TOGGLES) {
-    modes.append(toggleRow(t.label, t.desc, !!Settings.get(t.key), (on) => { Settings.set(t.key, on); showToast(`${t.label} ${on ? "on" : "off"}`); navigate(location.hash.slice(1) || "settings"); }));
-  }
+  // Grouped inset lists (round 3): one card per group, rows divided inside it.
+  const list = (...rows) => el("div", { class: "settings settings-list" }, ...rows);
+  const toggles = (g) => TOGGLES.filter((t) => t.group === g).map((t) =>
+    toggleRow(t.label, t.desc, !!Settings.get(t.key), (on) => { Settings.set(t.key, on); showToast(`${t.label} ${on ? "on" : "off"}`); navigate(location.hash.slice(1) || "settings"); }));
   bindSyncRerender();
   mount.append(screen("Settings & About",
-    group("Play modes", modes),
-    group("Appearance", themeControl(), textSizeControl()),
+    group("Play modes", list(...toggles("modes"))),
+    group("Appearance", list(themeControl(), textSizeControl(), ...toggles("appearance"))),
+    group("Feel", list(...toggles("feel"))),
     group("Account & campaign", accountSection()),
     group("App",
       el("div", { class: "card" },

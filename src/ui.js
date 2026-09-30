@@ -268,7 +268,7 @@ export function segmentNav({ segments = [], active, onSelect, grid = false } = {
       "aria-label": s.hint ? `${s.label} — ${s.hint}` : null,
       title: s.hint || null,
       onClick: () => { if (!on && typeof onSelect === "function") onSelect(s.key); },
-    }, s.label));
+    }, s.label, s.done ? el("span", { class: "segnav__dot", "aria-label": "done this Shift", title: "Done this Shift" }) : null));
   }
   // Bring the active pill into view — a clipped active tab reads as "missing".
   requestAnimationFrame(() => {
@@ -415,6 +415,7 @@ const SHORTCUTS = [
   ["[  ]", "Previous / next tab on Solo, GM and the tutorial"],
   ["1 – 9", "Press the numbered choice on the guided Play card"],
   ["/", "Jump to the search box, where a screen has one"],
+  ["Ctrl  K", "Go to any screen, Solo tab or skill roll by typing"],
   ["Esc", "Close a dialog or menu"],
 ];
 export function openShortcuts() {
@@ -463,4 +464,57 @@ export function bindOfflineChip(bar = document.querySelector(".appbar")) {
   set();
   window.addEventListener("online", set);
   window.addEventListener("offline", set);
+}
+
+// ---- Card header (round 3) --------------------------------------------------
+// A Solo/GM card leads with an icon tile, its title in display type, and its
+// place in the procedure as a small chip. The title element keeps its class
+// and text (cards are keyed by it), so this only rearranges what is there.
+const TITLE_ICONS = [
+  [/npc|character|someone|suspect|cast|people|party|stat an/i, "person"],
+  [/clue|evidence|discover/i, "examine"],
+  [/location|where|sector|place|origin/i, "place"],
+  [/countdown|timer|interrupt/i, "timer"],
+  [/combat|fight|confrontation|drop-in|adversar|chase/i, "attack"],
+  [/hypothes|lead|review|answer/i, "search"],
+  [/note|log|scratch/i, "pen"],
+  [/award|checklist|disciplin/i, "badge"],
+  [/downtime/i, "bed"],
+  [/board|connect/i, "link"],
+  [/case|briefing|generator|file|assignment/i, "clipboard"],
+  [/shift|procedure/i, "next"],
+];
+function titleIcon(title) {
+  for (const [re, name] of TITLE_ICONS) if (re.test(title)) return name;
+  return "dice";
+}
+export function cardHeads(root) {
+  for (const c of root.querySelectorAll(".card")) {
+    if (c.querySelector(":scope > .card__head")) continue;
+    const h = c.querySelector(":scope > .sheet__section");
+    if (!h) continue;
+    const eyes = [];
+    for (let n = h.previousElementSibling; n && n.classList.contains("step-eyebrow"); n = n.previousElementSibling) eyes.unshift(n);
+    const head = el("div", { class: "card__head" }, el("span", { class: "card__icon", "aria-hidden": "true" }, icon(titleIcon(h.textContent))));
+    h.before(head);
+    head.append(h);
+    h.classList.add("card__heading");
+    if (eyes.length) head.append(el("span", { class: "card__steps" }, ...eyes.map((e) => { e.classList.add("card__step"); return e; })));
+    c.classList.add("card--headed");
+  }
+}
+
+// The per-card guidance note: an (i) at the card's top-right that opens the
+// lines under the header. Hidden altogether when Guidance is off.
+export function howNote(lines) {
+  return el("details", { class: "how" },
+    el("summary", { class: "how__toggle", "aria-label": "How to use this", title: "How to use this" }, icon("info"), el("span", { class: "visually-hidden" }, "How to use this")),
+    el("div", { class: "how__body" }, ...lines.map(([what, when]) => el("p", { class: "how__line" },
+      el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
+}
+// Put a guidance note right under a card's header (or its first title).
+export function placeHow(cardEl, note) {
+  const anchor = cardEl.querySelector(":scope > .card__head") || cardEl.querySelector(":scope > .sheet__section");
+  if (anchor) anchor.after(note); else cardEl.prepend(note);
+  cardEl.classList.add("card--how");
 }

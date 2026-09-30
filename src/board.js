@@ -18,6 +18,7 @@ import * as GM from "../data-gm.js";
 import { el, uid, rollDie } from "./core.js";
 import { modal, showToast, confirmModal, promptModal, rowMenu, undoToast } from "./ui.js";
 import { rollColumn, rollGrouped, lookupRange } from "./rules.js";
+import { avatar, emptyScene } from "./art.js";
 
 const BOARD_KEY = "brp:board";
 const EMPTY = { boxes: [], nextN: 1, checks: 0, solvedId: null };
@@ -202,6 +203,7 @@ export function renderBoardPanel(root, ctx) {
     `${b.boxes.length}/${H.BOX_MAX} boxes · ${boxesOf(b, "clue").length} clues · ${boxesOf(b, "suspect").length} suspects`));
 
   if (!b.boxes.length) {
+    boardCard.append(emptyScene("board", "empty-scene--center"));
     boardCard.append(el("p", { class: "muted empty empty--board" }, "Empty board. Add the first clue or suspect below — roll one from the Solo tables, or write your own."));
   } else {
     // Suspects left, clues right; on a wide enough card the connections are
@@ -282,6 +284,7 @@ export function renderBoardPanel(root, ctx) {
       const row = el("div", { class: "board__box board__box--" + box.kind + (b.solvedId === box.id ? " board__box--solved" : ""), dataset: { boxId: box.id } },
         el("div", { class: "board__head" },
           el("span", { class: "board__tag" }, label(box)),
+          box.kind === "suspect" ? avatar(box.name.split(" — ")[0], "board__avatar") : null,
           el("span", { class: "board__name" }, box.name),
           box.kind === "suspect" ? el("span", { class: "board__count", title: "connections" }, `🔗 ${links.length}`) : null),
         meter,

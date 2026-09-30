@@ -186,3 +186,49 @@ export function rangeBands(ranges) {
   return el("figure", { class: "diagram", "aria-label": `Ranges, near to far: ${ranges.map((r) => r.name).join(", ")}.` },
     el("div", { class: "bands" }, ...ranges.map((r, i) => el("span", { class: "bands__band", style: `--i:${i}` }, r.name))));
 }
+
+// ---- ID card (round 3) -------------------------------------------------------
+// A badge number and a barcode strip derived from the character's id. Purely
+// decorative: the same id always gives the same number and the same bars.
+function hashOf(s = "") { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.codePointAt(0), 16777619) >>> 0; return h; }
+export function badgeNumber(id) { return `BR-${String(hashOf(id) % 9000 + 1000)}`; }
+export function barcode(id, cls = "") {
+  let h = hashOf(id), x = 0, bars = "";
+  while (x < 118) { h = Math.imul(h, 1103515245) + 12345 >>> 0; const w = 1 + (h >>> 29) % 3, gap = 1 + (h >>> 26) % 3; bars += `<rect x="${x}" y="0" width="${w}" height="22"/>`; x += w + gap; }
+  return svg("0 0 120 22", bars, `art barcode ${cls}`.trim());
+}
+
+// ---- Avatars for people who are not player characters ---------------------------
+// The same name-coloured placeholder the roster uses, small, for suspects,
+// NPC combatants, leads and the party list.
+export function avatar(name, cls = "") { return portraitPlaceholder(name, `avatar ${cls}`.trim()); }
+
+// ---- Panel watermarks (round 3) ----------------------------------------------------
+// One faint monoline drawing per Solo/GM panel, in the first card's corner.
+const SCENES = {
+  play: `<rect x="10" y="18" width="60" height="44" rx="6"/><path d="M34 30v20l16-10z"/><path d="M18 18l6-8M34 18l6-8M50 18l6-8"/>`,
+  case: `<path d="M8 22h22l6 6h36v36H8z"/><path d="M8 34h64"/><path d="M20 46h26M20 54h18"/>`,
+  shift: `<path d="M8 60c10-18 22-6 30-22s18-20 34-24"/><circle cx="14" cy="54" r="3"/><circle cx="40" cy="36" r="3"/><path d="M64 10c-5 0-9 4-9 9 0 7 9 15 9 15s9-8 9-15c0-5-4-9-9-9z"/><circle cx="64" cy="19" r="3"/>`,
+  scene: `<path d="M18 70V14h34v56"/><path d="M52 14l14 8v44l-14 4"/><circle cx="44" cy="44" r="2"/><path d="M6 70h68"/>`,
+  board: `<rect x="8" y="10" width="64" height="56" rx="3"/><circle cx="24" cy="26" r="3"/><circle cx="56" cy="30" r="3"/><circle cx="36" cy="52" r="3"/><path d="M24 26l32 4-20 22z"/>`,
+  leads: `<circle cx="32" cy="32" r="16"/><path d="M44 44l18 18"/><path d="M8 66c14-6 20 4 34-2s18-10 30-6" stroke-dasharray="3 4"/>`,
+  wrap: `<path d="M50 12a24 24 0 1 0 16 36A20 20 0 0 1 50 12z"/><circle cx="24" cy="54" r="10"/><path d="M24 48v6l4 3"/>`,
+  notes: `<rect x="16" y="8" width="44" height="60" rx="3"/><path d="M16 18h-5M16 30h-5M16 42h-5M16 54h-5"/><path d="M26 22h24M26 32h24M26 42h16"/><path d="M58 50l10-10 4 4-10 10-6 2z"/>`,
+  prep: `<path d="M8 22h22l6 6h36v36H8z"/><path d="M20 46h26M20 54h18"/>`,
+  fight: `<circle cx="40" cy="40" r="22"/><circle cx="40" cy="40" r="10"/><path d="M40 8v14M40 58v14M8 40h14M58 40h14"/>`,
+};
+export function sceneArt(key, cls = "") {
+  const inner = SCENES[key] || SCENES.play;
+  return svg("0 0 80 80", `<g ${STROKE}>${inner}</g>`, `art scene-art ${cls}`.trim());
+}
+
+// ---- Large empty states ----------------------------------------------------------------
+const EMPTIES = {
+  character: `<circle cx="60" cy="38" r="14"/><path d="M32 96c2-18 14-28 28-28s26 10 28 28"/><path d="M54 30c2-4 10-4 12 0s-6 6-6 10M60 46v1" />`,
+  case: `<path d="M14 34h32l8 8h52v50H14z"/><path d="M14 52h92" opacity=".6"/><path d="M50 72h20" stroke-dasharray="3 4"/>`,
+  board: `<rect x="12" y="16" width="96" height="72" rx="4"/><circle cx="60" cy="40" r="4"/><path d="M60 44v18"/><rect x="46" y="62" width="28" height="18" rx="2" stroke-dasharray="3 3"/>`,
+  fight: `<circle cx="60" cy="52" r="28"/><circle cx="60" cy="52" r="12" stroke-dasharray="3 4"/><path d="M60 14v14M60 76v14M22 52h14M84 52h14"/>`,
+};
+export function emptyScene(kind, cls = "") {
+  return svg("0 0 120 100", `<g ${STROKE}>${EMPTIES[kind] || EMPTIES.case}</g>`, `art empty-scene ${cls}`.trim());
+}

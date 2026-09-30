@@ -79,11 +79,11 @@ export function applyTheme(theme = Settings.theme()) {
 }
 
 export const TOGGLES = [
-  { key: "solo", label: "Solo Mode", desc: "Playing on your own, with no one running the game? This adds a Solo tab where dice answer your questions and walk you through a case." },
-  { key: "gm", label: "GM Screen", desc: "Running the game for other people? This adds a GM tab: build the case, watch the party's health, drop in adversaries." },
-  { key: "advanced", label: "Advanced Automation", desc: "Extra helpers for experienced players. Leave it off to start." },
-  { key: "rain", label: "Rain", desc: "Slow rain falling behind the dark theme. Hidden in light mode and when your device asks for reduced motion." },
-  { key: "haptics", label: "Haptics", desc: "A short buzz when your dice land or damage lands. Only on devices that can vibrate." },
-  { key: "diceSound", label: "Dice sound", desc: "A quiet clatter every time you roll. Off unless you turn it on." },
-  { key: "guidance", label: "Guidance", desc: "Show the \u201cHow to use this\u201d notes on the sheet, Solo and GM screens. Turn off once you know your way round." },
+  { key: "solo", group: "modes", label: "Solo Mode", desc: "Playing on your own, with no one running the game? This adds a Solo tab where dice answer your questions and walk you through a case." },
+  { key: "gm", group: "modes", label: "GM Screen", desc: "Running the game for other people? This adds a GM tab: build the case, watch the party's health, drop in adversaries." },
+  { key: "advanced", group: "modes", label: "Advanced Automation", desc: "Extra helpers for experienced players. Leave it off to start." },
+  { key: "rain", group: "appearance", label: "Rain", desc: "Slow rain falling behind the dark theme. Hidden in light mode and when your device asks for reduced motion." },
+  { key: "haptics", group: "feel", label: "Haptics", desc: "A short buzz when your dice land or damage lands. Only on devices that can vibrate." },
+  { key: "diceSound", group: "feel", label: "Dice sound", desc: "A quiet clatter every time you roll. Off unless you turn it on." },
+  { key: "guidance", group: "feel", label: "Guidance", desc: "Show the \u201cHow to use this\u201d notes on the sheet, Solo and GM screens. Turn off once you know your way round." },
 ];

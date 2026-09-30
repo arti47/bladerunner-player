@@ -8,12 +8,13 @@ import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
 import { Store, Combat } from "./store.js";
 import { maxHealth, reclampVitals } from "./derived.js";
-import { modal, showToast, confirmModal, undoToast } from "./ui.js";
+import { modal, showToast, confirmModal, undoToast, rowMenu } from "./ui.js";
 import { Sync } from "./sync.js";
 import { rollCombatAttack, rollCombatSkill, armorForCombatant as armorFor, rollCritOnCombatant, rollCombatDeathProcedure } from "./roller.js";
 import { renderChaseCard } from "./chase.js";
 import { Settings } from "./settings.js";
 import { navigate } from "./router.js";
+import { avatar, emptyScene } from "./art.js";
 
 const INIT_CARDS = D.INITIATIVE_CARDS; // 10
 
@@ -77,7 +78,7 @@ export function renderCombat(mount) {
 
   // ---- combatant list -----------------------------------------------------
   if (!state.combatants.length) {
-    wrap.append(el("div", { class: "card" }, el("p", { class: "muted empty empty--combat" },
+    wrap.append(el("div", { class: "card" }, emptyScene("fight", "empty-scene--center"), el("p", { class: "muted empty empty--combat" },
       "No combatants yet — press Add my character or Add adversary above to start a fight.")));
     wrap.append(renderChaseCard(() => renderCombat(mount)));
     wrap.append(howCard());
@@ -92,6 +93,19 @@ export function renderCombat(mount) {
   // combatants, away from Next turn, where it cannot be hit by mistake.
   const endCombat = state.active ? el("div", { class: "combat__end" },
     el("button", { class: "btn btn--sm btn--danger", onClick: async () => { if (await confirmModal("End combat and clear the tracker?", { title: "End combat", okLabel: "End", danger: true })) { Combat.clear(); renderCombat(mount); } } }, "End combat")) : null;
+  // Turn order at a glance: mini cards in order, the current one lit; tap one
+  // to open that row and bring it into view (round 3).
+  if (state.active && ordered.length > 1) {
+    const strip = el("div", { class: "init-strip", role: "list", "aria-label": "Turn order" });
+    for (const c of ordered) {
+      strip.append(el("button", { class: "init-strip__card" + (c.id === activeId ? " init-strip__card--on" : "") + (c.health <= 0 ? " init-strip__card--down" : ""),
+        role: "listitem", "aria-label": `${c.name} — card ${c.card ?? "none"}${c.id === activeId ? ", acting now" : ""}`,
+        onClick: () => { openRows.add(c.id); renderCombat(mount); requestAnimationFrame(() => document.querySelector(`.combatant[data-cid="${c.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })); } },
+        el("span", { class: "init-strip__no" }, c.card ? `#${c.card}` : "—"),
+        el("span", { class: "init-strip__name" }, c.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 3).toUpperCase())));
+    }
+    wrap.append(strip);
+  }
   for (const c of ordered) {
     // Compact rows: while setting up, everyone is open; in a fight, the one
     // whose turn it is opens itself and the rest stay a single line unless
@@ -112,8 +126,12 @@ export function renderCombat(mount) {
 function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
   const broken = c.health <= 0;
   const dying = (c.criticalInjuries || []).some((i) => i.lethal && !i.instantKill && !i.stabilized) && !c.dead;
+  // Health that dropped since the last paint flashes once (round 3).
+  const hit = lastHealth.has(c.id) && c.health < lastHealth.get(c.id);
+  lastHealth.set(c.id, c.health);
   const card = el("div", { class: "card combatant" + (isTurn ? " combatant--turn" : "") + (turnIsNew ? " combatant--turn-new" : "")
-    + (broken || dying || c.dead ? " combatant--broken" : "") + (open ? "" : " combatant--closed") });
+    + (broken || dying || c.dead ? " combatant--broken" : "") + (dying ? " combatant--dying" : "") + (hit ? " combatant--hit" : "") + (open ? "" : " combatant--closed"),
+    dataset: { cid: c.id } });
   const armor = armorFor(c);
   // A one-line summary: card, name, a Health bar, and what state they are in.
   const bar = el("span", { class: "hbar", role: "img", "aria-label": `Health ${c.health} of ${c.maxHealth}` });
@@ -125,6 +143,7 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
     el("button", { class: "combatant__init" + (c.card ? "" : " combatant__init--none"), title: "Initiative card",
       "aria-label": `initiative card for ${c.name}${c.card ? ` — currently #${c.card}` : " — not set"}`,
       onClick: () => editCard(c, commit) }, c.card ? `#${c.card}` : "—"),
+    c.kind === "npc" ? avatar(c.name, "combatant__avatar") : null,
     el("span", { class: "combatant__id" },
       el("span", { class: "combatant__name" }, c.name, el("span", { class: "muted combatant__kind" }, ` · ${c.kind === "pc" ? "PC" : "NPC"}`)),
       el("span", { class: "combatant__line" }, bar, el("span", { class: "combatant__hp" }, `${c.health}/${c.maxHealth}`),
@@ -134,7 +153,8 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
   if (!open) return card;
   card.append(el("div", { class: "combatant__vitals" },
     el("span", { class: "track__num track__num--health" }, `♥ ${c.health}/${c.maxHealth}`),
-    el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${c.name}`, onClick: () => {
+    // Remove lives behind ⋯ (round 3), away from the Health steppers.
+    rowMenu(`More for ${c.name}`, [{ label: "✕ Remove from the fight", aria: `remove ${c.name}`, danger: true, onClick: () => {
       const at = Combat.get().combatants.findIndex((x) => x.id === c.id), kept = JSON.parse(JSON.stringify(c));
       commit((s) => { s.combatants = s.combatants.filter((x) => x.id !== c.id); });
       undoToast(`Removed ${c.name} from the fight.`, () => {
@@ -144,7 +164,7 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
         Combat.save(s);
         if (location.hash.slice(1) === "combat" && lastMount) renderCombat(lastMount);
       });
-    } }, "✕ Remove"),
+    } }]),
     el("span", { class: "stepper__ctrl" },
       el("button", { class: "btn btn--sm", "aria-label": `damage ${c.name}`, onClick: () => damageCombatant(c, commit) }, "−"),
       el("button", { class: "btn btn--sm", "aria-label": `heal ${c.name}`, onClick: () => commit((s) => adjust(s, c.id, +1)) }, "+"))));
@@ -181,6 +201,7 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
 
 // Which rows you opened by hand, and whose turn was last shown — per page load.
 const openRows = new Set();
+const lastHealth = new Map();
 let lastActiveId = null;
 
 function adjust(state, id, delta) {

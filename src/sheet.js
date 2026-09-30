@@ -3,12 +3,12 @@
 // attributes/skills/specialties display, faithful inventory (no encumbrance),
 // flavor + notes + portrait. All mutations persist through Store immediately.
 import { el, clear, titleCase, rollDie, uid, icon } from "./core.js";
-import { emblem, natureMark, portraitPlaceholder } from "./art.js";
+import { emblem, natureMark, portraitPlaceholder, badgeNumber, barcode } from "./art.js";
 import * as D from "../data.js";
 import * as R from "./rules.js";
 import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress, downtimeLimitFor, applyInvestigationShift, applyDowntimeShift } from "./derived.js";
 import { Store, RollLog } from "./store.js";
-import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard, guidanceChip, undoToast } from "./ui.js";
+import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard, guidanceChip, undoToast, howNote, placeHow } from "./ui.js";
 import { navigate } from "./router.js";
 import { Settings } from "./settings.js";
 import { openSkillRoll, openWeaponPicker, proceduralRoll, openOpposedSkillRoll } from "./roller.js";
@@ -29,6 +29,16 @@ function ensureCharWatch(ch, mount) {
 
 // Conditions the player toggles by hand; broken states are auto-derived (§3.6).
 const AUTO_CONDITIONS = ["broken_damage", "broken_stress"];
+
+// A press held for half a second opens the full options instead of rolling.
+let pressedLong = false;
+function onLongPress(node, fn) {
+  let t = null;
+  const cancel = () => { clearTimeout(t); t = null; };
+  node.addEventListener("pointerdown", () => { pressedLong = false; t = setTimeout(() => { pressedLong = true; t = null; fn(); }, 500); });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) node.addEventListener(ev, cancel);
+  node.addEventListener("contextmenu", (e) => { e.preventDefault(); });
+}
 
 // ---- "How to use this" — per-section guidance ------------------------------
 // The sheet is thirteen sections deep and assumes you know the game. Each entry
@@ -166,10 +176,7 @@ function paintGuidance(wrap) {
   for (const cardEl of wrap.querySelectorAll(".card")) {
     const lines = [...cardEl.querySelectorAll(".sheet__section")].flatMap((h) => HOW[h.textContent] || []);
     if (!lines.length) continue;
-    cardEl.append(el("details", { class: "how" },
-      el("summary", {}, "How to use this"),
-      ...lines.map(([what, when]) => el("p", { class: "how__line" },
-        el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
+    placeHow(cardEl, howNote(lines));
   }
 }
 // Per-device sheet layout preferences (the More expander).
@@ -202,7 +209,12 @@ function sheetHeader(ch, arch, y, commit) {
       commit((c) => { c.identity.portraitUrl = url; });
     });
   });
-  const head = el("div", { class: "card sheet__head" },
+  // Styled as an ID card (round 3): a strip with the badge number, the face in
+  // a framed slot, and a decorative barcode — all derived from the id.
+  const head = el("div", { class: "card sheet__head sheet__head--id" },
+    el("div", { class: "idcard__strip", "aria-hidden": "true" },
+      el("span", { class: "idcard__org" }, "LAPD · Identification"),
+      el("span", { class: "idcard__no" }, badgeNumber(ch.id))),
     el("label", { class: "sheet__portrait-wrap", for: "portrait-file", title: "Change portrait" }, portrait, fileInput),
     el("div", { class: "sheet__id" },
       el("h1", { class: "card__title sheet__name" }, ch.name),
@@ -210,7 +222,7 @@ function sheetHeader(ch, arch, y, commit) {
       ch.identity.portraitUrl
         ? el("button", { class: "btn btn--sm btn--ghost", onClick: () => commit((c) => { c.identity.portraitUrl = ""; }) }, "Remove portrait")
         : null),
-    el("div", { class: "sheet__tools" }, guidanceChip()));
+    el("div", { class: "sheet__tools" }, barcode(ch.id, "idcard__barcode"), guidanceChip()));
   // Secret Replicant (§3.5): the reveal switches on the full Replicant rules.
   if (ch.secretReplicant && ch.nature !== "replicant") {
     head.append(el("div", { class: "sheet__secret" },
@@ -326,11 +338,16 @@ function skillsSection(ch, arch, rerender) {
     const lv = ch.skills[s.key];
     const isKey = arch?.keySkills.includes(s.key);
     const trained = lv !== D.SKILL_START_LEVEL;
-    list.append(el("button", { class: "skill skill--btn" + (trained ? " skill--trained" : ""), "aria-label": `Roll ${s.name}`,
-      onClick: () => openSkillRoll(ch, s.key, rerender) },
+    // Tap rolls at once; a long-press (or the ⋯ beside it) opens the options.  [round 3]
+    const skillBtn = el("button", { class: "skill skill--btn" + (trained ? " skill--trained" : ""), "aria-label": `Roll ${s.name}`,
+      onClick: () => { if (pressedLong) { pressedLong = false; return; } openSkillRoll(ch, s.key, rerender, { quick: true }); } },
       el("span", { class: "skill__name" }, s.name, isKey ? el("span", { class: "skill__key", title: "Key skill" }, " ★") : null),
       el("span", { class: "skill__attr muted" }, R.attrDisplay(s.attr)),
-      el("span", { class: "skill__lv", title: D.SKILL_LEVEL_DESC[lv] }, `${lv} · d${D.LEVEL_DIE[lv]}`, el("span", { class: "skill__die-cta muted" }, " ⚄"))));
+      el("span", { class: "skill__lv", title: D.SKILL_LEVEL_DESC[lv] }, `${lv} · d${D.LEVEL_DIE[lv]}`, el("span", { class: "skill__die-cta muted" }, " ⚄")));
+    onLongPress(skillBtn, () => openSkillRoll(ch, s.key, rerender));
+    list.append(el("div", { class: "skill-row" }, skillBtn,
+      el("button", { class: "iconbtn skill__opts", "aria-label": `Roll options for ${s.name}`, title: "Advantage, disadvantage, key memory",
+        onClick: () => openSkillRoll(ch, s.key, rerender) }, "⋯")));
   }
   return el("div", { class: "card" }, sectionTitle("Skills"),
     el("p", { class: "muted sheet__note" }, `Tap a skill to roll its Base Dice. ${D.LEVELS.map((l) => `${l} ${D.SKILL_LEVEL_DESC[l]}`).join(" · ")}.`), list,

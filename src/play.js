@@ -72,7 +72,9 @@ export function renderPlayPanel(root, ctx) {
     // Numbered choices: press 1–4 on a keyboard, or tap.
     const row = el("div", { class: "play__choices" });
     choices.filter(Boolean).forEach(([label, fn, variant], i) => {
-      const b = btn(label, fn, variant || "primary");
+      // Each choice is a destination card (round 3), not an amber button — the
+      // card itself is the focus, so no choice should shout over the others.
+      const b = btn(label, fn, variant || "dest");
       if (i < 9) b.prepend(el("span", { class: "play__num", "aria-hidden": "true" }, String(i + 1)));
       b.append(el("span", { class: "play__chev", "aria-hidden": "true" }, "→"));
       row.append(b);
@@ -148,7 +150,7 @@ export function renderPlayPanel(root, ctx) {
             ? "Follow what you turned up, or try a different corner of the case."
             : "Pick somewhere to start. There is no wrong answer — the case fills in around wherever you look."],
       choices: [
-        ...opts.map((o) => [`📍 ${o}`, () => goTo(o), "primary"]),
+        ...opts.map((o) => [`📍 ${o}`, () => goTo(o), "dest"]),
         ["✎ Somewhere else", askPlace, "sm ghost"],
         ["🎲 Different options", () => set({ options: null }), "sm ghost"],
       ],
@@ -180,7 +182,7 @@ export function renderPlayPanel(root, ctx) {
       prose: [p.lastNarration || "You're here. Nothing has jumped out at you yet.",
         found >= ACTIONS_PER_LOCATION ? "You've turned this place over pretty thoroughly. Somewhere else might be more use." : null],
       choices: [
-        ...ACTIONS.map((a) => [a.verb, () => doAction(a), found >= ACTIONS_PER_LOCATION ? "sm ghost" : "primary"]),
+        ...ACTIONS.map((a) => [a.verb, () => doAction(a), found >= ACTIONS_PER_LOCATION ? "sm ghost" : "dest"]),
         suspects.length ? [`🎯 I think ${suspects[0].name} did it`, () => set({ stage: "accuse" }), "sm"] : null,
         ["🚕 Go somewhere else", nextShift, found >= ACTIONS_PER_LOCATION ? "primary" : "sm ghost"],
       ],
