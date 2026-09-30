@@ -3915,3 +3915,48 @@ test("feel & flow: haptics on a roll (not when off), no sound unless asked, text
   assert.deepEqual(errs, []);
   await ctx.close();
 });
+
+test("long table text wraps: the longest signature item at 130 % text fits a 360px sheet", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const ctx = await browser.newContext({ viewport: { width: 360, height: 800 } });
+  const p = await ctx.newPage();
+  await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  await p.goto(`${base}/index.html#home`, { waitUntil: "load" });
+  const longest = await p.evaluate(async () => {
+    const D = await import("/data.js");
+    const item = [...D.SIGNATURE_ITEMS].sort((a, b) => b.length - a.length)[0];
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true, textSize: "130" }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Wrap Test", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
+    ch.identity.signatureItem = item;
+    Store.setActiveId(Store.save(ch).id);
+    return item;
+  });
+  await p.goto(`${base}/index.html?wrap#sheet`, { waitUntil: "load" }); await p.waitForTimeout(300);
+  assert.ok(await p.getByText(longest, { exact: false }).count(), "the signature item is on the sheet");
+  assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, `no overflow with "${longest}"`);
+  await ctx.close();
+});
+
+test("attribute names are never cut: whole in the half-width desktop card and at 130 % on a phone", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  for (const [w, ts] of [[1280, "100"], [360, "130"]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 800 } });
+    const p = await ctx.newPage();
+    await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+    await p.goto(`${base}/index.html#home`, { waitUntil: "load" });
+    await p.evaluate(async (ts) => {
+      localStorage.setItem("brp:settings", JSON.stringify({ textSize: ts }));
+      const { Store } = await import("/src/store.js");
+      const { normalizeCharacter } = await import("/src/derived.js");
+      const ch = normalizeCharacter({ name: "Stat Test", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
+      Store.setActiveId(Store.save(ch).id);
+    }, ts);
+    await p.goto(`${base}/index.html?stat${w}#sheet`, { waitUntil: "load" }); await p.waitForTimeout(300);
+    const cut = await p.$$eval(".stat__name", (ns) => ns.filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent));
+    assert.deepEqual(cut, [], `no attribute name truncated at ${w}px / ${ts}%`);
+    await ctx.close();
+  }
+});

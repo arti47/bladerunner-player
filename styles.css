@@ -405,6 +405,10 @@ body::after {
 .badge { align-self: flex-start; border-radius: var(--r-sm); font-size: var(--fs-xs); white-space: normal; }
 .badge--danger { border-color: var(--health); color: var(--health); background: color-mix(in srgb, var(--health) 10%, var(--panel-2)); }
 .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* A chip or tag can carry text from a table or the player (a signature item, a
+   board link) — let it wrap inside the line rather than push the page sideways. */
+.tag, .pip, .badge, .chip, .net-badge, .budget { max-width: 100%; }
+.chip, .tag { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .chip { cursor: pointer; min-height: 32px; transition: border-color var(--dur-fast), color var(--dur-fast), background var(--dur-fast); }
 .chip:hover { border-color: var(--cyan); }
 .chip--on { border-color: var(--amber); color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--panel-2)); }
@@ -781,13 +785,15 @@ details[open] > summary::before { transform: rotate(45deg); }
 
 /* attributes */
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: var(--sp-2); }
+/* Name on its own line, grade + die beneath: the die's grade word ("Extraordinary")
+   used to share the line and cut the name to "S" / "Intel…" in a half-width card. */
 .stat {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-width: 0;
+  display: grid; grid-template-columns: auto 1fr; grid-template-areas: "name name" "lv die"; align-items: center; column-gap: var(--sp-2); row-gap: 2px; min-width: 0;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3);
 }
-.stat__name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stat__lv { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg); color: var(--amber); }
-.stat__die { font-size: var(--fs-xs); font-family: var(--font-mono); }
+.stat__name { grid-area: name; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat__lv { grid-area: lv; font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg); color: var(--amber); }
+.stat__die { grid-area: die; font-size: var(--fs-xs); font-family: var(--font-mono); }
 
 /* skills */
 .skill-list { display: flex; flex-direction: column; }
