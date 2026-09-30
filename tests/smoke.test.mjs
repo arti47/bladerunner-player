@@ -3187,7 +3187,7 @@ test("theme is Dark / Light / System, System follows the device, chrome colour t
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?theme#settings`, { waitUntil: "load" });
   await page.waitForTimeout(200);
-  const opts = await page.$$eval(".segmented__opt", (n) => n.map((x) => x.textContent.trim()));
+  const opts = await page.$$eval('[aria-label="Theme"] .segmented__opt', (n) => n.map((x) => x.textContent.trim()));
   assert.deepEqual(opts, ["Dark", "Light", "System"]);
   await page.click('.segmented__opt:text-is("Light")');
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "light");
@@ -3200,7 +3200,7 @@ test("theme is Dark / Light / System, System follows the device, chrome colour t
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "light", "System re-resolves live");
   await page.click('.segmented__opt:text-is("Dark")');
   await page.emulateMedia({ colorScheme: null });
-  assert.equal(await page.$eval('.segmented__opt--on', (n) => n.getAttribute("aria-pressed")), "true");
+  assert.equal(await page.$eval('[aria-label="Theme"] .segmented__opt--on', (n) => n.getAttribute("aria-pressed")), "true");
   // the light-mode app-bar title is readable (was 1.1:1 on a hardcoded dark gradient)
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   const bar = await page.$eval(".appbar", (n) => getComputedStyle(n).backgroundImage);

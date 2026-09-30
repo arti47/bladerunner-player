@@ -419,8 +419,9 @@ const SHORTCUTS = [
 ];
 export function openShortcuts() {
   if (document.querySelector(".modal-overlay")) return;
-  modal({ title: "Keyboard shortcuts", render: (body) => {
-    body.append(el("dl", { class: "shortcuts" }, ...SHORTCUTS.flatMap(([k, v]) => [el("dt", {}, ...k.split(/\s{2}/).map((x) => el("kbd", {}, x))), el("dd", {}, v)])));
+  modal({ title: "Keyboard shortcuts", render: (body, close) => {
+    body.append(el("dl", { class: "shortcuts" }, ...SHORTCUTS.flatMap(([k, v]) => [el("dt", {}, ...k.split(/\s{2}/).map((x) => el("kbd", {}, x))), el("dd", {}, v)])),
+      el("div", { class: "btn-row modal__actions" }, el("button", { class: "btn btn--ghost", onClick: () => close() }, "Close")));
   } });
 }
 export function bindGlobalKeys() {
