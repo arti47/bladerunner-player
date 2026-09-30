@@ -9,6 +9,7 @@ import { showToast } from "./ui.js";
 import { Settings } from "./settings.js";
 import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
 import { navigate } from "./router.js";
+import { emblem, natureMark } from "./art.js";
 
 const d3 = () => Math.ceil(rollDie(6) / 2);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -222,7 +223,7 @@ function stepNature(body, rerender) {
   for (const key of ["human", "replicant"]) {
     const n = D.NATURES[key];
     const on = draft.nature === key && !draft.secretReplicant;
-    body.append(choice(n.name, key === "replicant" ? "+2 Health, −2 Resolve · +1 STR/AGI increase · always Rookie" : "Baseline capabilities and standing", on, () => { draft.nature = key; draft.secretReplicant = false; if (key === "replicant") draft.years = "rookie"; rerender(); }));
+    body.append(choice(n.name, key === "replicant" ? "+2 Health, −2 Resolve · +1 STR/AGI increase · always Rookie" : "Baseline capabilities and standing", on, () => { draft.nature = key; draft.secretReplicant = false; if (key === "replicant") draft.years = "rookie"; rerender(); }, null, natureMark(key)));
   }
   // Secret Replicant  [§3.5] — built and played as a human until the reveal.
   body.append(choice("Secret Replicant", "Build as a human; the sheet carries a reveal button that applies the Replicant rules later.",
@@ -247,13 +248,13 @@ function stepArchetype(body, rerender) {
   body.append(el("p", { class: "muted" }, `Sets your key attribute (must end B+), key skills (must end C+), specialty options, and starting Chinyen die. ${draft.nature === "human" ? "Cityspeaker & Skimmer are human-only." : "Doxie is Replicant-only."}`));
   for (const a of legal) {
     const sub = `Key ${R.attrDisplay(a.keyAttr)} · ${a.keySkills.map(R.skillName).join(", ")} · Chinyen D${a.chinyenDie}`;
-    body.append(choice(a.name, sub, draft.archetype === a.key, () => { draft.archetype = a.key; rerender(); }, a.blurb));
+    body.append(choice(a.name, sub, draft.archetype === a.key, () => { draft.archetype = a.key; rerender(); }, a.blurb, emblem(a.key)));
   }
   // Solo option: no archetype at all — free key attribute/skills, D8 Chinyen.
   if (Settings.solo()) {
     body.append(choice(SOLO_NO_ARCHETYPE.name, `Free key attribute & skills · Chinyen D${SOLO_NO_ARCHETYPE.chinyenDie}`,
       draft.archetype === SOLO_NO_ARCHETYPE.key, () => { draft.archetype = SOLO_NO_ARCHETYPE.key; rerender(); },
-      SOLO_NO_ARCHETYPE.advice));
+      SOLO_NO_ARCHETYPE.advice, emblem("freeform")));
   }
   body.append(rollBtn("Roll (D12)", () => {
     const r = rollDie(12); const row = R.lookupRange(D.ARCHETYPE_TABLE[draft.nature], r);
@@ -452,8 +453,9 @@ function finish() {
 }
 
 // ---- shared UI bits -------------------------------------------------------
-function choice(title, sub, active, onClick, blurb) {
-  return el("button", { class: "choice" + (active ? " choice--on" : ""), onClick },
+function choice(title, sub, active, onClick, blurb, art = null) {
+  return el("button", { class: "choice" + (active ? " choice--on" : "") + (art ? " choice--art" : ""), onClick },
+    art ? el("span", { class: "choice__art" }, art) : null,
     el("span", { class: "choice__title" }, title),
     sub ? el("span", { class: "choice__sub muted" }, sub) : null,
     blurb ? el("span", { class: "choice__blurb muted" }, blurb) : null);

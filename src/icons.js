@@ -48,6 +48,9 @@ const S = {
   library: '<path d="M4 4.5h6.5A2.5 2.5 0 0 1 13 7v13a2 2 0 0 0-2-2H4z"/><path d="M20 4.5h-4.5A2.5 2.5 0 0 0 13 7v13a2 2 0 0 1 2-2h5z"/><path d="M7 9h3M16 9h1.5"/>',
   solo: '<path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   gm: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M9.5 4.5v15M13 9h4.5M13 13h4.5"/>',
+  badge: '<path d="M12 3l2.1 4.3 4.7.7-3.4 3.3.8 4.7L12 13.8 7.8 16l.8-4.7L5.2 8l4.7-.7z"/><path d="M8.5 16.5 7 21l5-2 5 2-1.5-4.5" opacity=".7"/>',
+  coin: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="6" opacity=".45"/><path d="M9.2 8.5 12 12l2.8-3.5M12 12v4.5M9.5 12.8h5" />',
+  hand: '<path d="M7.5 12.5V7a1.5 1.5 0 0 1 3 0v4.5M10.5 11V5.5a1.5 1.5 0 0 1 3 0V11M13.5 11V6.5a1.5 1.5 0 0 1 3 0v6.3"/><path d="M16.5 12.5a1.5 1.5 0 0 1 3 0V14c0 4-3 7-7 7h-.5a6 6 0 0 1-5.2-3l-2.4-4.2a1.4 1.4 0 0 1 2.4-1.4l1.2 1.8"/>',
   more: '<circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
   settings: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
 };

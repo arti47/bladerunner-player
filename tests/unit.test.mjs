@@ -929,7 +929,9 @@ test("every label glyph maps to a drawn icon, and every icon is reachable from a
   const ICON_NAMES = [...src.slice(src.indexOf("const S = {"), src.indexOf("\n};")).matchAll(/^\s{2}"?([a-z-]+)"?:/gm)].map((m) => m[1]);
   const wanted = new Set(Object.values(ICON_GLYPHS));
   assert.deepEqual([...wanted].filter((n) => !ICON_NAMES.includes(n)), [], "glyphs pointing at a missing symbol");
-  assert.deepEqual(ICON_NAMES.filter((n) => !wanted.has(n)), [], "symbols no glyph can reach");
+  // a symbol is reachable through a glyph, or by name through icon("…") in src/
+  const srcAll = fs.readdirSync(new URL("../src/", import.meta.url)).filter((f) => f !== "icons.js").map((f) => fs.readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")).join("\n");
+  assert.deepEqual(ICON_NAMES.filter((n) => !wanted.has(n) && !srcAll.includes(`"${n}"`)), [], "symbols nothing can reach");
   // spoken names never read the glyph; ★ is meaning, so it is said in words
   assert.equal(core.stripGlyphs("🎲 Roll the timer"), "Roll the timer");
   assert.equal(core.stripGlyphs("Open the tutorial →"), "Open the tutorial");

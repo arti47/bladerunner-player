@@ -2,7 +2,8 @@
 // Live vitals clamped to true maxima, condition toggles, resource counters,
 // attributes/skills/specialties display, faithful inventory (no encumbrance),
 // flavor + notes + portrait. All mutations persist through Store immediately.
-import { el, clear, titleCase, rollDie, uid } from "./core.js";
+import { el, clear, titleCase, rollDie, uid, icon } from "./core.js";
+import { emblem, natureMark, portraitPlaceholder } from "./art.js";
 import * as D from "../data.js";
 import * as R from "./rules.js";
 import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress, downtimeLimitFor, applyInvestigationShift, applyDowntimeShift } from "./derived.js";
@@ -184,7 +185,7 @@ function sheetPrefs(patch) {
 function sheetHeader(ch, arch, y, commit) {
   const portrait = ch.identity.portraitUrl
     ? el("img", { class: "sheet__portrait", src: ch.identity.portraitUrl, alt: `Portrait of ${ch.name}` })
-    : el("div", { class: "sheet__portrait sheet__portrait--empty", "aria-hidden": "true" }, "🕵");
+    : portraitPlaceholder(ch.name, "sheet__portrait");
   const fileInput = el("input", { type: "file", accept: "image/*", class: "visually-hidden", id: "portrait-file",
     "aria-label": "Upload a portrait" });
   fileInput.addEventListener("change", () => {
@@ -205,7 +206,7 @@ function sheetHeader(ch, arch, y, commit) {
     el("label", { class: "sheet__portrait-wrap", for: "portrait-file", title: "Change portrait" }, portrait, fileInput),
     el("div", { class: "sheet__id" },
       el("h1", { class: "card__title sheet__name" }, ch.name),
-      el("div", { class: "muted" }, `${titleCase(ch.nature)} · ${arch?.name || "—"} · ${y?.name || "—"}`),
+      el("div", { class: "muted sheet__kind" }, natureMark(ch.nature), emblem(ch.archetype), `${titleCase(ch.nature)} · ${arch?.name || "—"} · ${y?.name || "—"}`),
       ch.identity.portraitUrl
         ? el("button", { class: "btn btn--sm btn--ghost", onClick: () => commit((c) => { c.identity.portraitUrl = ""; }) }, "Remove portrait")
         : null),
@@ -261,16 +262,17 @@ function vitalTrack(label, key, value, max, tone, commit, charId) {
 // ---- Resources (Promotion / Chinyen / Humanity) ---------------------------
 function resourcesBlock(ch, commit) {
   const rows = el("div", { class: "res-grid" },
-    counter("Promotion", "promotionPoints", ch, commit, "PP earned on the job — spend on gear & specialties."),
-    counter("Chinyen", "chinyenPoints", ch, commit, "Black-market currency."),
-    counter("Humanity", "humanityPoints", ch, commit, "Compassion points — spend to raise skills in Downtime."));
+    counter("Promotion", "promotionPoints", ch, commit, "PP earned on the job — spend on gear & specialties.", "badge"),
+    counter("Chinyen", "chinyenPoints", ch, commit, "Black-market currency.", "coin"),
+    counter("Humanity", "humanityPoints", ch, commit, "Compassion points — spend to raise skills in Downtime.", "hand"));
   const block = el("div", { class: "sheet__sub" }, sectionTitle("Resources"), rows);
   if (ch.nature === "replicant")
     block.append(el("div", { class: "muted sheet__note" }, `Baseline Tests failed: ${ch.state.baselineFails || 0}`));
   return block;
 }
-function counter(label, key, ch, commit, hint) {
+function counter(label, key, ch, commit, hint, iconName) {
   return el("div", { class: "counter" },
+    iconName ? el("span", { class: "counter__icon" }, icon(iconName)) : null,
     el("div", { class: "counter__val" }, ch.state[key] ?? 0),
     el("div", { class: "counter__label" }, label),
     el("div", { class: "stepper__ctrl" },

@@ -1,6 +1,7 @@
 // screens.js — top-level screen renderers (home / characters / rules / settings)
 // + party banner. Wizard, sheet, combat, gm, solo mount from their own modules.
 import { el, clear, icon, titleCase } from "./core.js";
+import { emblem, natureMark, portraitPlaceholder, ringGauge } from "./art.js";
 import * as D from "../data.js";
 import * as S from "../data-solo.js";
 import { NPCS, NPC_BUILD } from "../data-npcs.js";
@@ -104,7 +105,7 @@ function tile(title, sub, onClick, iconName) {
 function heroCard(ch) {
   const face = ch.identity?.portraitUrl
     ? el("img", { class: "hero__portrait", src: ch.identity.portraitUrl, alt: "" })
-    : el("span", { class: "hero__portrait hero__portrait--empty", "aria-hidden": "true" }, icon("person"));
+    : portraitPlaceholder(ch.name, "hero__portrait");
   let caseOpen = null;
   try { caseOpen = JSON.parse(localStorage.getItem("brp:solo") || "{}").caseOpen || null; } catch { /* storage best-effort */ }
   return el("div", { class: "card card--hero hero" },
@@ -112,8 +113,13 @@ function heroCard(ch) {
       el("div", { class: "hero__id" },
         el("div", { class: "card__eyebrow" }, "Active character"),
         el("div", { class: "card__title" }, ch.name),
-        el("div", { class: "muted" }, `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}`))),
-    vitalsPips(ch),
+        el("div", { class: "muted hero__kind" }, natureMark(ch.nature), emblem(ch.archetype), `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}`))),
+    el("div", { class: "hero__gauges" },
+      ringGauge(ch.state.health, maxHealth(ch), "health", "Health"),
+      ringGauge(ch.state.resolve, maxResolve(ch), "resolve", "Resolve"),
+      el("span", { class: "hero__pts" },
+        el("span", { class: "pip" }, icon("badge"), `PP ${ch.state.promotionPoints}`),
+        el("span", { class: "pip" }, icon("coin"), `¥ ${ch.state.chinyenPoints}`))),
     el("div", { class: "btn-row hero__actions" },
       el("button", { class: "btn btn--primary", onClick: () => navigate("sheet") }, "Open sheet"),
       Settings.solo() && caseOpen && !ch.state?.dead
@@ -139,14 +145,14 @@ export function renderCharacters(mount) {
   for (const ch of chars) {
     const face = ch.identity?.portraitUrl
       ? el("img", { class: "char-row__face", src: ch.identity.portraitUrl, alt: "" })
-      : el("span", { class: "char-row__face char-row__face--empty", "aria-hidden": "true" }, icon("person"));
+      : portraitPlaceholder(ch.name, "char-row__face");
     list.append(el("button", { class: "list__row char-row" + (ch.id === activeId ? " char-row--active" : ""), "aria-current": ch.id === activeId ? "true" : null,
       onClick: () => { Store.setActiveId(ch.id); navigate("sheet"); } },
       face,
       el("span", { class: "char-row__body" },
         el("span", { class: "list__main" }, ch.name, ch.state?.dead ? el("span", { class: "badge badge--danger char-row__badge" }, "☠ Deceased") : null,
           ch.id === activeId ? el("span", { class: "tag tag--sm char-row__badge" }, "Active") : null),
-        el("span", { class: "list__sub muted" }, `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}${ch.state?.dead ? " · deceased" : ""}`),
+        el("span", { class: "list__sub muted char-row__kind" }, natureMark(ch.nature), emblem(ch.archetype), `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}${ch.state?.dead ? " · deceased" : ""}`),
         ch.state && !ch.state.dead ? vitalsPips(ch) : null)));
   }
   mount.append(screen("Characters",

@@ -3698,3 +3698,31 @@ test("the Case tab folds its setup once a case is open; End combat sits away fro
   assert.deepEqual(await page.$$eval(".board__add-head", (n) => n.map((x) => x.textContent)), ["Roll from the tables", "Write your own"]);
   await page.evaluate(async () => (await import("/src/board.js")).Board.clear());
 });
+
+test("identity art: archetype emblems, nature marks, a name-coloured placeholder, ring gauges, resource icons", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const unit = await page.evaluate(async () => {
+    const A = await import("/src/art.js");
+    const D = await import("/data.js");
+    const emblems = D.ARCHETYPES.map((a) => A.emblem(a.key).getAttribute("class"));
+    const ring = A.ringGauge(3, 5, "health", "Health");
+    return { emblems, distinct: new Set(D.ARCHETYPES.map((a) => A.emblem(a.key).innerHTML)).size, n: D.ARCHETYPES.length,
+      rep: A.natureMark("replicant").getAttribute("class"), hum: A.natureMark("human").getAttribute("class"),
+      same: A.toneFor("Ada Voss") === A.toneFor("Ada Voss"), init: A.initialsOf("Rick Deckard Jr"),
+      segs: ring.querySelectorAll(".ring__seg").length, on: ring.querySelectorAll(".ring__seg--on").length, label: ring.getAttribute("aria-label") };
+  });
+  assert.ok(unit.emblems.every((c) => /emblem--(?!freeform)/.test(c)), "every archetype has its own emblem");
+  assert.equal(unit.distinct, unit.n, "and no two are the same drawing");
+  assert.match(unit.rep, /nature-mark--replicant/); assert.match(unit.hum, /nature-mark--human/);
+  assert.ok(unit.same, "a placeholder's colour is stable for a name");
+  assert.equal(unit.init, "RJ");
+  assert.deepEqual([unit.segs, unit.on, unit.label], [5, 3, "Health 3 of 5"], "one ring segment per point");
+  await page.goto(`${base}/index.html?idart#home`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.ok(await page.$(".hero .ring--health") && await page.$(".hero .ring--resolve") && await page.$(".hero .emblem") && await page.$(".hero .nature-mark"));
+  await page.goto(`${base}/index.html?idart2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.equal(await page.$$eval(".counter__icon .i", (n) => n.length), 3, "the three resources carry icons");
+  const head = await page.$eval(".sheet__head", (h) => ({ face: !!h.querySelector(".portrait-ph, img.sheet__portrait"), nameTop: Math.round(h.querySelector(".sheet__name").getBoundingClientRect().top), faceTop: Math.round(h.querySelector(".sheet__portrait").getBoundingClientRect().top) }));
+  assert.ok(head.face && Math.abs(head.nameTop - head.faceTop) < 40, "the name sits beside the face, not under it");
+});
