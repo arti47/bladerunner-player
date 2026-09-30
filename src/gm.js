@@ -246,7 +246,7 @@ export function renderGm(mount, rerender) {
             el("div", { class: "roll-eyebrow" }, "Assignment"), el("p", {}, as),
             el("div", { class: "roll-eyebrow" }, "Twist"), el("p", { class: "muted" }, tw)) });
         showToast("Case briefing added to the scratchpad.");
-      }, "primary")));
+      }, "roll")));
     root.append(c);
 
     // Main NPC generator (Case Table 3): D8 type + D6 occupation/quirk/name.
@@ -287,7 +287,7 @@ export function renderGm(mount, rerender) {
           title: `Main cast — D3+${GM.CASE_MAIN_NPC_COUNT.bonus} = ${count}`,
           render: (b) => { for (const l of lines) b.append(el("p", { class: "roll-prose" }, l)); },
         });
-      }, "primary")));
+      }, "roll")));
     root.append(nc);
 
     // Case Tables 5 (clues) and 7 (the final confrontation) — seeded while you
@@ -312,7 +312,7 @@ export function renderGm(mount, rerender) {
       })));
     root.append(seeds);
 
-    root.append(el("div", { class: "btn-row" }, btn("Case built \u2014 run the session \u2192", () => { st.panel = "play"; writeGmState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("Case built \u2014 run the session \u2192", () => { st.panel = "play"; writeGmState(st); rerender(); }, "primary")));
   }
 
   function panelPlay(root) {
@@ -367,7 +367,7 @@ export function renderGm(mount, rerender) {
       })));
     root.append(dressing);
 
-    root.append(el("div", { class: "btn-row" }, btn("Shots fired \u2014 open the fight tools \u2192", () => { st.panel = "fight"; writeGmState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("Shots fired \u2014 open the fight tools \u2192", () => { st.panel = "fight"; writeGmState(st); rerender(); }, "primary")));
   }
 
   function panelFight(root) {
@@ -385,7 +385,7 @@ export function renderGm(mount, rerender) {
     c.append(el("div", { class: "btn-row" }, btn("Open Combat Tracker →", () => navigate("combat"), "ghost")));
     root.append(c);
 
-    root.append(el("div", { class: "btn-row" }, btn("Fight over \u2014 wrap the session \u2192", () => { st.panel = "wrap"; writeGmState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("Fight over \u2014 wrap the session \u2192", () => { st.panel = "wrap"; writeGmState(st); rerender(); }, "primary")));
   }
 
   function panelWrap(root) {
@@ -412,7 +412,7 @@ export function renderGm(mount, rerender) {
       })));
     root.append(after);
 
-    root.append(el("div", { class: "btn-row" }, btn("Prep the next case \u2192", () => { st.panel = "prep"; writeGmState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("Prep the next case \u2192", () => { st.panel = "prep"; writeGmState(st); rerender(); }, "primary")));
   }
 
   function panelNotes(root) {

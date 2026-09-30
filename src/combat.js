@@ -64,8 +64,7 @@ export function renderCombat(mount) {
       el("span", { class: "muted" }, `${state.combatants.length} combatant${state.combatants.length === 1 ? "" : "s"} · act low→high`)));
     controls.append(el("div", { class: "rec-actions" },
       el("button", { class: "btn btn--primary btn--sm", onClick: () => nextTurn(commit) }, "Next turn ›"),
-      el("button", { class: "btn btn--sm", onClick: () => commit((s) => drawInitiative(s)) }, "Re-draw initiative"),
-      el("button", { class: "btn btn--sm btn--danger", onClick: async () => { if (await confirmModal("End combat and clear the tracker?", { title: "End combat", okLabel: "End", danger: true })) { Combat.clear(); renderCombat(mount); } } }, "End combat")));
+      el("button", { class: "btn btn--sm", onClick: () => commit((s) => drawInitiative(s)) }, "Re-draw initiative")));
   } else {
     controls.append(el("p", { class: "muted" }, "Add combatants, then draw initiative to begin. Surprise/ambush → set a combatant to card #1."));
     controls.append(el("button", { class: "btn btn--primary btn--sm", disabled: !state.combatants.length || null, onClick: () => commit((s) => drawInitiative(s)) }, "⚄ Draw initiative & begin"));
@@ -89,6 +88,10 @@ export function renderCombat(mount) {
   const list = el("div", { class: "list" });
   const turnChanged = activeId && activeId !== lastActiveId;
   lastActiveId = activeId;
+  // Ending the fight is the one irreversible press here — it sits after the
+  // combatants, away from Next turn, where it cannot be hit by mistake.
+  const endCombat = state.active ? el("div", { class: "combat__end" },
+    el("button", { class: "btn btn--sm btn--danger", onClick: async () => { if (await confirmModal("End combat and clear the tracker?", { title: "End combat", okLabel: "End", danger: true })) { Combat.clear(); renderCombat(mount); } } }, "End combat")) : null;
   for (const c of ordered) {
     // Compact rows: while setting up, everyone is open; in a fight, the one
     // whose turn it is opens itself and the rest stay a single line unless
@@ -99,6 +102,7 @@ export function renderCombat(mount) {
     list.append(combatantCard(c, c.id === activeId, commit, open, turnChanged && c.id === activeId));
   }
   wrap.append(list);
+  if (endCombat) wrap.append(endCombat);
   if (turnChanged) requestAnimationFrame(() => list.querySelector(".combatant--turn")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   wrap.append(renderChaseCard(() => renderCombat(mount)));
   wrap.append(howCard());

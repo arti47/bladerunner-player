@@ -16,7 +16,7 @@ import * as H from "../data-house.js";
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import { el, uid, rollDie } from "./core.js";
-import { modal, showToast, confirmModal, promptModal } from "./ui.js";
+import { modal, showToast, confirmModal, promptModal, rowMenu } from "./ui.js";
 import { rollColumn, rollGrouped, lookupRange } from "./rules.js";
 
 const BOARD_KEY = "brp:board";
@@ -211,12 +211,14 @@ export function renderBoardPanel(root, ctx) {
     requestAnimationFrame(() => drawLinks(grid, b));
   }
 
-  boardCard.append(grid(
+  // Add: two columns — rolled from the tables, or written by you.
+  boardCard.append(el("div", { class: "board__add" },
+    el("span", { class: "board__add-head" }, "Roll from the tables"), el("span", { class: "board__add-head" }, "Write your own"),
     // The rolled and the written buttons share a visible label and differ by
     // icon only — so each says which it is out loud.
     spoken(btn("🎲 ＋ Clue", () => addRolled("clue"), "sm"), "＋ Clue — rolled from the tables"),
-    spoken(btn("🎲 ＋ Suspect", () => addRolled("suspect"), "sm"), "＋ Suspect — rolled from the tables"),
     spoken(btn("✍ ＋ Clue", () => addTyped("clue"), "sm ghost"), "＋ Clue — written by you"),
+    spoken(btn("🎲 ＋ Suspect", () => addRolled("suspect"), "sm"), "＋ Suspect — rolled from the tables"),
     spoken(btn("✍ ＋ Suspect", () => addTyped("suspect"), "sm ghost"), "＋ Suspect — written by you"),
   ));
   boardCard.append(el("div", { class: "btn-row" },
@@ -243,7 +245,7 @@ export function renderBoardPanel(root, ctx) {
   disc.append(el("p", { class: checks ? "roll-result--ok" : "muted" },
     checks ? `${checks} check${checks === 1 ? "" : "s"} banked — earned by your investigative rolls.`
            : "None banked. Succeed on an investigative roll on your sheet and the result offers you one."));
-  disc.append(grid(btn("🎲 Discovery Check", runDiscovery, "primary")));
+  disc.append(grid(btn("🎲 Discovery Check", runDiscovery, "roll")));
   root.append(disc);
 
   // ---- the answer
@@ -285,16 +287,17 @@ export function renderBoardPanel(root, ctx) {
         meter,
         box.detail ? el("p", { class: "muted small board__detail" }, box.detail) : null,
         links.length ? el("p", { class: "muted small board__links" }, "Connected: ", ...links.map((l) => el("span", { class: "tag tag--sm board__link" }, label(l)))) : null,
-        el("div", { class: "btn-row" },
-          // Icon-only buttons carry their own accessible name.
-          named(btn("🔗", () => connectFlow(box), "sm ghost"), `Connect ${label(box)}`),
-          box.kind === "suspect" ? named(btn("★", () => promote(box), "sm ghost"), `Promote ${label(box)} to a hypothesis`) : null,
-          named(btn("📌", () => { ctx.pin(noteLine(box, box.detail ? ` — ${box.detail}` : "")); }, "sm ghost"), `Pin ${label(box)} to the case notes`),
-          named(btn("✕", async () => {
-            if (await confirmModal(`Take ${label(box)} “${box.name}” off the board?`, { title: "Remove box", danger: true, okLabel: "Remove" })) {
-              removeBox(b, box.id); commit();
-            }
-          }, "sm ghost"), `Remove ${label(box)} from the board`)));
+        // Connect is what you do most; the rest sit behind one ⋯.
+        el("div", { class: "btn-row board__acts" },
+          named(btn("🔗 Connect", () => connectFlow(box), "sm ghost"), `Connect ${label(box)}`),
+          rowMenu(`More for ${label(box)}`, [
+            box.kind === "suspect" ? { label: "★ Promote to a hypothesis", aria: `Promote ${label(box)} to a hypothesis`, onClick: () => promote(box) } : null,
+            { label: "📌 Pin to the case notes", aria: `Pin ${label(box)} to the case notes`, onClick: () => ctx.pin(noteLine(box, box.detail ? ` — ${box.detail}` : "")) },
+            { label: "✕ Remove from the board", aria: `Remove ${label(box)} from the board`, danger: true, onClick: async () => {
+              if (await confirmModal(`Take ${label(box)} “${box.name}” off the board?`, { title: "Remove box", danger: true, okLabel: "Remove" })) {
+                removeBox(b, box.id); commit();
+              }
+            } }])));
       wrap.append(row);
     }
     return wrap;

@@ -18,7 +18,7 @@
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, guidanceChip, introLine, notesView } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, introLine, notesView, rowMenu } from "./ui.js";
 import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY, stripGlyphs } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
@@ -28,6 +28,7 @@ import { navigate } from "./router.js";
 import { Board, renderBoardPanel } from "./board.js";
 import { renderPlayPanel } from "./play.js";
 import { Chase } from "./chase.js";
+import { Settings } from "./settings.js";
 
 const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo state,
                                  // so starting a fresh case cannot wipe your record
@@ -382,14 +383,8 @@ export function renderSolo(mount, rerender) {
   // header + segmented nav
   // The page heading is for screen readers; the tab bar already names the screen.
   mount.append(el("h1", { class: "visually-hidden" }, "Solo Mode Assistant"));
-  mount.append(el("div", { class: "screen-tools" }, el("div", { class: "chips autopin" },
-    el("button", {
-      class: "chip" + (st.autoPin ? " chip--on" : ""),
-      "aria-pressed": st.autoPin ? "true" : "false",
-      onClick: () => { st.autoPin = !st.autoPin; writeSoloState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
-    }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)), guidanceChip()));
   mount.append(statusStrip());
-  mount.append(segmentNav({ segments: SEGMENTS, active: st.panel,
+  mount.append(segmentNav({ segments: SEGMENTS, active: st.panel, grid: true,
     // Switching tabs starts at the top; an in-panel roll keeps your place.
     onSelect: (k) => { st.panel = k; st.introSeen = true; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
   // First visit only: one line saying what this screen is, gone once you move on.
@@ -412,7 +407,7 @@ export function renderSolo(mount, rerender) {
     };
     return el("div", { class: "roll-row solo-roll" },
       pick,
-      btn("⚄ Roll", roll, "primary"),
+      btn("⚄ Roll", roll, "roll"),
       btn("⚔ Attack", () => openWeaponPicker(ch, rerender), "sm"),
       btn("⚖ Opposed", () => openOpposedSkillRoll(ch, rerender), "sm"),
       btn("Sheet →", () => navigate("sheet"), "sm ghost"));
@@ -427,14 +422,14 @@ export function renderSolo(mount, rerender) {
     if (!ch) {
       wrap.append(el("span", { class: "solo-status__cell muted" }, "No active character"),
         btn("Create one →", () => navigate("wizard"), "sm ghost"));
-      return wrap;
+      return hud(wrap);
     }
     const limit = downtimeLimitFor(ch), used = ch.state.shiftsSinceDowntime || 0;
     const atLimit = used >= limit;
     const cell = (text, cls = "") => el("span", { class: "solo-status__cell " + cls }, text);
     wrap.append(
       cell(st.caseOpen ? `#${st.caseOpen.no} ${st.caseOpen.title}` : "No case open", "solo-status__name"),
-      cell(ch.name),
+      el("button", { class: "solo-status__cell solo-status__link solo-status__who", title: "Open the character sheet", onClick: () => navigate("sheet") }, ch.name),
       cell(`♥ ${ch.state.health}/${maxHealth(ch)}`, ch.state.health <= 0 ? "warn" : ""),
       cell(`◈ ${ch.state.resolve}/${maxResolve(ch)}`, ch.state.resolve <= 0 ? "warn" : ""),
       cell(`Shift ${st.shiftNo || 1}`),
@@ -456,7 +451,19 @@ export function renderSolo(mount, rerender) {
       class: "solo-status__cell solo-status__link",
       onClick: () => { st.panel = "board"; writeSoloState(st); rerender(); window.scrollTo(0, 0); },
     }, `🔍 ${banked}`));
-    return wrap;
+    return hud(wrap);
+  }
+  // One HUD line: the readout scrolls sideways if it must, and the screen's two
+  // preferences sit behind its ⋯ instead of taking a row of their own.
+  function hud(readout) {
+    const g = Settings.guidance();
+    return el("div", { class: "solo-hud" }, readout,
+      rowMenu("Solo tools", [
+        { label: `📌 Auto-pin every roll to notes${st.autoPin ? " ✓" : ""}`, aria: "Auto-pin every roll to notes", cls: "autopin-toggle", pressed: !!st.autoPin,
+          onClick: () => { st.autoPin = !st.autoPin; writeSoloState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); } },
+        { label: g ? "Guidance on — hide the how-to notes" : "Guidance off — show the how-to notes", cls: "guidance-chip", pressed: g,
+          onClick: () => { Settings.set("guidance", !Settings.guidance()); showToast(Settings.guidance() ? "Guidance on — each card explains itself." : "Guidance hidden. Turn it back on here or in Settings."); rerender(); } },
+      ]));
   }
 
   // A card headed with its place in the Investigation Procedure (Solo Mode p.005).
@@ -601,7 +608,7 @@ export function renderSolo(mount, rerender) {
       head.append(el("p", { class: "muted small" },
         `Shift ${st.shiftNo || 1} · ${openLeads} open lead${openLeads === 1 ? "" : "s"}${boxes ? ` · ${boxes} on the board` : ""}`));
       head.append(el("div", { class: "btn-row" },
-        btn("Pick up where you left off →", () => { st.panel = "shift"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary"),
+        btn("Pick up where you left off →", () => { st.panel = "shift"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "roll"),
         btn("✔ Close the case", closeCase, "sm ghost"),
         btn("✎ Rename", async () => {
           const t = await promptModal("Case name", { title: "Rename the case", value: c.title, okLabel: "Rename" });
@@ -611,7 +618,15 @@ export function renderSolo(mount, rerender) {
     }
 
     // Before the loop: the solo character themselves.
-    root.append(stepCard("Before you start", "Your solo Blade Runner", S.SOLO_NO_ARCHETYPE.advice,
+    // With a case already open, the setup cards fold into one line — they are
+    // the way IN to a case, not part of working one.
+    const setupHost = st.caseOpen ? el("details", { class: "fold", open: st.setupOpen || null }) : root;
+    if (st.caseOpen) {
+      setupHost.append(el("summary", { class: "fold__summary" }, "Setting up a case — origin, and the four ways to open one"));
+      setupHost.addEventListener("toggle", () => { st.setupOpen = setupHost.open; writeSoloState(st); });
+      root.append(setupHost);
+    }
+    setupHost.append(stepCard("Before you start", "Your solo Blade Runner", S.SOLO_NO_ARCHETYPE.advice,
       grid(btn("🎲 Origin Seed (D12)", () => { const roll = rollDie(12); const t = S.ORIGIN[roll - 1]; show({ label: "Origin", text: `D12→${roll}`, pin: `[Origin] ${t}`, title: `Origin Seed — ${roll} (D12)`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) }); }),
         btn("Creation wizard →", () => navigate("wizard"), "ghost"))));
 
@@ -638,7 +653,7 @@ export function renderSolo(mount, rerender) {
       }
       methods.append(row);
     }
-    root.append(methods);
+    setupHost.append(methods);
 
     // Step 0b — the briefing itself (Solo Mode pp.16–17).
     const lead = stepCard("Get briefed", "Case Briefing",
@@ -656,7 +671,7 @@ export function renderSolo(mount, rerender) {
               el("div", { class: "roll-eyebrow" }, "Complication"), el("p", { class: "muted" }, c),
               el("div", { class: "roll-eyebrow" }, "Personal Hook"), el("p", { class: "muted" }, h)) });
           showToast("Full briefing added to Case Notes.");
-        }, "primary")),
+        }, "roll")),
       el("p", { class: "muted small" }, "Or roll the briefing tables one at a time:"),
       grid(
         btn("🎲 Assignment", () => { const t = rollAssignment(); show({ label: "Assignment", text: t, title: "Case Briefing — Assignment", render: (b) => b.append(el("h3", { class: "roll-result" }, t)) }); }),
@@ -695,7 +710,7 @@ export function renderSolo(mount, rerender) {
           const lines = Array.from({ length: count }, rollMainNpc).map((n) => `${n.name} — ${n.occ} (${n.type}); ${n.quirk}`);
           show({ label: "Main NPCs", text: `${count} NPCs`, pin: `[Cast] ${lines.join(" | ")}`, title: `Main cast — D3+${GM.CASE_MAIN_NPC_COUNT.bonus} = ${count}`,
             render: (b) => { for (const l of lines) b.append(el("p", { class: "roll-prose" }, l)); } });
-        }, "primary")));
+        }, "roll")));
     details.addEventListener("toggle", () => { st.altOpen = details.open; writeSoloState(st); });
     alt.append(details);
     root.append(alt);
@@ -713,7 +728,7 @@ export function renderSolo(mount, rerender) {
           render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${tr} · ${sph}`),
             el("div", { class: "roll-eyebrow" }, "Skill level"), el("p", { class: "muted" }, `${sk.name} — ${sk.dice}`),
             el("div", { class: "roll-eyebrow" }, "Human or Replicant"), el("p", { class: "muted" }, `${nat.result} — ${nat.detail}`)) });
-      }, "primary"),
+      }, "roll"),
       btn("🎲 Where it starts", () => { const e = rollColumn(S.LOCATION_ENVIRONMENT), p2 = rollColumn(S.LOCATION_PLACE); show({ label: "Location", text: `${e.entry} ${p2.entry}`, pin: `[Location] ${e.entry} ${p2.entry}`, title: "Where it starts", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${e.entry} ${p2.entry}`), el("p", { class: "muted roll-center" }, `Environment D6=${e.d6}/D12=${e.d}  |  Place D6=${p2.d6}/D12=${p2.d}`)) }); }),
       btnNamed("🎲 Cipher", "Roll the Cipher oracle — two words to interpret", () => { const m = rollColumn(S.CIPHER_METHOD), f = rollColumn(S.CIPHER_FOCUS); show({ label: "Cipher", text: `${m.entry} × ${f.entry}`, pin: `[Cipher] ${m.entry} × ${f.entry}`, title: "Cipher — interpret it", render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${m.entry} × ${f.entry}`), el("p", { class: "muted roll-center" }, `Method D6=${m.d6}/D12=${m.d}  |  Focus D6=${f.d6}/D12=${f.d}`)) }); })));
 
@@ -756,7 +771,9 @@ export function renderSolo(mount, rerender) {
     flesh.append(more);
     root.append(flesh);
 
-    root.append(el("div", { class: "btn-row" }, btn("Briefed — start the first Shift →", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
+    // The sticky next step exists once there is a case to be briefed on; before
+    // that, "Open a case" on the on-ramp is the next step.
+    if (st.caseOpen) root.append(el("div", { class: "btn-row next-bar" }, btn("Briefed — start the first Shift →", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
 
     // Case Table 3: D8 type, then D6 each for occupation, quirk, and both names.
     // Closed cases, newest first. Never wiped by "Start a fresh case".
@@ -904,7 +921,7 @@ export function renderSolo(mount, rerender) {
       }, "sm ghost")));
     root.append(timerCard);
 
-    root.append(el("div", { class: "btn-row" }, btn(
+    root.append(el("div", { class: "btn-row next-bar" }, btn(
       st.pendingEvent ? "The event interrupts — play it out →" : "At the location — play the scenes →",
       () => { st.panel = "scene"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
   }
@@ -960,7 +977,7 @@ export function renderSolo(mount, rerender) {
           const d = rollGrouped(S.CLUE_EVIDENCE_DESCRIPTOR).entry, t = rollGrouped(S.CLUE_EVIDENCE_TYPE).entry;
           show({ label: "Clue", text: `${d.result} ${t}`, pin: `[Clue] ${d.result} ${t} — ${d.detail} Meaning: ${m}`, title: "Imagined Clue",
             render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${d.result} ${t}`), el("p", {}, d.detail), el("div", { class: "roll-eyebrow" }, "Meaning"), el("p", { class: "muted" }, m)) });
-        }, "primary"))));
+        }, "roll"))));
 
     // Step 4c - who you meet. Skill Level sits with the other NPC rolls.
     root.append(stepCard(4, "People you meet", "Generate an NPC: sphere of life, a defining trait, and how good they are.",
@@ -977,7 +994,7 @@ export function renderSolo(mount, rerender) {
           const nat = lookupRange(S.NPC_NATURE, rollDie(10));
           show({ label: "NPC", text: `${tr} · ${sph} · ${nat.result}`, pin: `[NPC] ${tr} character from ${sph}; ${sk.name}; ${nat.result}`, title: "Generated NPC",
             render: (b) => b.append(el("h3", { class: "roll-result roll-result--big" }, `${tr} · ${sph}`), el("p", {}, `A ${tr.toLowerCase()} character connected to ${sph.toLowerCase()}.`), el("div", { class: "roll-eyebrow" }, "Skill Level"), el("p", { class: "muted" }, `${sk.name} — ${sk.dice}`), el("div", { class: "roll-eyebrow" }, "Human or Replicant"), el("p", { class: "muted" }, `${nat.result} — ${nat.detail}`)) });
-        }, "primary")),
+        }, "roll")),
       el("p", { class: "muted roll-note" }, `Roll for an NPC only when they are pitted directly against you \u2014 and never push an NPC's roll. Not worth statting? Assume ${S.NPC_SKILL_DEFAULT}.`)));
 
     // Step 4d - when it turns violent.
@@ -989,7 +1006,7 @@ export function renderSolo(mount, rerender) {
         btn("🎲 NPC is the prey (D8)", () => rollNpcChase("prey"))),
       el("div", { class: "btn-row" }, btn("Combat Tracker \u2192", () => navigate("combat"), "sm ghost"))));
 
-    root.append(el("div", { class: "btn-row" }, btn("Scenes done \u2014 review the leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("Scenes done \u2014 review the leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); }, "primary")));
   }
 
   // ---- PLAY: the guided loop, for someone who has read nothing ------------
@@ -1052,7 +1069,7 @@ export function renderSolo(mount, rerender) {
         rerender();
       },
     });
-    root.append(el("div", { class: "btn-row" },
+    root.append(el("div", { class: "btn-row next-bar" },
       btn("Board reviewed \u2014 on to your leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
   }
 
@@ -1069,7 +1086,9 @@ export function renderSolo(mount, rerender) {
       const stepHyp = (dir) => { const idx = S.ESCALATION_STEPS.indexOf(h.die) + dir; if (idx >= 0 && idx < S.ESCALATION_STEPS.length) { h.die = S.ESCALATION_STEPS[idx]; setFlag("review"); writeSoloState(st); rerender(); } };
       hypList.append(el("div", { class: "hyp-row" },
         el("div", { class: "hyp-row__main" }, el("strong", { class: "hyp-row__die" }, `[${h.die}]`), el("span", {}, h.text)),
-        el("div", { class: "btn-row" }, btn("🎲 Check", () => hypothesisCheck(h), "sm"), btn("▲", () => stepHyp(1), "sm ghost"), btn("▼", () => stepHyp(-1), "sm ghost"), btn("✕", () => { st.hypotheses.splice(i, 1); writeSoloState(st); rerender(); }, "sm ghost"))));
+        el("div", { class: "btn-row hyp-row__acts" }, btn("🎲 Check", () => hypothesisCheck(h), "sm"),
+          named(btn("▲", () => stepHyp(1), "sm ghost"), `Upgrade ${h.text}`), named(btn("▼", () => stepHyp(-1), "sm ghost"), `Downgrade ${h.text}`),
+          named(btn("✕", () => { st.hypotheses.splice(i, 1); writeSoloState(st); rerender(); }, "sm ghost"), `Remove ${h.text}`))));
     });
     review.append(hypList, btn("＋ Add Hypothesis", async () => { const t = await promptModal("Hypothesis theory / lead", { title: "Add Hypothesis", okLabel: "Add" }); if (t && t.trim()) { st.hypotheses.push({ id: uid(), text: t.trim(), die: S.HYPOTHESIS.newRating }); setFlag("review"); writeSoloState(st); rerender(); } }, "sm"));
     root.append(review);
@@ -1078,7 +1097,7 @@ export function renderSolo(mount, rerender) {
       "When an action or circumstance will conclusively prove or disprove a theory, press the Check button on its row above. It rolls the rating as Base Dice and cannot be pushed.",
       el("p", { class: "muted small" }, `${S.HYPOTHESIS_CHECK.crit.name}: ${S.HYPOTHESIS_CHECK.crit.pp > 0 ? "+" : ""}${S.HYPOTHESIS_CHECK.crit.pp} PP \u00b7 ${S.HYPOTHESIS_CHECK.success.name}: +${S.HYPOTHESIS_CHECK.success.pp} PP \u00b7 ${S.HYPOTHESIS_CHECK.failure.name}: ${S.HYPOTHESIS_CHECK.failure.pp} PP`)));
 
-    root.append(el("div", { class: "btn-row" }, btn("Leads reviewed \u2014 end the Shift \u2192", () => { st.panel = "wrap"; writeSoloState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("Leads reviewed \u2014 end the Shift \u2192", () => { st.panel = "wrap"; writeSoloState(st); rerender(); }, "primary")));
   }
 
   // ---- WRAP: step 7 -------------------------------------------------------
@@ -1104,7 +1123,7 @@ export function renderSolo(mount, rerender) {
           r.overLimit ? "Over the Downtime limit: +1 stress." : "",
           r.brokenHeal ? `Broken and alone: +${r.brokenHeal} Health.` : ""].filter(Boolean).join(" "),
           { kind: r.overLimit ? "warn" : "info" });
-      }, "primary"),
+      }, "roll"),
       btn("\u{1F6CC} Take Downtime instead", async () => {
         if (!ch) { showToast("No active character.", { kind: "warn" }); return; }
         const care = await confirmModal("Spend this Downtime under medical care (or with a MedChecker)?", { title: "Downtime Shift", okLabel: "With care", cancelLabel: "On your own" });
@@ -1170,14 +1189,14 @@ export function renderSolo(mount, rerender) {
           record("Awards", real, `[Awards] ${ch.name}: ${real}`);
           pinNote(`[Awards] ${ch.name}: ${real}`);
           showToast(`${ch.name}: ${bits}. Promotion ${ch.state.promotionPoints}, Humanity ${ch.state.humanityPoints}.`);
-        }, "primary"),
+        }, "roll"),
         btn("Open sheet to spend them →", () => navigate("sheet"), "sm ghost")));
     } else {
       c.append(el("div", { class: "btn-row" }, btn("Open sheet to spend them →", () => navigate("sheet"), "sm ghost")));
     }
     root.append(c);
 
-    root.append(el("div", { class: "btn-row" }, btn("New Shift \u2014 back to the streets \u2192", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("New Shift \u2014 back to the streets \u2192", () => { st.panel = "shift"; writeSoloState(st); rerender(); }, "primary")));
   }
 
   function panelNotes(root) {
@@ -1249,7 +1268,7 @@ export function renderSolo(mount, rerender) {
         rerender();
       }, "sm ghost")));
     root.append(c);
-    root.append(el("div", { class: "btn-row" }, btn("Back to the case \u2014 next Shift \u2192", () => { st.panel = "shift"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
+    root.append(el("div", { class: "btn-row next-bar" }, btn("Back to the case \u2014 next Shift \u2192", () => { st.panel = "shift"; writeSoloState(st); rerender(); window.scrollTo(0, 0); }, "primary")));
   }
 }
 
@@ -1271,6 +1290,8 @@ function card(title, sub, ...children) {
 function grid(...children) { return el("div", { class: "roll-grid" }, ...children.filter(Boolean)); }
 // A button whose visible label is a term of art gets a spoken name that also
 // says what it does. The accessible name still contains the visible label.
+// An icon-only button still says what it does.
+function named(b, spoken) { b.setAttribute("aria-label", spoken); b.title = spoken; return b; }
 function btnNamed(label, spoken, onClick, variant = "roll") {
   const b = btn(label, onClick, variant);
   b.setAttribute("aria-label", spoken);

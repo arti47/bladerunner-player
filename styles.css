@@ -882,8 +882,9 @@ details[open] > summary::before { transform: rotate(45deg); }
 .timer-display__die { font-family: var(--font-display); font-size: var(--fs-2xl); color: var(--amber); font-weight: 700; }
 
 .hyp-list { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
-.hyp-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); }
-.hyp-row__main { flex: 1; min-width: 0; }
+.hyp-row { display: flex; flex-direction: column; align-items: stretch; justify-content: space-between; gap: var(--sp-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); }
+.hyp-row__main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hyp-row__acts { justify-content: flex-end; }
 .hyp-row__die { font-family: var(--font-mono); color: var(--cyan); margin-right: var(--sp-2); }
 
 .check-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
@@ -943,6 +944,20 @@ details[open] > summary::before { transform: rotate(45deg); }
 /* the active pill is NOT the primary-button gradient — only one loud thing per screen */
 .segnav__pill--on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent); background: color-mix(in srgb, var(--amber) 10%, transparent); }
 .panel { display: flex; flex-direction: column; gap: var(--sp-4); }
+/* the tab set as a 4-column grid on a phone — all eight visible, none clipped */
+@media (max-width: 419px) {
+  .segnav--grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; overflow: visible; -webkit-mask-image: none; mask-image: none; padding: var(--sp-2) 0; margin: 0; }
+  .segnav--grid .segnav__pill { justify-content: center; min-width: 0; padding: 0 var(--sp-1); margin: 0; font-size: var(--fs-sm); }
+  .segnav--grid .segnav__pill:first-child, .segnav--grid .segnav__pill:last-child { margin: 0; }
+}
+/* the panel's one next step: amber, full width, pinned just above the nav */
+.next-bar { position: sticky; bottom: calc(var(--nav-h) + var(--sp-2)); z-index: 4; margin-top: var(--sp-2); }
+.next-bar .btn { width: 100%; min-height: 48px; font-size: var(--fs-base); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 8px 24px rgba(0,0,0,.45); }
+@media (min-width: 900px) { .next-bar { bottom: var(--sp-4); } }
+/* a group of cards folded into one line */
+.fold { border: 1px dashed var(--line-strong); border-radius: var(--r-lg); }
+.fold > .fold__summary { cursor: pointer; padding: var(--sp-3) var(--sp-4); font-family: var(--font-display); font-weight: 600; color: var(--muted); min-height: var(--tap); }
+.fold[open] { padding: 0 var(--sp-2) var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-3); }
 .panel .card { gap: var(--sp-2); }
 
 /* ---- Tutorial -------------------------------------------------------------- */
@@ -964,12 +979,16 @@ details[open] > summary::before { transform: rotate(45deg); }
 .casefiles { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
 .casefile summary { font-weight: 600; }
 /* the status strip: a HUD readout, not a bordered box */
+.solo-hud { display: flex; align-items: center; gap: var(--sp-1); border-bottom: 1px solid var(--line); min-width: 0; }
 .solo-status {
-  display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); align-items: baseline;
+  flex: 1; min-width: 0;
+  display: flex; flex-wrap: nowrap; gap: var(--sp-3); align-items: baseline; overflow-x: auto; scrollbar-width: none;
   padding: var(--sp-2) var(--sp-1); margin: 0;
   font-family: var(--font-mono); font-size: var(--fs-sm);
-  border-bottom: 1px solid var(--line);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
 }
+.solo-status::-webkit-scrollbar { display: none; }
+.solo-status__who { font-family: var(--font-mono); }
 .solo-status__cell { color: var(--muted); white-space: nowrap; }
 .solo-status__name { font-family: var(--font-display); font-size: var(--fs-md); color: var(--text); font-weight: 700; }
 .solo-status .warn { color: var(--warn); }
@@ -1017,6 +1036,12 @@ details[open] > summary::before { transform: rotate(45deg); }
 .board__meter-seg--on { background: var(--magenta); border-color: var(--magenta); }
 .board__links { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
 .board__link { color: var(--magenta); border-color: color-mix(in srgb, var(--magenta) 45%, var(--line)); }
+.board__add { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); margin-top: var(--sp-3); }
+.board__add-head { font-family: var(--font-display); font-size: var(--fs-2xs); font-weight: 600; text-transform: uppercase; letter-spacing: var(--track-label); color: var(--muted); }
+.board__add .btn { width: 100%; }
+.board__acts { align-items: center; }
+.rowmenu__item--danger { color: var(--danger); }
+.combat__end { display: flex; justify-content: flex-end; padding-top: var(--sp-2); border-top: 1px dashed var(--line); }
 .board__pick { display: grid; gap: var(--sp-1); margin: var(--sp-2) 0; }
 .board__pick .btn { justify-content: flex-start; text-align: left; }
 .roll-next__earned { margin: var(--sp-2) 0 0; }

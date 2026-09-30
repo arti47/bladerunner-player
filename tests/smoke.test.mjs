@@ -1512,6 +1512,7 @@ test("the Case Board runs a case: boxes, connections, discovery, clincher, promo
   assert.ok(discCard[1].some((x) => /Discovery Check —/.test(x)), `the result lands in the Discovery card: ${JSON.stringify(byCard)}`);
 
   // Pinning a box writes to the case notes, at the end.
+  await page.locator(".board__box").first().locator(".rowmenu__toggle").click();   // Pin sits behind the box's ⋯
   await page.locator(".board__box").first().getByRole("button", { name: /^Pin / }).click();
   await page.waitForTimeout(250);
   const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
@@ -3335,6 +3336,7 @@ test("one Guidance switch hides every how-to note; Solo/GM open with a one-line 
   assert.equal(await page.$eval("h1", (h) => h.textContent), "Solo Mode Assistant", "the screen still has its heading");
   const visible = () => page.$$eval(".how", (n) => n.filter((x) => x.offsetParent !== null).length);
   assert.ok((await visible()) > 0, "guidance on by default");
+  await page.click(".solo-hud .rowmenu__toggle");   // Solo keeps its tools behind the HUD's ⋯
   await page.click(".guidance-chip");
   assert.equal(await visible(), 0, "one press hides every note");
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:settings")).guidance), false);
@@ -3630,4 +3632,69 @@ test("the app does not zoom: viewport locked, pinch and double-tap dropped, iOS 
   assert.match(r.meta, /maximum-scale=1/); assert.match(r.meta, /user-scalable=no/);
   assert.equal(r.touch, "pan-x pan-y", "scrolling stays, pinch and double-tap zoom go");
   assert.equal(r.cancelled, true, "the iOS pinch gesture is cancelled");
+});
+
+// ---------------------------------------------------------------------------
+// UX audit round 2 — R1 fixes & chrome.
+// ---------------------------------------------------------------------------
+test("Solo chrome: one HUD line with its tools behind ⋯, all eight tabs visible on a phone, one amber next step pinned above the nav", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = "leads"; s.introSeen = true;
+    s.caseOpen = { no: 7, title: "Rain", assignment: "x", opened: Date.now(), openStats: { pp: 0, humanity: 0 } };
+    s.hypotheses = [{ id: "h", text: "A rather long theory about who did it and why", die: "D8" }]; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+  await page.goto(`${base}/index.html?chrome#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => {
+    const hud = document.querySelector(".solo-hud"), pills = [...document.querySelectorAll(".segnav__pill")], row = document.querySelector(".segnav").getBoundingClientRect();
+    const nav = document.querySelector("#nav").getBoundingClientRect(), bar = document.querySelector(".next-bar")?.getBoundingClientRect();
+    const main = document.querySelector(".hyp-row__main").getBoundingClientRect();
+    return { hudH: Math.round(hud.getBoundingClientRect().height), tools: !!document.querySelector(".screen-tools"),
+      allVisible: pills.every((p) => { const b = p.getBoundingClientRect(); return b.left >= row.left - 1 && b.right <= row.right + 1; }), rows: new Set(pills.map((p) => Math.round(p.getBoundingClientRect().top))).size,
+      amber: [...document.querySelectorAll(".panel .btn--primary")].filter((b) => b.offsetParent).length, barAboveNav: bar && bar.bottom <= nav.top + 1, leadW: Math.round(main.width) };
+  });
+  assert.ok(r.hudH <= 48, `the status is one line (${r.hudH}px)`);
+  assert.equal(r.tools, false, "no separate tools row on Solo");
+  assert.ok(r.allVisible && r.rows === 2, "eight tabs in a 4×2 grid, none clipped");
+  assert.equal(r.amber, 1, "one amber button on the panel — the next step");
+  assert.ok(r.barAboveNav, "and it sits pinned just above the nav");
+  assert.ok(r.leadW > 250, `a lead's text gets the full row (${r.leadW}px)`);
+  await page.click(".solo-hud .rowmenu__toggle");
+  assert.ok(await page.locator(".autopin-toggle").isVisible() && await page.locator(".guidance-chip").isVisible(), "both tools behind the ⋯");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo")); s.caseOpen = null; s.hypotheses = []; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+});
+
+test("the Case tab folds its setup once a case is open; End combat sits away from Next turn; board boxes keep Connect and fold the rest", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = "case"; s.caseOpen = { no: 8, title: "Fold", assignment: "x", opened: Date.now(), openStats: { pp: 0, humanity: 0 } }; delete s.setupOpen; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+  await page.goto(`${base}/index.html?fold#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  assert.equal(await page.$eval(".panel > details.fold", (d) => d.open), false, "setup is folded while a case is open");
+  assert.ok(await page.$(".panel > details.fold .sheet__section"), "and still holds the setup cards");
+  await page.evaluate(async () => {
+    const { Combat } = await import("/src/store.js");
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [{ id: "a", kind: "npc", name: "A", health: 3, maxHealth: 3, card: 1, conditions: {}, criticalInjuries: [] }] });
+    const s = JSON.parse(localStorage.getItem("brp:solo")); s.caseOpen = null; localStorage.setItem("brp:solo", JSON.stringify(s));
+  });
+  await page.goto(`${base}/index.html?endc#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const pos = await page.evaluate(() => {
+    const next = [...document.querySelectorAll(".btn")].find((b) => /Next turn/.test(b.textContent)).getBoundingClientRect();
+    const end = document.querySelector(".combat__end .btn").getBoundingClientRect();
+    return { gap: end.top - next.bottom };
+  });
+  assert.ok(pos.gap > 80, `End combat is well away from Next turn (${Math.round(pos.gap)}px)`);
+  await page.evaluate(async () => {
+    (await import("/src/store.js")).Combat.clear();
+    const B = await import("/src/board.js"); const b = { boxes: [], nextN: 1, checks: 0, solvedId: null };
+    B.addBox(b, "suspect", "X"); B.Board.save(b);
+    const s = JSON.parse(localStorage.getItem("brp:solo")); s.panel = "board"; localStorage.setItem("brp:solo", JSON.stringify(s));
+  });
+  await page.goto(`${base}/index.html?bacts#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const acts = await page.$eval(".board__box .board__acts", (r) => [...r.children].filter((c) => c.offsetParent).map((c) => c.tagName + ":" + (c.getAttribute("aria-label") || c.textContent.trim())));
+  assert.equal(acts.length, 2, `Connect plus one ⋯ per box: ${acts}`);
+  assert.deepEqual(await page.$$eval(".board__add-head", (n) => n.map((x) => x.textContent)), ["Roll from the tables", "Write your own"]);
+  await page.evaluate(async () => (await import("/src/board.js")).Board.clear());
 });

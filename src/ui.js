@@ -254,8 +254,10 @@ export function renderToHtml(render) {
 // are given) alongside OK. `render(body)` fills the result content.
 // Segmented sub-nav (pill row) for swapping panels within a screen.
 // segments: [{ key, label }]. Calls onSelect(key). Scrolls horizontally on overflow.
-export function segmentNav({ segments = [], active, onSelect } = {}) {
-  const row = el("div", { class: "segnav", role: "tablist", "aria-label": "Sections" });
+// grid: true lays the pills out as a 4-column grid on a phone (no scrolling,
+// nothing clipped) and as the usual single row on wider screens.
+export function segmentNav({ segments = [], active, onSelect, grid = false } = {}) {
+  const row = el("div", { class: "segnav" + (grid ? " segnav--grid" : ""), role: "tablist", "aria-label": "Sections" });
   for (const s of segments) {
     const on = s.key === active;
     row.append(el("button", {
@@ -285,6 +287,34 @@ function outcomeTone(text = "") {
   return "";
 }
 
+// One ⋯ per row: its actions open in a small menu pinned to the viewport (so a
+// scrolling list never clips it), one menu open at a time, closed on scroll.
+// items: [{ label, aria?, onClick, danger? }] — null entries are skipped.
+export function rowMenu(name, items) {
+  const menu = el("details", { class: "rowmenu" },
+    el("summary", { class: "rowmenu__toggle", "aria-label": name, title: "Actions" }, "⋯"),
+    el("div", { class: "rowmenu__list" }, ...items.filter(Boolean).map((it) =>
+      el("button", { class: "iconbtn rowmenu__item" + (it.danger ? " rowmenu__item--danger" : "") + (it.cls ? ` ${it.cls}` : ""), "aria-label": it.aria || null,
+        "aria-pressed": it.pressed == null ? null : it.pressed ? "true" : "false",
+        onClick: () => { menu.open = false; it.onClick(); } }, ...splitLabel(it.label)))));
+  menu.addEventListener("toggle", () => {
+    if (!menu.open) return;
+    document.querySelectorAll(".rowmenu[open]").forEach((m) => { if (m !== menu) m.open = false; });
+    const pop = menu.querySelector(".rowmenu__list");
+    const r = menu.querySelector("summary").getBoundingClientRect();
+    const h = pop.offsetHeight;
+    pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
+    pop.style.top = `${r.bottom + 4 + h > innerHeight ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+    window.addEventListener("scroll", () => { menu.open = false; }, { once: true, capture: true });
+  });
+  return menu;
+}
+// "📌 Pin to case notes" → the glyph (becomes an icon) and the words in a span.
+function splitLabel(label) {
+  const m = String(label).match(/^(\S+)\s+(.*)$/u);
+  return m && /[^\w]/u.test(m[1]) && !/[a-z]/i.test(m[1]) ? [m[1], el("span", {}, m[2])] : [el("span", {}, label)];
+}
+
 // Collapsible "Roll Log" card. Entries are given newest-first (storage order)
 // and rendered oldest-first so the whole screen reads top to bottom, like the
 // notes below it; the list scrolls to the newest entry after render.
@@ -305,25 +335,9 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
     for (const e of [...entries].reverse()) {
       const time = new Date(e.ts || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       const tone = outcomeTone(e.text);
-      const menu = (onPin || onDelete) ? el("details", { class: "rowmenu" },
-        el("summary", { class: "rowmenu__toggle", "aria-label": `Actions for ${e.label}`, title: "Actions" }, "⋯"),
-        el("div", { class: "rowmenu__list" },
-          onPin ? el("button", { class: "iconbtn rowmenu__item", "aria-label": pinLabel, onClick: () => onPin(e) }, "📌", el("span", {}, pinLabel)) : null,
-          onDelete ? el("button", { class: "iconbtn rowmenu__item", "aria-label": "Remove entry", onClick: () => onDelete(e) }, "✕", el("span", {}, "Remove entry")) : null)) : null;
-      // The log scrolls, so an absolutely placed menu would be clipped by it —
-      // pin the menu to the viewport under (or above) its button instead, and
-      // close it when the page moves. Only one is open at a time.
-      menu?.addEventListener("toggle", () => {
-        if (!menu.open) return;
-        list.querySelectorAll(".rowmenu[open]").forEach((m) => { if (m !== menu) m.open = false; });
-        const pop = menu.querySelector(".rowmenu__list");
-        const r = menu.querySelector("summary").getBoundingClientRect();
-        const h = pop.offsetHeight;
-        pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
-        pop.style.top = `${r.bottom + 4 + h > innerHeight ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
-        const shut = () => { menu.open = false; };
-        window.addEventListener("scroll", shut, { once: true, capture: true });
-      });
+      const menu = (onPin || onDelete) ? rowMenu(`Actions for ${e.label}`, [
+        onPin ? { label: `📌 ${pinLabel}`, aria: pinLabel, onClick: () => onPin(e) } : null,
+        onDelete ? { label: "✕ Remove entry", aria: "Remove entry", onClick: () => onDelete(e) } : null]) : null;
       list.append(el("div", { class: "rolllog__row" + (tone ? ` rolllog__row--${tone}` : "") },
         el("span", { class: "rolllog__time muted" }, time),
         el("span", { class: "rolllog__label" }, e.label),
