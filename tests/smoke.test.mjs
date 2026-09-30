@@ -57,17 +57,21 @@ const consoleErrors = [];
 // console error. Those are the harness's own doing — real code errors are not.
 const BLOCKED_REQUEST = /net::ERR_FAILED|Failed to load resource/;
 
+// How many checks this file registers — counted from its own source so the
+// NOT RUN banner never goes stale (the ROUTES loop registers one per route).
+const SMOKE_CHECKS = (fs.readFileSync(new URL(import.meta.url), "utf8").match(/^test\(/gm) || []).length - 1 + ROUTES.length;
+
 before(async () => {
   ({ server, base } = await startServer());
   let chromium;
   try { ({ chromium } = await import("playwright-core")); }
-  catch { unavailable = "playwright-core is not installed — run `npm install` to enable the smoke layer"; announceSkip("smoke suite", unavailable, 51); return; }
+  catch { unavailable = "playwright-core is not installed — run `npm install` to enable the smoke layer"; announceSkip("smoke suite", unavailable, SMOKE_CHECKS); return; }
   let launchErr;
   for (const executablePath of [...CHROME_PATHS, null]) {
     try { browser = await chromium.launch(executablePath ? { executablePath, headless: true } : { channel: "chrome", headless: true }); break; }
     catch (e) { launchErr = e; }
   }
-  if (!browser) { unavailable = `no browser: ${launchErr?.message || "launch failed"}`; announceSkip("smoke suite", unavailable, 51); return; }
+  if (!browser) { unavailable = `no browser: ${launchErr?.message || "launch failed"}`; announceSkip("smoke suite", unavailable, SMOKE_CHECKS); return; }
 
   page = await browser.newPage({ viewport: { width: 390, height: 800 } });
   // Hermetic: block everything that isn't our local origin (e.g. Firebase/gstatic).
@@ -3593,4 +3597,23 @@ test("the guided card: where you are, numbered choices, and 1–9 on a keyboard 
   assert.notEqual(after, before, "pressing 1 took the first choice");
   assert.equal(await page.locator(".play-card .play__choices").getByRole("button", { name: /^\d/ }).count(), 0,
     "the number is not read out as part of the choice");
+});
+
+test("the Characters list shows faces, vitals and which one is active; skills sit under their attribute; empty states carry a mark", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?chars#characters`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  const row = await page.$eval(".char-row--active", (r) => ({ dir: getComputedStyle(r).flexDirection, face: !!r.querySelector(".char-row__face"), pips: r.querySelectorAll(".pip").length, cur: r.getAttribute("aria-current") }));
+  assert.deepEqual(row, { dir: "row", face: true, pips: 4, cur: "true" });
+  await page.goto(`${base}/index.html?groups#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const groups = await page.$$eval(".skill-group .skill-group__name", (n) => n.map((x) => x.textContent));
+  assert.equal(groups.length, 5, `four attributes + Maneuverability: ${groups}`);
+  assert.equal(await page.$$eval(".skill-list .skill__attr", (n) => n.filter((x) => x.offsetParent !== null).length), 0, "the per-row attribute is not repeated");
+  const minus = await page.locator(".track").first().getByRole("button", { name: "decrease Health" }).boundingBox();
+  assert.ok(minus.width >= 44 && minus.height >= 40, `vitals steppers are thumb-sized (${Math.round(minus.width)}×${Math.round(minus.height)})`);
+  await page.evaluate(async () => (await import("/src/store.js")).Combat.clear());
+  await page.goto(`${base}/index.html?empty#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  assert.ok(await page.$(".empty.empty--combat"), "an empty tracker is dressed as an empty state");
 });

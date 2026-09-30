@@ -202,7 +202,7 @@ export function renderBoardPanel(root, ctx) {
     `${b.boxes.length}/${H.BOX_MAX} boxes · ${boxesOf(b, "clue").length} clues · ${boxesOf(b, "suspect").length} suspects`));
 
   if (!b.boxes.length) {
-    boardCard.append(el("p", { class: "muted" }, "Empty board. Add the first clue or suspect below — roll one from the Solo tables, or write your own."));
+    boardCard.append(el("p", { class: "muted empty empty--board" }, "Empty board. Add the first clue or suspect below — roll one from the Solo tables, or write your own."));
   } else {
     // Suspects left, clues right; on a wide enough card the connections are
     // drawn between them, on a phone each box lists its links as chips.

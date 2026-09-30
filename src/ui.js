@@ -300,7 +300,7 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
   if (head) details.append(head);
   const list = el("div", { class: "rolllog__list" });
   if (!entries.length) {
-    list.append(el("p", { class: "muted rolllog__empty" }, `No rolls yet. ${emptyHint}`.trim()));
+    list.append(el("p", { class: "muted rolllog__empty empty empty--dice" }, `No rolls yet. ${emptyHint}`.trim()));
   } else {
     for (const e of [...entries].reverse()) {
       const time = new Date(e.ts || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

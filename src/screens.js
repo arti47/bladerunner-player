@@ -134,11 +134,20 @@ export function renderCharacters(mount) {
   clear(mount);
   const chars = Store.list();
   const list = el("div", { class: "list" });
-  if (!chars.length) list.append(el("p", { class: "muted" }, "No characters yet. Create your first Blade Runner."));
+  if (!chars.length) list.append(el("p", { class: "muted empty empty--people" }, "No characters yet. Create your first Blade Runner."));
+  const activeId = Store.getActiveId();
   for (const ch of chars) {
-    list.append(el("button", { class: "list__row", onClick: () => { Store.setActiveId(ch.id); navigate("sheet"); } },
-      el("span", { class: "list__main" }, ch.name, ch.state?.dead ? el("span", { class: "badge badge--danger", style: "margin-left:.5rem" }, "☠ Deceased") : null),
-      el("span", { class: "list__sub muted" }, `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}${ch.state?.dead ? " · deceased" : ""}`)));
+    const face = ch.identity?.portraitUrl
+      ? el("img", { class: "char-row__face", src: ch.identity.portraitUrl, alt: "" })
+      : el("span", { class: "char-row__face char-row__face--empty", "aria-hidden": "true" }, icon("person"));
+    list.append(el("button", { class: "list__row char-row" + (ch.id === activeId ? " char-row--active" : ""), "aria-current": ch.id === activeId ? "true" : null,
+      onClick: () => { Store.setActiveId(ch.id); navigate("sheet"); } },
+      face,
+      el("span", { class: "char-row__body" },
+        el("span", { class: "list__main" }, ch.name, ch.state?.dead ? el("span", { class: "badge badge--danger char-row__badge" }, "☠ Deceased") : null,
+          ch.id === activeId ? el("span", { class: "tag tag--sm char-row__badge" }, "Active") : null),
+        el("span", { class: "list__sub muted" }, `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}${ch.state?.dead ? " · deceased" : ""}`),
+        ch.state && !ch.state.dead ? vitalsPips(ch) : null)));
   }
   mount.append(screen("Characters",
     el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "＋ New Blade Runner"),

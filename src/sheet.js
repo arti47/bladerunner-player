@@ -311,7 +311,16 @@ function attributesBlock(ch) {
 // ---- Skills (tap to roll) -------------------------------------------------
 function skillsSection(ch, arch, rerender) {
   const list = el("div", { class: "skill-list" });
+  // Grouped under the attribute that governs them, which shows its die once.
+  let lastAttr = null;
   for (const s of D.SKILLS) {
+    if (s.attr !== lastAttr) {
+      lastAttr = s.attr;
+      const lv = s.attr === "MANEUVER" ? null : ch.attributes[s.attr];
+      list.append(el("div", { class: "skill-group", role: "presentation" },
+        el("span", { class: "skill-group__name" }, R.attrDisplay(s.attr)),
+        el("span", { class: "skill-group__die muted" }, lv ? `${lv} · d${D.LEVEL_DIE[lv]}` : "vehicle's die")));
+    }
     const lv = ch.skills[s.key];
     const isKey = arch?.keySkills.includes(s.key);
     const trained = lv !== D.SKILL_START_LEVEL;
@@ -332,7 +341,7 @@ function skillsSection(ch, arch, rerender) {
 function specialtiesSection(ch) {
   const card = el("div", { class: "card" }, sectionTitle("Specialties"));
   const specs = (ch.specialties || []).map((s) => R.specialty(typeof s === "string" ? s : s?.key)).filter(Boolean);
-  if (!specs.length) { card.append(el("p", { class: "muted" }, "None yet — press Learn specialty below (costs Promotion Points, one Shift at the Training Grounds).")); return card; }
+  if (!specs.length) { card.append(el("p", { class: "muted empty empty--star" }, "None yet — press Learn specialty below (costs Promotion Points, one Shift at the Training Grounds).")); return card; }
   for (const sp of specs)
     card.append(el("div", { class: "ability" }, el("div", { class: "ability__name" }, sp.name), el("div", { class: "muted ability__text" }, sp.text)));
   return card;
@@ -342,7 +351,7 @@ function specialtiesSection(ch) {
 function inventorySection(ch, commit, rerender) {
   const items = ch.inventory.items || [];
   const list = el("div", { class: "inv" });
-  if (!items.length) list.append(el("p", { class: "muted" }, "No items."));
+  if (!items.length) list.append(el("p", { class: "muted empty empty--cart" }, "No items."));
   items.forEach((it, i) => {
     list.append(el("div", { class: "inv__row" },
       el("button", { class: "inv__equip" + (it.equipped ? " inv__equip--on" : ""), title: it.equipped ? "Equipped" : "Stowed", "aria-label": "toggle equipped",
@@ -589,7 +598,7 @@ function deceasedBanner(ch, commit, rerender) {
 function criticalInjuriesSection(ch, commit, rerender) {
   const card = el("div", { class: "card" }, sectionTitle("Critical Injuries"));
   const injuries = ch.state.criticalInjuries || [];
-  if (!injuries.length) card.append(el("p", { class: "muted" }, "No critical injuries. Press Take a critical injury below when a fight lands one."));
+  if (!injuries.length) card.append(el("p", { class: "muted empty empty--shield" }, "No critical injuries. Press Take a critical injury below when a fight lands one."));
   for (const inj of injuries) {
     const row = el("div", { class: "injury" });
     const lethalTxt = inj.instantKill ? " · instant kill" : inj.lethal ? ` · lethal (${inj.deathSave} save)` : "";
@@ -991,7 +1000,7 @@ function journalSection(ch, commit) {
     const text = await promptModal("Journal entry", { title: "New journal entry", okLabel: "Add" });
     if (text && text.trim()) commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: text.trim() }); });
   } }, "＋ Add entry"));
-  if (!entries.length) { card.append(el("p", { class: "muted sheet__note" }, "No journal entries yet. Press Add entry, or pin a roll from the Roll Log.")); return card; }
+  if (!entries.length) { card.append(el("p", { class: "muted sheet__note empty empty--pen" }, "No journal entries yet. Press Add entry, or pin a roll from the Roll Log.")); return card; }
   // Oldest first, like the case notes and the roll log — one reading order.
   for (const e of [...entries].sort((a, z) => (a.ts || 0) - (z.ts || 0))) {
     card.append(el("div", { class: "journal__entry" },
