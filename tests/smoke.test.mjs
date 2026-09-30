@@ -3308,6 +3308,8 @@ test("the sheet is a priority stack: four sections open, the rest behind one rem
     assert.ok(layout.more.includes(s), `${s} sits behind More`);
   assert.equal(layout.open, false, "More starts closed on a new device");
   await page.click(".sheet-more__summary");
+  // <details> fires "toggle" as a queued task — wait for the save before leaving the page.
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("brp:sheet") || "{}").moreOpen === true);
   await page.goto(`${base}/index.html?stack3#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(250);
   assert.equal(await page.$eval(".sheet-more", (d) => d.open), true, "and remembers being opened");
