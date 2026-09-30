@@ -8,7 +8,7 @@ import * as D from "../data.js";
 import { NPCS } from "../data-npcs.js";
 import { Store, Combat } from "./store.js";
 import { maxHealth, reclampVitals } from "./derived.js";
-import { modal, showToast, confirmModal } from "./ui.js";
+import { modal, showToast, confirmModal, undoToast } from "./ui.js";
 import { Sync } from "./sync.js";
 import { rollCombatAttack, rollCombatSkill, armorForCombatant as armorFor, rollCritOnCombatant, rollCombatDeathProcedure } from "./roller.js";
 import { renderChaseCard } from "./chase.js";
@@ -134,7 +134,17 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
   if (!open) return card;
   card.append(el("div", { class: "combatant__vitals" },
     el("span", { class: "track__num track__num--health" }, `♥ ${c.health}/${c.maxHealth}`),
-    el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${c.name}`, onClick: () => commit((s) => { s.combatants = s.combatants.filter((x) => x.id !== c.id); }) }, "✕ Remove"),
+    el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${c.name}`, onClick: () => {
+      const at = Combat.get().combatants.findIndex((x) => x.id === c.id), kept = JSON.parse(JSON.stringify(c));
+      commit((s) => { s.combatants = s.combatants.filter((x) => x.id !== c.id); });
+      undoToast(`Removed ${c.name} from the fight.`, () => {
+        const s = Combat.get();
+        if (!s.active || s.combatants.some((x) => x.id === kept.id)) return;
+        s.combatants.splice(Math.min(at, s.combatants.length), 0, kept);
+        Combat.save(s);
+        if (location.hash.slice(1) === "combat" && lastMount) renderCombat(lastMount);
+      });
+    } }, "✕ Remove"),
     el("span", { class: "stepper__ctrl" },
       el("button", { class: "btn btn--sm", "aria-label": `damage ${c.name}`, onClick: () => damageCombatant(c, commit) }, "−"),
       el("button", { class: "btn btn--sm", "aria-label": `heal ${c.name}`, onClick: () => commit((s) => adjust(s, c.id, +1)) }, "+"))));

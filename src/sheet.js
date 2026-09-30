@@ -8,7 +8,7 @@ import * as D from "../data.js";
 import * as R from "./rules.js";
 import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress, downtimeLimitFor, applyInvestigationShift, applyDowntimeShift } from "./derived.js";
 import { Store, RollLog } from "./store.js";
-import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard, guidanceChip } from "./ui.js";
+import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard, guidanceChip, undoToast } from "./ui.js";
 import { navigate } from "./router.js";
 import { Settings } from "./settings.js";
 import { openSkillRoll, openWeaponPicker, proceduralRoll, openOpposedSkillRoll } from "./roller.js";
@@ -360,7 +360,17 @@ function inventorySection(ch, commit, rerender) {
         onClick: () => commit((c) => { c.inventory.items[i].equipped = !c.inventory.items[i].equipped; }) }, it.equipped ? "●" : "○"),
       el("span", { class: "inv__name" }, it.name, it.signature ? el("span", { class: "inv__sig", title: "Signature item" }, " ✦") : null),
       el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${it.name}`,
-        onClick: () => commit((c) => { c.inventory.items.splice(i, 1); }) }, "✕")));
+        onClick: () => {
+          const id = ch.id, kept = { ...it };
+          commit((c) => { c.inventory.items.splice(i, 1); });
+          undoToast(`Removed ${it.name}.`, () => {
+            const c = Store.get(id);
+            if (!c) return;
+            c.inventory.items.splice(Math.min(i, c.inventory.items.length), 0, kept);
+            Store.save(c);
+            if (location.hash.slice(1) === "sheet") rerender();
+          });
+        } }, "✕")));
   });
   const add = el("button", { class: "btn btn--sm", onClick: async () => {
     const name = await promptModal("Item name", { title: "Add item", okLabel: "Add" });

@@ -305,7 +305,10 @@ export function rowMenu(name, items) {
     const r = menu.querySelector("summary").getBoundingClientRect();
     const h = pop.offsetHeight;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
-    pop.style.top = `${r.bottom + 4 + h > innerHeight ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+    // Open downwards unless that would run under the bottom nav (or off-screen) — then up.
+    const nav = document.getElementById("nav")?.getBoundingClientRect();
+    const floor = nav && nav.top > innerHeight / 2 ? nav.top - 4 : innerHeight - 8;
+    pop.style.top = `${r.bottom + 4 + h > floor ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
     window.addEventListener("scroll", () => { menu.open = false; }, { once: true, capture: true });
   });
   return menu;
@@ -361,3 +364,102 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
 }
 
 export { el, $, $$, clear };
+
+// ---- Feel: haptics + dice sound (R6) --------------------------------------
+// One call per event; each channel checks its own setting. Vibration is a
+// no-op where the device cannot; the clatter is synthesised (no audio files)
+// and its context is created on the first roll, which is always a tap.
+const BUZZ = { roll: 10, succ: [10, 40, 18], crit: [12, 40, 12, 40, 26], fail: 28, hit: [40, 30, 40] };
+let audio = null;
+function clatter() {
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = audio.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const len = Math.floor(audio.sampleRate * 0.035), buf = audio.createBuffer(1, len, audio.sampleRate), ch = buf.getChannelData(0);
+      for (let j = 0; j < len; j++) ch[j] = (Math.random() * 2 - 1) * (1 - j / len) ** 3;
+      const src = audio.createBufferSource(), bp = audio.createBiquadFilter(), g = audio.createGain();
+      src.buffer = buf; bp.type = "bandpass"; bp.frequency.value = 1800 + i * 700; g.gain.value = 0.18;
+      src.connect(bp).connect(g).connect(audio.destination);
+      src.start(t0 + i * 0.07 + 0.02 * i * i);
+    }
+  } catch { /* audio is a nicety */ }
+}
+export function feel(kind) {
+  if (Settings.haptics() && BUZZ[kind] && navigator.vibrate) { try { navigator.vibrate(BUZZ[kind]); } catch { /* ignore */ } }
+  if (kind === "roll" && Settings.diceSound()) clatter();
+}
+
+// ---- Undo instead of "are you sure?" (R6) ---------------------------------
+// A small, reversible removal happens at once and offers Undo for a few
+// seconds. Anything that cannot be put back (a character, a whole case) keeps
+// its confirm dialog.
+export function undoToast(message, onUndo) {
+  return showToast(message, { timeout: 6000, action: { label: "Undo", onClick: onUndo } });
+}
+
+// ---- Global keys, swipe, offline (R6) -------------------------------------
+const typing = () => /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "") || document.activeElement?.isContentEditable;
+// Move the screen's sub-nav one pill left or right (Solo, GM, tutorial).
+function stepSegment(dir) {
+  const on = document.querySelector("#screen .segnav .segnav__pill--on");
+  if (!on) return false;
+  const pills = [...on.parentElement.querySelectorAll(".segnav__pill")];
+  const next = pills[pills.indexOf(on) + dir];
+  if (!next) return false;
+  next.click();
+  return true;
+}
+const SHORTCUTS = [
+  ["?", "Show this list"],
+  ["[  ]", "Previous / next tab on Solo, GM and the tutorial"],
+  ["1 – 9", "Press the numbered choice on the guided Play card"],
+  ["/", "Jump to the search box, where a screen has one"],
+  ["Esc", "Close a dialog or menu"],
+];
+export function openShortcuts() {
+  if (document.querySelector(".modal-overlay")) return;
+  modal({ title: "Keyboard shortcuts", render: (body) => {
+    body.append(el("dl", { class: "shortcuts" }, ...SHORTCUTS.flatMap(([k, v]) => [el("dt", {}, ...k.split(/\s{2}/).map((x) => el("kbd", {}, x))), el("dd", {}, v)])));
+  } });
+}
+export function bindGlobalKeys() {
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || typing()) return;
+    if (document.querySelector(".modal-overlay")) return;
+    if (e.key === "?") { e.preventDefault(); openShortcuts(); }
+    else if (e.key === "[" || e.key === "]") { if (stepSegment(e.key === "]" ? 1 : -1)) e.preventDefault(); }
+    else if (e.key === "/") {
+      const s = document.querySelector('#screen input[type="search"], #screen .search input');
+      if (s) { e.preventDefault(); s.focus(); }
+    }
+  });
+}
+// A horizontal swipe across a screen that has a sub-nav moves one tab. Starts
+// on anything that scrolls sideways, takes text, or is a dialog are ignored.
+export function bindSwipe(root = document.getElementById("screen")) {
+  if (!root) return;
+  let x0 = 0, y0 = 0, t0 = 0, armed = false;
+  const sideways = (n) => { for (; n && n !== root; n = n.parentElement) if (n.scrollWidth > n.clientWidth + 2 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return true; return false; };
+  root.addEventListener("touchstart", (e) => {
+    const tch = e.touches[0];
+    armed = e.touches.length === 1 && !e.target.closest("input, textarea, select, .modal-overlay, .board, [data-noswipe]") && !sideways(e.target);
+    x0 = tch.clientX; y0 = tch.clientY; t0 = Date.now();
+  }, { passive: true });
+  root.addEventListener("touchend", (e) => {
+    if (!armed) return;
+    armed = false;
+    const tch = e.changedTouches[0], dx = tch.clientX - x0, dy = tch.clientY - y0;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 45 && Date.now() - t0 < 600) stepSegment(dx < 0 ? 1 : -1);
+  }, { passive: true });
+}
+// The app works offline; the chip only says so, so nobody waits on a sync.
+export function bindOfflineChip(bar = document.querySelector(".appbar")) {
+  if (!bar) return;
+  const chip = el("span", { class: "appbar__offline", role: "status" }, "Offline");
+  bar.append(chip);
+  const set = () => { chip.hidden = navigator.onLine !== false; };
+  set();
+  window.addEventListener("online", set);
+  window.addEventListener("offline", set);
+}

@@ -3815,3 +3815,103 @@ test("explainers: tutorial diagrams read their numbers from the data, empty stat
     return ["info", "warn", "error"].map((k) => { const h = u.showToast("x", { kind: k, timeout: 0 }); const n = [...document.querySelectorAll(".toast")].pop(); const r = n.querySelector(".toast__icon use")?.getAttribute("href"); h.dismiss(); return r; }); });
   assert.deepEqual(kinds, ["#i-info", "#i-warn", "#i-close"], "each toast kind carries its icon");
 });
+
+test("feel & flow: haptics on a roll (not when off), no sound unless asked, text size, undo for small removals, keys, swipe, offline chip", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const ctx = await browser.newContext({ viewport: { width: 360, height: 800 }, hasTouch: true });
+  const p = await ctx.newPage();
+  await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  const errs = [];
+  p.on("pageerror", (e) => errs.push(e.message));
+  await p.addInitScript(() => {
+    window.__buzz = []; window.__audio = 0;
+    Object.defineProperty(navigator, "vibrate", { value: (pat) => { window.__buzz.push(pat); return true; }, configurable: true });
+    const A = window.AudioContext; window.AudioContext = function (...a) { window.__audio++; return new A(...a); };
+  });
+  await p.goto(`${base}/index.html#home`, { waitUntil: "load" });
+  await p.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Feel Test", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
+    ch.inventory.items = [{ name: "Flashlight" }, { name: "Notebook" }];
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:board", JSON.stringify({ boxes: [{ id: "c1", n: 1, kind: "clue", name: "Ash", detail: "", links: ["s1"] }, { id: "s1", n: 2, kind: "suspect", name: "Vega", detail: "", links: ["c1"] }], nextN: 3, checks: 0, solvedId: null }));
+    const { Combat } = await import("/src/store.js");
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [{ id: "a", kind: "npc", name: "Alpha", health: 3, maxHealth: 3, card: 2, conditions: {}, criticalInjuries: [] }, { id: "b", kind: "npc", name: "Bravo", health: 3, maxHealth: 3, card: 5, conditions: {}, criticalInjuries: [] }] });
+  });
+  assert.equal(await p.evaluate(async () => (await import("/src/settings.js")).Settings.diceSound()), false, "dice sound is off by default");
+  // A roll buzzes; with haptics off it does not; the clatter never plays while off.
+  await p.goto(`${base}/index.html?f1#sheet`, { waitUntil: "load" }); await p.waitForTimeout(250);
+  await p.getByRole("button", { name: /Observation/ }).first().click(); await p.waitForTimeout(200);
+  await p.getByRole("button", { name: "Roll", exact: true }).first().click(); await p.waitForTimeout(900);
+  const buzz1 = await p.evaluate(() => window.__buzz.length);
+  assert.ok(buzz1 >= 2, "a roll buzzes as it rolls and as it lands");
+  assert.equal(await p.evaluate(() => window.__audio), 0, "no audio context while dice sound is off");
+  await p.keyboard.press("Escape");
+  await p.evaluate(async () => { (await import("/src/settings.js")).Settings.set("haptics", false); window.__buzz = []; });
+  await p.getByRole("button", { name: /Observation/ }).first().click(); await p.waitForTimeout(200);
+  await p.getByRole("button", { name: "Roll", exact: true }).first().click(); await p.waitForTimeout(900);
+  assert.equal(await p.evaluate(() => window.__buzz.length), 0, "Settings ▸ Haptics off stops it");
+  await p.keyboard.press("Escape");
+  // Inventory: removed at once, Undo puts it back in place.
+  const names = () => p.$$eval(".inv__name", (n) => n.map((x) => x.textContent.trim()));
+  const before = await names();
+  await p.locator(".inv__row button[aria-label='remove Flashlight']").click();
+  assert.ok(!(await names()).includes("Flashlight"), "removed with no dialog");
+  assert.equal(await p.locator(".modal-overlay").count(), 0);
+  await p.locator(".toast__btn", { hasText: "Undo" }).click(); await p.waitForTimeout(200);
+  assert.deepEqual(await names(), before, "Undo restores the item in its place");
+  // Combatant: same.
+  await p.goto(`${base}/index.html?f2#combat`, { waitUntil: "load" }); await p.waitForTimeout(250);
+  await p.getByRole("button", { name: "remove Alpha" }).click();
+  assert.equal(await p.evaluate(async () => (await import("/src/store.js")).Combat.get().combatants.length), 1);
+  await p.locator(".toast__btn", { hasText: "Undo" }).click(); await p.waitForTimeout(200);
+  assert.deepEqual(await p.evaluate(async () => (await import("/src/store.js")).Combat.get().combatants.map((c) => c.id)), ["a", "b"], "Undo returns the combatant to its slot");
+  // Board box: back with its connection on both sides.
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = "board"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+  await p.goto(`${base}/index.html?f3#solo`, { waitUntil: "load" }); await p.waitForTimeout(300);
+  await p.locator('.rowmenu__toggle[aria-label="More for S2"]').click();
+  // A rotated index card must not become the fixed menu's containing block, and the menu opens clear of the nav.
+  const box = await p.evaluate(() => { const r = document.querySelector(".rowmenu[open] .rowmenu__list").getBoundingClientRect(); return { l: r.left, r: r.right, b: r.bottom, t: r.top, nav: document.getElementById("nav").getBoundingClientRect().top, w: innerWidth }; });
+  assert.ok(box.l >= 0 && box.r <= box.w && box.t >= 0 && box.b <= box.nav, `board ⋯ menu on screen and above the nav: ${JSON.stringify(box)}`);
+  await p.locator(".rowmenu[open] .rowmenu__item--danger").click();
+  assert.equal(await p.evaluate(() => JSON.parse(localStorage.getItem("brp:board")).boxes.length), 1);
+  await p.locator(".toast__btn", { hasText: "Undo" }).click(); await p.waitForTimeout(250);
+  const bd = await p.evaluate(() => JSON.parse(localStorage.getItem("brp:board")));
+  assert.deepEqual(bd.boxes.map((b) => [b.id, b.links]), [["c1", ["s1"]], ["s1", ["c1"]]], "the box and its links come back");
+  // Keys and swipe move the sub-nav; ? lists the shortcuts.
+  const on = () => p.$eval(".segnav__pill--on", (b) => b.textContent.trim());
+  const start = await on();
+  await p.keyboard.press("]"); await p.waitForTimeout(150);
+  assert.notEqual(await on(), start, "] moves to the next tab");
+  await p.keyboard.press("["); await p.waitForTimeout(150);
+  assert.equal(await on(), start, "[ moves back");
+  await p.keyboard.press("?"); await p.waitForTimeout(150);
+  assert.ok(await p.locator(".modal .shortcuts kbd").count() >= 5, "? opens the shortcut list");
+  await p.keyboard.press("Escape");
+  await p.evaluate(() => {
+    const t = document.querySelector("#screen .solo-hud") || document.getElementById("screen");
+    const mk = (x) => new Touch({ identifier: 1, target: t, clientX: x, clientY: 300 });
+    t.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [mk(300)], changedTouches: [mk(300)] }));
+    t.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [mk(140)] }));
+  });
+  await p.waitForTimeout(200);
+  assert.notEqual(await on(), start, "a left swipe moves to the next tab");
+  // Text size scales the root; the layout still fits a 360px phone.
+  await p.evaluate(async () => (await import("/src/settings.js")).Settings.set("textSize", "130"));
+  assert.equal(await p.evaluate(() => getComputedStyle(document.documentElement).fontSize), "20.8px");
+  for (const r of ["sheet", "solo", "settings"]) {
+    await p.goto(`${base}/index.html?ts${r}#${r}`, { waitUntil: "load" }); await p.waitForTimeout(250);
+    assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, `no overflow at 130% on #${r}`);
+  }
+  assert.ok(await p.getByRole("button", { name: "Text size 100%" }).count(), "Settings ▸ Appearance offers the sizes");
+  // Offline shows a chip that stays on screen; back online hides it.
+  await ctx.setOffline(true); await p.waitForTimeout(150);
+  await p.evaluate(() => window.scrollTo(0, 800));
+  assert.ok(await p.locator(".appbar__offline").isVisible(), "offline chip visible");
+  await ctx.setOffline(false); await p.waitForTimeout(150);
+  assert.ok(!(await p.locator(".appbar__offline").isVisible()), "and gone when back online");
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});

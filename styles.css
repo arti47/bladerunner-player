@@ -1355,3 +1355,32 @@ details[open] > summary::before { transform: rotate(45deg); }
 .bands { display: flex; gap: 3px; }
 .bands__band { --i: 0; flex: 1 1 auto; min-width: 0; text-align: center; padding: var(--sp-2) 1px; font: 600 var(--fs-2xs) var(--font-display); letter-spacing: 0; overflow-wrap: anywhere; border-radius: var(--r-sm); color: var(--text);
   background: color-mix(in srgb, var(--cyan) calc(40% - var(--i) * 8%), var(--panel)); border: 1px solid color-mix(in srgb, var(--cyan) calc(60% - var(--i) * 10%), var(--line-strong)); }
+
+/* ---- R6: text size, route fade, offline chip, shortcuts --------------------- */
+:root[data-text="115"] { font-size: 115%; }
+:root[data-text="130"] { font-size: 130%; }
+.textsize-a { font-family: var(--font-display); font-weight: 700; line-height: 1; }
+.textsize-a--100 { font-size: .8em; } .textsize-a--115 { font-size: .95em; } .textsize-a--130 { font-size: 1.1em; }
+/* Opacity only, and no fill after it ends: a transform or a lingering animation on
+   #screen would become the containing block for the fixed ⋯ menus inside it. */
+.screen--enter { animation: screen-in 180ms var(--ease) backwards; }
+@keyframes screen-in { from { opacity: .35; } to { opacity: 1; } }
+/* Fixed, not in the bar's flow: the app bar scrolls away, the warning must not. */
+.appbar__offline { position: fixed; z-index: 60; top: calc(env(safe-area-inset-top, 0px) + var(--sp-2)); right: var(--sp-3); background: var(--panel); box-shadow: var(--shadow-float); font: 600 var(--fs-2xs) var(--font-display); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 60%, var(--line-strong)); border-radius: var(--r-pill); padding: 2px var(--sp-2); }
+.appbar__offline[hidden] { display: none; }
+.shortcuts { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-2) var(--sp-3); margin: 0; align-items: center; }
+.shortcuts dt { display: flex; gap: var(--sp-1); }
+.shortcuts dd { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+kbd { font: 600 var(--fs-xs) var(--font-mono); min-width: 1.6em; text-align: center; padding: 2px 6px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); border-bottom-width: 2px; background: var(--panel-2); color: var(--text); }
+.only-fine-pointer { display: none; }
+@media (hover: hover) and (pointer: fine) { .only-fine-pointer { display: inline-flex; } }
+@media (prefers-reduced-motion: reduce) { .screen--enter { animation: none; } }
+/* An open ⋯ lifts its own card and box above the ones after it — the fixed menu
+   inside a transformed index card is painted in that card's layer, so the next
+   card would otherwise cover it (R6: caught removing the last board box). */
+.card:has(.rowmenu[open]), .board__box:has(.rowmenu[open]), .rolllog__row:has(.rowmenu[open]) { position: relative; z-index: 30; }
+/* A rotated index card is a containing block for position: fixed, so its menu would be
+   placed relative to the card (off-screen) — straighten the card while its menu is open. */
+.board__box:has(.rowmenu[open]) { transform: none; }

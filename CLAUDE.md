@@ -458,8 +458,9 @@ discovered rules ambiguities — never for permission to continue.
   viewport is locked (`maximum-scale=1, user-scalable=no`), `html` is
   `touch-action: pan-x pan-y` (scrolling stays; pinch- and double-tap-zoom go), and
   `main.js` cancels iOS Safari's `gesture*` events because Safari ignores the viewport
-  lock. The owner was told this blocks enlarging text; revisit with an in-app text-size
-  setting if that is ever needed.
+  lock. The owner was told this blocks enlarging text; the in-app **Text size** setting
+  (Settings ▸ Appearance: 100 / 115 / 130 %, `data-text` on the root scaling every rem) is
+  the replacement.
 
 ### 5.1 Visual design system (UX audit, owner decisions 2026-09-30)
 
@@ -563,6 +564,19 @@ reads an undefined custom property or if any text role drops below WCAG AA.
   skills sit under their attribute (which shows its die once); empty states carry a mark
   (`.empty`; dashed when no `empty--*` names the missing thing) beside the sentence that names the control; vitals steppers are
   thumb-sized.
+- **Feel & flow (round 2, R6):** `feel()` in `ui.js` — a short vibration as dice roll and a
+  pattern as they land (success / crit / fail) and when damage is applied (**Haptics**,
+  default on); a synthesised clatter on each roll (**Dice sound**, default **off**). Small,
+  reversible removals (an inventory item, a combatant, a board box) happen at once with an
+  **Undo** toast (`undoToast()`, 6 s) — a character, a whole case or the whole board keep
+  their confirm. A new route fades in (opacity only — a transform on `#screen` would become
+  the containing block of the fixed ⋯ menus). A horizontal swipe on any screen with a
+  sub-nav moves one tab (`bindSwipe()`; ignores text fields, dialogs, the board and anything
+  that scrolls sideways); on a keyboard `[` `]` do the same, `/` jumps to a search box and
+  `?` opens the shortcut list (also a Settings button on fine pointers). An **Offline** chip
+  (fixed top-right) shows while the device has no connection. The ⋯ menu opens upward when
+  it would run under the bottom nav, and a rotated index card straightens while its menu is
+  open (its transform would otherwise make it the menu's containing block).
 - **Dice** wear their type: `die--d6|d8|d10|d12` silhouette + a `d10` size tag, and an
   `aria-label` naming die, face and result (`dieNode()` in `roller.js`).
 
@@ -725,7 +739,7 @@ tabs for gated modes are hidden by the router when off. Explicit user choice alw
 role-based defaults (store `true`/`false` distinctly from unset).
 
 Toggles for this project: **solo mode** · **GM screen** · **advanced/GM automation** (if
-built) · **guidance** (defaults ON: `guidance() → get("guidance") !== false`) · **rain** (defaults ON, dark theme only). No expansion toggles (§0.2). **Theme** is not a toggle but a three-way choice
+built) · **guidance** (defaults ON: `guidance() → get("guidance") !== false`) · **rain** (defaults ON, dark theme only) · **haptics** (defaults ON) · **dice sound** (off). **Text size** (100/115/130 %) sits beside Theme in Appearance. No expansion toggles (§0.2). **Theme** is not a toggle but a three-way choice
 (Dark · Light · System, default Dark) in Settings ▸ Appearance (§5.1).
 
 ---
@@ -1084,3 +1098,4 @@ static files. No build step and no Actions workflow — `git push` to `main` *is
 | 2026-09-30 | **UX round 2 — R3 case & board graphics.** `art.js` gains `rangeTrack()`, `timerLadder()` and `stamp()`. Solo ▸ Case: the open-case card wears a `CASE #N` folder tab; closed case files carry a SOLVED / COLD stamp (SOLVED when a culprit is named, COLD for "unsolved", "unknown", "no one"). Solo ▸ Board: cork texture (both themes), rotated index cards, a magenta pin on each. Combat: initiative cards drawn as playing cards (40×54, still a real button). Chase: a distance track under the round line. Shift: the escalation ladder under the timer die. **Bug caught by the new check:** the playing-card rule lost to the later `.combatant__init` rule of equal specificity, so the "card" rendered 44×44 — now `.combatant .combatant__init`. | Owner: all graphics sets | `npm test` → **216 pass / 0 fail / 0 skipped**. New check: the folder tab text, SOLVED then COLD in filing order, every ladder step with the current one lit, a taller-than-wide initiative card, and the chase track's label, lit stop and both markers. | brp-v73 |
 | 2026-09-30 | **UX round 2 — R4 atmosphere.** Rain: `#rain` layer created at boot, two masked streak layers at different speeds, shown only when the resolved theme is dark, `Settings.rain()` is on (new toggle, default ON per the owner) and motion is allowed. `skyline()` in `art.js`, appended to the app bar (invented towers, a beacon, a ship light). Boot splash in `index.html` (mark draws on; `dismissSplash()` fades it after the first render; `pointer-events: none` so an early tap can never be swallowed). Title glow-in (dark only). Glitch-in on crit/breakdown badges; DECEASED as a rotated double-ruled stamp. Shaded dice (lit edge, dark foot, drop shadow). **Install icons:** `icon.svg` was declared `any maskable` — a rounded-corner icon under a mask gets cropped; now PNG 192 / 512 (`any`) + a full-bleed maskable 512 rendered with Chromium, all in the manifest and the SW shell. | Owner: atmosphere set, rain on in dark | `npm test` → **217 pass / 0 fail / 0 skipped**. New check: rain shown in dark, hidden by the toggle, in light and under reduced motion; the skyline; the splash gone or non-interactive; every manifest icon fetches 200 and is in the offline shell, one of them maskable. | brp-v74 |
 | 2026-09-30 | **UX round 2 — R5 explainers.** `art.js` gains `dicePoolDiagram`, `pushDiagram`, `loopDiagram`, `rangeBands` (dice drawn with the roll dialog's own die markup); the tutorial places them under the Cheat Sheet's *Rolling* and *Combat* cards (`withFigure()`) and in *The solo loop* (`steps(…, figure)`), all numbers and names read from `data.js` / `SOLO_SEQUENCE`. Empty states: per-kind icon masks. Toasts: kind icon (new `info` sprite symbol). Sheet sub-section dividers: neon gradient rule. **Caught in build:** range labels truncated to "ENGA…" at 360px (uppercase + ellipsis) — now mixed case and wrapping; the loop's arrowhead sat on node 1 — now placed on the ring between the first two stops and rotated to the tangent. Content unchanged. | Owner: round-2 audit, delivery R5 | `npm test` → **218 pass / 0 fail / 0 skipped** (first run caught `--i` read without a CSS definition — now defaulted on `.bands__band`). New smoke check: three Cheat Sheet figures with thresholds and bands equal to the data, a loop with one node per `SOLO_SEQUENCE` step, the empty-list mask, and the three toast icons; 360px dark + light sweep of both tutorial panels, zero errors, zero overflow. | brp-v75 |
+| 2026-09-30 | **UX round 2 — R6 feel & flow.** Settings: `haptics` (on), `diceSound` (off), `textSize` + `TEXT_SIZES`, `applyTextSize()`; Appearance gains a Text size control. `ui.js`: `feel()` (vibration patterns + WebAudio clatter), `undoToast()`, `openShortcuts()` + `bindGlobalKeys()` (`?`, `[` `]`, `/`), `bindSwipe()`, `bindOfflineChip()`; wired in `main.js`. `roller.js` buzzes on fresh dice and on applied damage. Undo replaces instant/confirmed removal for inventory items, combatants and board boxes (box returns with its links). Route change fades `#screen` in (opacity, `backwards` fill). Owner asked for View Transitions; built as a CSS fade instead because `startViewTransition` renders the new DOM asynchronously, which would delay every navigation's DOM. **Bugs caught in build:** (1) the combatant Undo referenced `state`/`mount`, which exist only inside `renderCombat` — the Remove button threw and did nothing; now `Combat.get()`/`lastMount`. (2) **Pre-existing since R3:** a board box's ⋯ menu rendered off-screen (x −24, y 1150) because the rotated index card is the containing block of its `position: fixed` menu — the card now straightens while its menu is open. (3) The same menu opened under the bottom nav on a low box — `rowMenu()` now flips upward above the nav. | Owner: round-2 audit, delivery R6 | `npm test` → see run. New smoke check in its own touch-enabled context: a roll vibrates (≥2 patterns) and not with Haptics off, no AudioContext while Dice sound is off; inventory/combatant/board Undo restore in place (the box with its links); the board menu on screen and above the nav; `]`/`[` step tabs, `?` lists shortcuts, a left swipe steps a tab; 130 % text = 20.8px root with no overflow on sheet/solo/settings; offline chip shows while scrolled and hides online. | brp-v76 |

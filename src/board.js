@@ -16,7 +16,7 @@ import * as H from "../data-house.js";
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import { el, uid, rollDie } from "./core.js";
-import { modal, showToast, confirmModal, promptModal, rowMenu } from "./ui.js";
+import { modal, showToast, confirmModal, promptModal, rowMenu, undoToast } from "./ui.js";
 import { rollColumn, rollGrouped, lookupRange } from "./rules.js";
 
 const BOARD_KEY = "brp:board";
@@ -293,10 +293,20 @@ export function renderBoardPanel(root, ctx) {
           rowMenu(`More for ${label(box)}`, [
             box.kind === "suspect" ? { label: "★ Promote to a hypothesis", aria: `Promote ${label(box)} to a hypothesis`, onClick: () => promote(box) } : null,
             { label: "📌 Pin to the case notes", aria: `Pin ${label(box)} to the case notes`, onClick: () => ctx.pin(noteLine(box, box.detail ? ` — ${box.detail}` : "")) },
-            { label: "✕ Remove from the board", aria: `Remove ${label(box)} from the board`, danger: true, onClick: async () => {
-              if (await confirmModal(`Take ${label(box)} “${box.name}” off the board?`, { title: "Remove box", danger: true, okLabel: "Remove" })) {
-                removeBox(b, box.id); commit();
-              }
+            { label: "✕ Remove from the board", aria: `Remove ${label(box)} from the board`, danger: true, onClick: () => {
+              // Removed at once; Undo puts the box back where it was, with its links.
+              const at = b.boxes.findIndex((x) => x.id === box.id), kept = { ...box, links: [...(box.links || [])] }, wasSolved = b.solvedId === box.id;
+              removeBox(b, box.id); commit();
+              undoToast(`Removed ${label(box)} “${box.name}”.`, () => {
+                const nb = Board.get();
+                if (byId(nb, kept.id)) return;
+                kept.links = kept.links.filter((id) => byId(nb, id));
+                nb.boxes.splice(Math.min(at, nb.boxes.length), 0, kept);
+                for (const id of kept.links) { const o = byId(nb, id); if (!o.links.includes(kept.id)) o.links.push(kept.id); }
+                if (wasSolved && !nb.solvedId) nb.solvedId = kept.id;
+                Board.save(nb);
+                if (location.hash.slice(1) === "solo") rerender();
+              });
             } }])));
       wrap.append(row);
     }

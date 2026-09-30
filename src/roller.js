@@ -11,7 +11,7 @@ import { NPCS } from "../data-npcs.js";
 import { CRITICAL_SUCCESS } from "../data-solo.js";
 import * as R from "./rules.js";
 import { Store, Combat, RollLog } from "./store.js";
-import { modal, showToast, announce } from "./ui.js";
+import { modal, showToast, announce, feel } from "./ui.js";
 import { reclampVitals, isBrokenByDamage } from "./derived.js";
 import { Settings } from "./settings.js";
 import * as H from "../data-house.js";
@@ -207,7 +207,13 @@ function diceRow(dice) {
     row.append(n);
     if (!rolledOnce.has(d)) { fresh.push([n, d]); rolledOnce.add(d); }
   });
-  if (fresh.length) row.classList.add("dice--fresh");
+  if (fresh.length) {
+    row.classList.add("dice--fresh");
+    // The buzz follows how the pool landed; the clatter (if on) plays at once.
+    const succ = dice.reduce((n, d) => n + (d.succ || 0), 0);
+    feel("roll");
+    setTimeout(() => feel(succ >= 2 ? "crit" : succ ? "succ" : "fail"), reduceMotion() ? 0 : 380 + fresh.length * 90);
+  }
   if (fresh.length && !reduceMotion()) tumble(fresh);
   return row;
 }
@@ -1235,6 +1241,7 @@ function applyDamageRow(target, dmg, commit, st) {
     }
     st.applied = true;
     btn.disabled = true;
+    feel("hit");
     showToast(wasBroken
       ? `Applied ${dmg} damage to ${target.name} — already Broken: roll a critical injury.`
       : `Applied ${dmg} damage to ${target.name}.`, { kind: wasBroken ? "warn" : "info" });

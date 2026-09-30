@@ -1,5 +1,6 @@
 // main.js — entry point / boot.
-import { applyTheme, applyGuidance, applyRain } from "./settings.js";
+import { applyTheme, applyGuidance, applyRain, applyTextSize } from "./settings.js";
+import { bindGlobalKeys, bindSwipe, bindOfflineChip } from "./ui.js";
 import { skyline } from "./art.js";
 import { mountSprite } from "./icons.js";
 import { startRouter } from "./router.js";
@@ -26,10 +27,14 @@ function boot() {
   applyTheme();
   applyGuidance();
   applyRain();
+  applyTextSize();
   // Atmosphere: a rain layer behind everything, a skyline in the app bar.
   if (!document.getElementById("rain")) document.body.prepend(Object.assign(document.createElement("div"), { id: "rain", ariaHidden: "true" }));
   document.querySelector(".appbar")?.append(skyline("appbar__skyline"));
+  bindOfflineChip();
   startRouter();
+  bindGlobalKeys();
+  bindSwipe();
   dismissSplash();
   registerServiceWorker();
   // Cloud sync boots asynchronously; the app is fully usable before/without it.

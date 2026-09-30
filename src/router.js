@@ -61,8 +61,15 @@ function render(route) {
   fn(mount());
   updateNav(route);
   lastRoute = route;
-  if (changed) window.scrollTo(0, 0);
-  else window.scrollTo(0, y);
+  if (changed) {
+    window.scrollTo(0, 0);
+    // A new screen fades in (CSS; nothing under reduced motion). The DOM is
+    // already complete — the fade never delays a click or a query.
+    const m = mount();
+    m.classList.remove("screen--enter");
+    void m.offsetWidth;
+    m.classList.add("screen--enter");
+  } else window.scrollTo(0, y);
 }
 
 function updateNav(active) {

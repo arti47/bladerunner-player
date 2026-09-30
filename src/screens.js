@@ -6,8 +6,8 @@ import * as D from "../data.js";
 import * as S from "../data-solo.js";
 import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, RollLog } from "./store.js";
-import { Settings, TOGGLES, THEMES } from "./settings.js";
-import { showToast, promptModal, confirmModal, rollLogCard } from "./ui.js";
+import { Settings, TOGGLES, THEMES, TEXT_SIZES } from "./settings.js";
+import { showToast, promptModal, confirmModal, rollLogCard, openShortcuts } from "./ui.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
 import { Sync, linkGoogle, createCampaign, joinCampaign, leaveCampaign, accountLabel, retrySync } from "./sync.js";
@@ -323,7 +323,7 @@ export function renderSettings(mount) {
   bindSyncRerender();
   mount.append(screen("Settings & About",
     group("Play modes", modes),
-    group("Appearance", themeControl()),
+    group("Appearance", themeControl(), textSizeControl()),
     group("Account & campaign", accountSection()),
     group("App",
       el("div", { class: "card" },
@@ -340,7 +340,8 @@ export function renderSettings(mount) {
       el("div", { class: "card" },
         el("div", { class: "card__title" }, "How to Play"),
         el("p", { class: "muted" }, "Step-by-step walkthroughs for running a case solo or at a table, plus a cheat sheet."),
-        el("button", { class: "btn btn--ghost", onClick: () => navigate("tutorial") }, "Open the tutorial →")),
+        el("button", { class: "btn btn--ghost", onClick: () => navigate("tutorial") }, "Open the tutorial →"),
+        el("button", { class: "btn btn--ghost only-fine-pointer", onClick: openShortcuts }, "Keyboard shortcuts (?)")),
       el("div", { class: "about muted" },
         el("p", {}, `${D.META.game} · ${D.META.scope}`),
         el("p", {}, "A personal play aid built from your own rulebooks. Numbers and mechanics are extracted; flavor text is paraphrased. Not affiliated with or endorsed by the publisher or rights-holders.")))));
@@ -365,6 +366,23 @@ function themeControl() {
     el("span", { class: "settings__text" },
       el("span", { class: "settings__label" }, "Theme"),
       el("span", { class: "settings__desc muted" }, "Neo-noir dark, noir-by-day light, or follow your device.")),
+    seg);
+}
+function textSizeControl() {
+  const current = Settings.textSize();
+  const seg = el("div", { class: "segmented", role: "group", "aria-label": "Text size" });
+  for (const t of TEXT_SIZES) {
+    seg.append(el("button", {
+      class: "segmented__opt" + (t === current ? " segmented__opt--on" : ""),
+      "aria-pressed": t === current ? "true" : "false",
+      "aria-label": `Text size ${t}%`,
+      onClick: () => { Settings.set("textSize", t); renderSettings(mount()); },
+    }, el("span", { class: `textsize-a textsize-a--${t}`, "aria-hidden": "true" }, "A"), ` ${t}%`));
+  }
+  return el("div", { class: "settings__row settings__row--static" },
+    el("span", { class: "settings__text" },
+      el("span", { class: "settings__label" }, "Text size"),
+      el("span", { class: "settings__desc muted" }, "Makes every word and control larger. The layout reflows to fit.")),
     seg);
 }
 const mount = () => document.getElementById("screen");

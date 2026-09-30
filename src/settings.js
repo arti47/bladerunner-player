@@ -9,6 +9,9 @@ const DEFAULTS = {
   advanced: false,      // advanced/GM automation
   guidance: true,       // "How to use this" notes on the sheet / Solo / GM (on for a new install)
   rain: true,           // falling rain behind the dark theme (owner decision: on by default)
+  haptics: true,        // a short buzz when dice land / damage lands (devices that vibrate)
+  diceSound: false,     // a dice clatter on every roll (owner decision: off by default)
+  textSize: "100",      // "100" | "115" | "130" — scales every rem in the stylesheet
 };
 
 function readAll() {
@@ -19,7 +22,7 @@ function writeAll(obj) { localStorage.setItem(KEY, JSON.stringify(obj)); }
 
 export const Settings = {
   get(k) { return readAll()[k]; },
-  set(k, v) { const all = readAll(); all[k] = v; writeAll(all); if (k === "guidance") applyGuidance(); if (k === "rain") applyRain(); return v; },
+  set(k, v) { const all = readAll(); all[k] = v; writeAll(all); if (k === "guidance") applyGuidance(); if (k === "rain") applyRain(); if (k === "textSize") applyTextSize(); return v; },
   all() { return readAll(); },
   // convenience flags
   solo() { return !!readAll().solo; },
@@ -27,11 +30,15 @@ export const Settings = {
   advanced() { return !!readAll().advanced; },
   guidance() { return readAll().guidance !== false; },
   rain() { return readAll().rain !== false; },
+  haptics() { return readAll().haptics !== false; },
+  diceSound() { return !!readAll().diceSound; },
+  textSize() { return TEXT_SIZES.includes(String(readAll().textSize)) ? String(readAll().textSize) : "100"; },
   theme() { return readAll().theme; },
   setTheme(t) { this.set("theme", THEMES.includes(t) ? t : "dark"); applyTheme(); return t; },
 };
 
 export const THEMES = ["dark", "light", "system"];
+export const TEXT_SIZES = ["100", "115", "130"];
 
 // Guidance is one switch for every "How to use this" note in the app — the
 // stylesheet hides them all when the root says off, so no screen re-renders.
@@ -39,6 +46,11 @@ export const THEMES = ["dark", "light", "system"];
 // theme, and never under prefers-reduced-motion.
 export function applyRain() {
   document.documentElement.dataset.rain = Settings.rain() ? "on" : "off";
+}
+// Text size is a root attribute the stylesheet turns into the root font size;
+// every size and space in the token scale is in rem, so the whole UI follows.
+export function applyTextSize() {
+  document.documentElement.dataset.text = Settings.textSize();
 }
 export function applyGuidance() {
   document.documentElement.dataset.guidance = Settings.guidance() ? "on" : "off";
@@ -71,5 +83,7 @@ export const TOGGLES = [
   { key: "gm", label: "GM Screen", desc: "Running the game for other people? This adds a GM tab: build the case, watch the party's health, drop in adversaries." },
   { key: "advanced", label: "Advanced Automation", desc: "Extra helpers for experienced players. Leave it off to start." },
   { key: "rain", label: "Rain", desc: "Slow rain falling behind the dark theme. Hidden in light mode and when your device asks for reduced motion." },
+  { key: "haptics", label: "Haptics", desc: "A short buzz when your dice land or damage lands. Only on devices that can vibrate." },
+  { key: "diceSound", label: "Dice sound", desc: "A quiet clatter every time you roll. Off unless you turn it on." },
   { key: "guidance", label: "Guidance", desc: "Show the \u201cHow to use this\u201d notes on the sheet, Solo and GM screens. Turn off once you know your way round." },
 ];
