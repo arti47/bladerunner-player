@@ -29,6 +29,7 @@ import { Board, renderBoardPanel } from "./board.js";
 import { renderPlayPanel } from "./play.js";
 import { Chase } from "./chase.js";
 import { Settings } from "./settings.js";
+import { timerLadder, stamp } from "./art.js";
 
 const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo state,
                                  // so starting a fresh case cannot wipe your record
@@ -604,6 +605,8 @@ export function renderSolo(mount, rerender) {
       const head = card(`Case #${c.no} — ${c.title}`,
         `Opened ${new Date(c.opened).toLocaleDateString()}${c.character ? ` · ${c.character}` : ""}`);
       head.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "Open case"));
+      head.classList.add("card--case");
+      head.dataset.case = `CASE #${c.no}`;
       if (c.assignment) head.append(el("p", { class: "roll-prose" }, c.assignment));
       head.append(el("p", { class: "muted small" },
         `Shift ${st.shiftNo || 1} · ${openLeads} open lead${openLeads === 1 ? "" : "s"}${boxes ? ` · ${boxes} on the board` : ""}`));
@@ -782,8 +785,10 @@ export function renderSolo(mount, rerender) {
       const arch = card("Case files", `${filed.length} closed case${filed.length === 1 ? "" : "s"} — your Blade Runner's record.`);
       const list = el("div", { class: "casefiles" });
       for (const f of filed) {
+        // A filed case wears its ending: SOLVED when someone was named, COLD when not.
+        const solved = !!(f.culprit && !/^\s*(unsolved|unknown|no one|nobody|cold)\b/i.test(f.culprit));
         const row = el("details", { class: "rules__group casefile" },
-          el("summary", {}, `#${f.no} ${f.title} — ${f.shifts} Shift${f.shifts === 1 ? "" : "s"}, ${f.pp >= 0 ? "+" : ""}${f.pp} PP`),
+          el("summary", {}, `#${f.no} ${f.title} — ${f.shifts} Shift${f.shifts === 1 ? "" : "s"}, ${f.pp >= 0 ? "+" : ""}${f.pp} PP`, stamp(solved ? "SOLVED" : "COLD", solved ? "ok" : "resolve")),
           f.assignment ? el("p", { class: "muted small" }, f.assignment) : null,
           el("p", {}, el("strong", {}, "Answer: "), f.culprit),
           f.outcome ? el("p", { class: "muted" }, f.outcome) : null,
@@ -887,6 +892,7 @@ export function renderSolo(mount, rerender) {
     const chip = doneChip("countdown");
     if (chip) timerCard.append(el("div", { class: "chips" }, chip));
     timerCard.append(el("div", { class: "timer-display" }, el("span", { class: "timer-display__label" }, "Current Timer Die:"), el("span", { class: "timer-display__die" }, st.timerDie)));
+    timerCard.append(timerLadder(S.ESCALATION_STEPS, st.timerDie));
     const stepTimer = (dir) => { const i = S.ESCALATION_STEPS.indexOf(st.timerDie) + dir; if (i >= 0 && i < S.ESCALATION_STEPS.length) { st.timerDie = S.ESCALATION_STEPS[i]; writeSoloState(st); rerender(); } };
     timerCard.append(el("div", { class: "btn-row" },
       btn("🎲 Roll the timer", async () => {

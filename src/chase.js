@@ -4,6 +4,7 @@
 // prey first, pursuer last. Rendered as a card on the Combat screen; state in
 // `brp:chase` so a chase survives a reload.
 import { el, uid, rollDie, successesFor, STORAGE_PREFIX } from "./core.js";
+import { rangeTrack } from "./art.js";
 import * as D from "../data.js";
 import { showToast, sectionTitle, resultSlot, renderToHtml, modal } from "./ui.js";
 import { RollLog, Store } from "./store.js";
@@ -68,6 +69,7 @@ export function renderChaseCard(rerender) {
   card.append(el("div", { class: "combat__status" },
     el("span", { class: "combat__round" }, `Round ${st.round}`),
     el("span", { class: "muted" }, `${ENVIRONMENTS.find((e) => e.key === st.env).name} · distance ${dist ? dist.name : st.distIdx < 0 ? "Engaged or less" : "beyond Extreme"}`)));
+  card.append(rangeTrack(D.RANGES, st.distIdx));
 
   // 1 — maneuvers (both sides choose; the app just records the choice)
   const maneuverRow = (side) => {

@@ -3726,3 +3726,39 @@ test("identity art: archetype emblems, nature marks, a name-coloured placeholder
   const head = await page.$eval(".sheet__head", (h) => ({ face: !!h.querySelector(".portrait-ph, img.sheet__portrait"), nameTop: Math.round(h.querySelector(".sheet__name").getBoundingClientRect().top), faceTop: Math.round(h.querySelector(".sheet__portrait").getBoundingClientRect().top) }));
   assert.ok(head.face && Math.abs(head.nameTop - head.faceTop) < 40, "the name sits beside the face, not under it");
 });
+
+test("case & board art: folder tab, SOLVED/COLD stamps, pinned index cards, playing-card initiative, chase track, timer ladder", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => {
+    localStorage.setItem("brp:cases", JSON.stringify({ nextNo: 3, files: [
+      { id: "f1", no: 1, title: "Neon", assignment: "", culprit: "Ada Voss", outcome: "", shifts: 3, pp: 5, humanity: 1, opened: 1, closed: 2 },
+      { id: "f2", no: 2, title: "Fog", assignment: "", culprit: "Unsolved", outcome: "", shifts: 2, pp: 0, humanity: 0, opened: 1, closed: 2 }] }));
+    const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = "case"; s.introSeen = true;
+    s.caseOpen = { no: 3, title: "Rain", assignment: "x", opened: Date.now(), openStats: { pp: 0, humanity: 0 } }; s.timerDie = "D10"; localStorage.setItem("brp:solo", JSON.stringify(s));
+  });
+  await page.goto(`${base}/index.html?cart#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  assert.equal(await page.$eval(".card--case", (c) => c.dataset.case), "CASE #3", "the open case wears a folder tab");
+  assert.deepEqual(await page.$$eval(".casefile .stamp", (n) => n.map((x) => x.textContent)), ["SOLVED", "COLD"], "a named culprit is SOLVED, an unsolved file is COLD");
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo")); s.panel = "shift"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+  await page.goto(`${base}/index.html?ladder#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const ladder = await page.$$eval(".ladder__step", (n) => n.map((x) => x.className.replace("ladder__step", "").trim()));
+  const steps = await page.evaluate(async () => (await import("/data-solo.js")).ESCALATION_STEPS);
+  assert.equal(ladder.length, steps.length, "the ladder shows every escalation step");
+  assert.equal(ladder[steps.indexOf("D10")], "ladder__step--now");
+  await page.evaluate(async () => {
+    const { Combat } = await import("/src/store.js");
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [{ id: "a", kind: "npc", name: "A", health: 3, maxHealth: 3, card: 4, conditions: {}, criticalInjuries: [] }] });
+    const { Chase } = await import("/src/chase.js"); const c = Chase.get(); c.active = true; c.distIdx = 2; Chase.save(c);
+  });
+  await page.goto(`${base}/index.html?cards#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const init = await page.$eval(".combatant__init", (b) => { const r = b.getBoundingClientRect(); return r.height > r.width; });
+  assert.ok(init, "the initiative card is drawn as a card (taller than wide)");
+  const track = await page.$eval(".track-art", (n) => ({ label: n.getAttribute("aria-label"), on: n.querySelector(".track-art__labels .on")?.textContent, prey: !!n.querySelector(".track-art__prey"), pursuer: !!n.querySelector(".track-art__pursuer") }));
+  const ranges = await page.evaluate(async () => (await import("/data.js")).RANGES.map((r) => r.name));
+  assert.deepEqual(track, { label: `Distance: ${ranges[2]}`, on: ranges[2], prey: true, pursuer: true });
+  await page.evaluate(async () => { (await import("/src/store.js")).Combat.clear(); (await import("/src/chase.js")).Chase.clear(); localStorage.removeItem("brp:cases");
+    const s = JSON.parse(localStorage.getItem("brp:solo")); s.caseOpen = null; s.timerDie = "D6"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+});

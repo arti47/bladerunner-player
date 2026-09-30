@@ -84,3 +84,36 @@ export function ringGauge(value, max, tone, label) {
   wrap.append(el("span", { class: "ring__label", "aria-hidden": "true" }, label));
   return wrap;
 }
+
+// ---- chase: the distance as a track ---------------------------------------------
+// Five stops (the Range Categories); the pursuer sits one stop in from the left
+// edge and the prey `dist` stops further on. Off the left end = caught, off the
+// right = escaped — the same thresholds the chase card states.
+export function rangeTrack(ranges, distIdx) {
+  const n = ranges.length, W = 300, pad = 18, step = (W - pad * 2) / (n - 1);
+  const x = (i) => pad + Math.max(-0.6, Math.min(n - 0.4, i)) * step;
+  let marks = "";
+  ranges.forEach((r, i) => {
+    marks += `<circle cx="${pad + i * step}" cy="22" r="3" class="track-art__stop${i <= distIdx ? " track-art__stop--span" : ""}"/>`;
+  });
+  const pursuer = `<g class="track-art__pursuer" transform="translate(${x(0)} 22)"><path d="M-6 -9 6 0 -6 9z"/></g>`;
+  const prey = `<g class="track-art__prey" transform="translate(${x(distIdx)} 22)"><circle r="7"/><circle r="2.2" class="track-art__dot"/></g>`;
+  const wrap = el("div", { class: "track-art", role: "img", "aria-label": `Distance: ${ranges[distIdx]?.name || (distIdx < 0 ? "caught" : "escaped")}` });
+  wrap.append(svg(`0 0 ${W} 44`, `<line x1="${pad}" y1="22" x2="${W - pad}" y2="22" class="track-art__line"/><line x1="${pad}" y1="22" x2="${x(distIdx)}" y2="22" class="track-art__gap"/>${marks}${pursuer}${prey}`, "track-art__svg"),
+    el("div", { class: "track-art__labels", "aria-hidden": "true" }, ...ranges.map((r, i) => el("span", { class: i === distIdx ? "on" : "" }, r.name))));
+  return wrap;
+}
+
+// ---- countdown: the escalation ladder ----------------------------------------------
+// Every step of the timer in order, the current one lit, so "a miss escalates"
+// is something you can see.
+export function timerLadder(steps, current) {
+  const at = steps.indexOf(current);
+  return el("ol", { class: "ladder", "aria-label": `Timer at ${current}, step ${at + 1} of ${steps.length}` },
+    ...steps.map((s, i) => el("li", { class: "ladder__step" + (i < at ? " ladder__step--past" : i === at ? " ladder__step--now" : "") }, s)));
+}
+
+// ---- case files: a rubber stamp --------------------------------------------------------
+export function stamp(text, tone = "amber") {
+  return el("span", { class: `stamp stamp--${tone}`, "aria-hidden": "true" }, text);
+}
