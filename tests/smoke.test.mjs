@@ -13,7 +13,7 @@ import { announceSkip } from "./harness.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ROUTES = ["home", "characters", "rules", "wizard", "sheet", "combat", "solo", "gm", "tutorial", "settings"];
-const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png" };
 // Browser discovery, in order: explicit CHROME_PATH → a Playwright browser bundle
 // (PLAYWRIGHT_BROWSERS_PATH, as used by CI images) → the usual macOS/Linux install
 // locations → playwright-core's own `channel: "chrome"` lookup. Without the Linux
@@ -3761,4 +3761,29 @@ test("case & board art: folder tab, SOLVED/COLD stamps, pinned index cards, play
   assert.deepEqual(track, { label: `Distance: ${ranges[2]}`, on: ranges[2], prey: true, pursuer: true });
   await page.evaluate(async () => { (await import("/src/store.js")).Combat.clear(); (await import("/src/chase.js")).Chase.clear(); localStorage.removeItem("brp:cases");
     const s = JSON.parse(localStorage.getItem("brp:solo")); s.caseOpen = null; s.timerDie = "D6"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+});
+
+test("atmosphere: rain in dark only and switchable, a skyline, a splash that never blocks, installable icons, a stamped death", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?atmo#home`, { waitUntil: "load" });
+  await page.waitForTimeout(700);
+  const r = await page.evaluate(() => ({ rain: getComputedStyle(document.getElementById("rain")).display, sky: !!document.querySelector(".appbar .skyline"),
+    splash: document.getElementById("splash") ? getComputedStyle(document.getElementById("splash")).pointerEvents : "gone" }));
+  assert.equal(r.rain, "block", "rain falls in the dark theme");
+  assert.ok(r.sky, "a skyline in the app bar");
+  assert.ok(r.splash === "gone" || r.splash === "none", "the splash is gone or cannot take a tap");
+  await page.evaluate(async () => { (await import("/src/settings.js")).Settings.set("rain", false); });
+  assert.equal(await page.$eval("#rain", (n) => getComputedStyle(n).display), "none", "Settings ▸ Rain turns it off");
+  await page.evaluate(async () => { const S = await import("/src/settings.js"); S.Settings.set("rain", true); document.documentElement.dataset.theme = "light"; });
+  assert.equal(await page.$eval("#rain", (n) => getComputedStyle(n).display), "none", "and it never falls on paper");
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await page.$eval("#rain", (n) => getComputedStyle(n).display), "none", "nor under reduced motion");
+  await page.emulateMedia({ reducedMotion: null });
+  const manifest = await page.evaluate(async () => (await fetch("/manifest.json")).json());
+  const purposes = manifest.icons.map((i) => i.purpose);
+  assert.ok(purposes.includes("maskable") && manifest.icons.some((i) => i.sizes === "192x192") && manifest.icons.some((i) => i.sizes === "512x512"), "PNG icons incl. a maskable one");
+  for (const i of manifest.icons) assert.equal((await page.evaluate(async (src) => (await fetch(src)).status, i.src.replace("./", "/"))), 200, `${i.src} exists`);
+  const sw = await page.evaluate(async () => (await fetch("/service-worker.js")).text());
+  for (const i of manifest.icons) assert.ok(sw.includes(i.src), `${i.src} is in the offline shell`);
 });

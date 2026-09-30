@@ -1,13 +1,16 @@
 // service-worker.js — network-first, caches the app shell + all data files.
 // Bump CACHE_VERSION on ANY shipped-file change (CLAUDE.md §10.6) — that bump is
 // what makes an installed app see a new deploy and offer the update toast.
-const CACHE_VERSION = "brp-v73";
+const CACHE_VERSION = "brp-v74";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./manifest.json",
   "./icon.svg",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/icon-maskable-512.png",
   "./fonts/chakra-petch-500.woff2",
   "./fonts/chakra-petch-600.woff2",
   "./fonts/chakra-petch-700.woff2",

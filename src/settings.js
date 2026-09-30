@@ -8,6 +8,7 @@ const DEFAULTS = {
   gm: false,            // GM screen
   advanced: false,      // advanced/GM automation
   guidance: true,       // "How to use this" notes on the sheet / Solo / GM (on for a new install)
+  rain: true,           // falling rain behind the dark theme (owner decision: on by default)
 };
 
 function readAll() {
@@ -18,13 +19,14 @@ function writeAll(obj) { localStorage.setItem(KEY, JSON.stringify(obj)); }
 
 export const Settings = {
   get(k) { return readAll()[k]; },
-  set(k, v) { const all = readAll(); all[k] = v; writeAll(all); if (k === "guidance") applyGuidance(); return v; },
+  set(k, v) { const all = readAll(); all[k] = v; writeAll(all); if (k === "guidance") applyGuidance(); if (k === "rain") applyRain(); return v; },
   all() { return readAll(); },
   // convenience flags
   solo() { return !!readAll().solo; },
   gm() { return !!readAll().gm; },
   advanced() { return !!readAll().advanced; },
   guidance() { return readAll().guidance !== false; },
+  rain() { return readAll().rain !== false; },
   theme() { return readAll().theme; },
   setTheme(t) { this.set("theme", THEMES.includes(t) ? t : "dark"); applyTheme(); return t; },
 };
@@ -33,6 +35,11 @@ export const THEMES = ["dark", "light", "system"];
 
 // Guidance is one switch for every "How to use this" note in the app — the
 // stylesheet hides them all when the root says off, so no screen re-renders.
+// Rain is a root attribute too: the stylesheet shows the layer only in the dark
+// theme, and never under prefers-reduced-motion.
+export function applyRain() {
+  document.documentElement.dataset.rain = Settings.rain() ? "on" : "off";
+}
 export function applyGuidance() {
   document.documentElement.dataset.guidance = Settings.guidance() ? "on" : "off";
 }
@@ -63,5 +70,6 @@ export const TOGGLES = [
   { key: "solo", label: "Solo Mode", desc: "Playing on your own, with no one running the game? This adds a Solo tab where dice answer your questions and walk you through a case." },
   { key: "gm", label: "GM Screen", desc: "Running the game for other people? This adds a GM tab: build the case, watch the party's health, drop in adversaries." },
   { key: "advanced", label: "Advanced Automation", desc: "Extra helpers for experienced players. Leave it off to start." },
+  { key: "rain", label: "Rain", desc: "Slow rain falling behind the dark theme. Hidden in light mode and when your device asks for reduced motion." },
   { key: "guidance", label: "Guidance", desc: "Show the \u201cHow to use this\u201d notes on the sheet, Solo and GM screens. Turn off once you know your way round." },
 ];

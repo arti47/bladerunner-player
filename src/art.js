@@ -117,3 +117,14 @@ export function timerLadder(steps, current) {
 export function stamp(text, tone = "amber") {
   return el("span", { class: `stamp stamp--${tone}`, "aria-hidden": "true" }, text);
 }
+
+// ---- atmosphere: a skyline for the app bar ---------------------------------------------
+// A generic night skyline — towers, a spire, a few lit windows, a distant
+// airship light. Invented shapes, no recognisable city or film frame.
+export function skyline(cls = "") {
+  const towers = "M0 40V28h8v-6h6v10h5V18h7v8h4V12h3v-4h2v4h3v16h6V22h9v-6h5v14h4V20l4-4 4 4v20h5V26h7v-8h6v4h5V10h2V4h1v6h2v18h6V20h8v10h4V16h9v8h5V30h7V14h3l3-5 3 5v12h6V24h8v-6h6v12h4V20h7v20";
+  const inner = `<path d="${towers}" class="skyline__towers"/>
+    <g class="skyline__lights"><rect x="21" y="22" width="1.6" height="1.6"/><rect x="43" y="26" width="1.6" height="1.6"/><rect x="73" y="24" width="1.6" height="1.6"/><rect x="103" y="30" width="1.6" height="1.6"/><rect x="132" y="22" width="1.6" height="1.6"/><rect x="161" y="28" width="1.6" height="1.6"/><rect x="196" y="20" width="1.6" height="1.6"/></g>
+    <circle cx="150" cy="7" r="1.2" class="skyline__beacon"/><path d="M122 6h14" class="skyline__ship"/>`;
+  return svg("0 0 220 40", inner, `art skyline ${cls}`.trim());
+}
