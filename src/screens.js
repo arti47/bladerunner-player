@@ -149,30 +149,65 @@ export function renderCharacters(mount) {
 export function renderRules(mount) {
   clear(mount);
   const results = el("div", { class: "rules" });
+  const detail = el("aside", { class: "rules__detail", "aria-live": "polite" });
   const search = el("input", { class: "input", type: "search", placeholder: "Search skills, specialties, gear, conditions…", "aria-label": "Search rules" });
+  const count = el("span", { class: "rules__count muted" });
   const index = buildRulesIndex();
+  const cats = [...new Set(index.map((r) => r.cat))];
+  let cat = null;          // a category chip narrows the list; null = all
+  let selected = null;     // wide screens: the entry shown in the detail pane
+  const chipRow = el("div", { class: "chips rules__cats", role: "group", "aria-label": "Categories" });
+  const paintChips = () => {
+    chipRow.replaceChildren(...[null, ...cats].map((c) => el("button", {
+      class: "chip chip--sm" + (cat === c ? " chip--on" : ""), "aria-pressed": cat === c ? "true" : "false",
+      onClick: () => { cat = c; paintChips(); run(search.value); } }, c || "All")));
+  };
+  // Mark every occurrence of the query inside a label, as text nodes + <mark>.
+  const marked = (text, q) => {
+    if (!q) return [text];
+    const out = []; const low = text.toLowerCase(); let i = 0, j;
+    while ((j = low.indexOf(q, i)) !== -1) { out.push(text.slice(i, j), el("mark", {}, text.slice(j, j + q.length))); i = j + q.length; }
+    out.push(text.slice(i));
+    return out;
+  };
+  const body = (it, q) => it.stats
+    ? el("dl", { class: "stat-lines" }, ...it.stats.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, ...marked(String(v), q))]))
+    : marked(it.desc, q);
+  const paintDetail = (it) => {
+    detail.replaceChildren(it
+      ? el("div", { class: "card" }, el("div", { class: "card__eyebrow" }, it.cat), el("h2", { class: "card__title" }, it.name),
+          el("div", { class: "rules__desc" }, ...[body(it, "")].flat()))
+      : el("p", { class: "muted" }, "Pick an entry to read it here."));
+  };
   function run(q) {
     clear(results);
     const query = q.trim().toLowerCase();
-    const hits = query ? index.filter((r) => r.text.toLowerCase().includes(query)) : index;
+    const hits = index.filter((r) => (!cat || r.cat === cat) && (!query || r.text.toLowerCase().includes(query)));
+    count.textContent = query || cat ? `${hits.length} result${hits.length === 1 ? "" : "s"}` : "";
     const byCat = {};
     for (const h of hits) (byCat[h.cat] ||= []).push(h);
     if (!hits.length) { results.append(el("p", { class: "muted" }, "No matches.")); return; }
-    for (const [cat, items] of Object.entries(byCat)) {
-      const group = el("details", { class: "rules__group", open: query ? true : cat === "Glossary" });
-      group.append(el("summary", {}, `${cat} (${items.length})`));
+    for (const [c, items] of Object.entries(byCat)) {
+      const group = el("details", { class: "rules__group", open: query || cat ? true : c === "Glossary" });
+      group.append(el("summary", {}, `${c} (${items.length})`));
       for (const it of items) {
-        group.append(el("div", { class: "rules__item" },
-          el("div", { class: "rules__name" }, it.name),
-          el("div", { class: "rules__desc muted" }, it.desc)));
+        const row = el("div", { class: "rules__item" + (selected === it ? " rules__item--on" : ""), tabindex: "0",
+          onClick: () => { selected = it; paintDetail(it); results.querySelectorAll(".rules__item--on").forEach((n) => n.classList.remove("rules__item--on")); row.classList.add("rules__item--on"); } },
+          el("div", { class: "rules__name" }, ...marked(it.name, query)),
+          el("div", { class: "rules__desc muted" }, ...[body(it, query)].flat()));
+        row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.click(); } });
+        group.append(row);
       }
       results.append(group);
     }
   }
   search.addEventListener("input", () => run(search.value));
+  paintChips();
+  paintDetail(null);
   mount.append(screen("Rules Library",
     el("p", { class: "muted" }, "Everything the app knows, searchable. New to the game? Open Glossary first — it explains the words the rest of the app uses."),
-    search, results));
+    el("div", { class: "rules__bar" }, el("div", { class: "rules__search" }, search, count), chipRow),
+    el("div", { class: "rules-layout" }, results, detail)));
   run("");
 }
 
@@ -188,7 +223,11 @@ function buildRulesIndex() {
     const rng = w.minRange ? ` · ${titleCase(w.minRange)}–${titleCase(w.maxRange)}` : (w.maxRange ? ` · ≤${titleCase(w.maxRange)}` : "");
     const crit = w.critDie ? ` · Crit ${w.critDie === "STR" ? "STR" : "D" + w.critDie}` : "";
     const dmg = w.damage != null ? `Damage ${w.damage}` : (w.note || "Special");
-    idx.push({ cat: "Weapons", name: w.name, desc: `${dmg}${crit}${w.type && w.damage != null ? " · " + titleCase(w.type) : ""}${rng}${w.fullAuto ? " · full auto" : ""} · ${w.avail} (cost ${w.cost})`, text: `${w.name} ${w.type || ""} weapon ${w.blastPower ? "explosive grenade" : ""}` });
+    // The same facts as a key/value grid, so a stat line can be scanned column by column.
+    const stats = [["Dmg", w.damage != null ? w.damage : (w.note || "Special")], ...(w.critDie ? [["Crit", w.critDie === "STR" ? "STR" : "D" + w.critDie]] : []),
+      ...(w.type && w.damage != null ? [["Type", titleCase(w.type)]] : []), ...(rng ? [["Range", rng.replace(/^ · /, "")]] : []),
+      ...(w.fullAuto ? [["Auto", "Full auto"]] : []), ["Avail", w.avail], ["Cost", w.cost]];
+    idx.push({ cat: "Weapons", name: w.name, stats, desc: `${dmg}${crit}${w.type && w.damage != null ? " · " + titleCase(w.type) : ""}${rng}${w.fullAuto ? " · full auto" : ""} · ${w.avail} (cost ${w.cost})`, text: `${w.name} ${w.type || ""} weapon ${w.blastPower ? "explosive grenade" : ""}` });
   }
   for (const a of D.ARMOR) idx.push({ cat: "Armor & Gear", name: a.name, desc: `${a.rating ? "Armor " + a.rating + " · " : ""}${a.note || ""} ${a.avail} (cost ${a.cost})`.trim(), text: `${a.name} armor ${a.note || ""}` });
   for (const g of D.GEAR) idx.push({ cat: "Armor & Gear", name: g.name, desc: `${g.text} · ${g.avail} (cost ${g.cost})`, text: `${g.name} ${g.text} gear` });

@@ -87,27 +87,50 @@ export function renderCombat(mount) {
   const ordered = state.active ? [...state.combatants].sort((a, b) => a.card - b.card) : state.combatants;
   const activeId = state.active ? ordered[state.turnIndex % ordered.length]?.id : null;
   const list = el("div", { class: "list" });
-  for (const c of ordered) list.append(combatantCard(c, c.id === activeId, commit));
+  const turnChanged = activeId && activeId !== lastActiveId;
+  lastActiveId = activeId;
+  for (const c of ordered) {
+    // Compact rows: while setting up, everyone is open; in a fight, the one
+    // whose turn it is opens itself and the rest stay a single line unless
+    // you open them.
+    // A dying combatant is never folded away — the save it owes is on the row.
+    const dying = (c.criticalInjuries || []).some((i) => i.lethal && !i.instantKill && !i.stabilized) && !c.dead;
+    const open = !state.active || c.id === activeId || openRows.has(c.id) || dying;
+    list.append(combatantCard(c, c.id === activeId, commit, open, turnChanged && c.id === activeId));
+  }
   wrap.append(list);
+  if (turnChanged) requestAnimationFrame(() => list.querySelector(".combatant--turn")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   wrap.append(renderChaseCard(() => renderCombat(mount)));
   wrap.append(howCard());
   mount.append(wrap);
 }
 
-function combatantCard(c, isTurn, commit) {
+function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
   const broken = c.health <= 0;
-  const card = el("div", { class: "card combatant" + (isTurn ? " combatant--turn" : "") + (broken ? " combatant--broken" : "") });
+  const dying = (c.criticalInjuries || []).some((i) => i.lethal && !i.instantKill && !i.stabilized) && !c.dead;
+  const card = el("div", { class: "card combatant" + (isTurn ? " combatant--turn" : "") + (turnIsNew ? " combatant--turn-new" : "")
+    + (broken || dying || c.dead ? " combatant--broken" : "") + (open ? "" : " combatant--closed") });
   const armor = armorFor(c);
+  // A one-line summary: card, name, a Health bar, and what state they are in.
+  const bar = el("span", { class: "hbar", role: "img", "aria-label": `Health ${c.health} of ${c.maxHealth}` });
+  for (let i = 1; i <= c.maxHealth; i++) bar.append(el("span", { class: "hbar__seg" + (i <= c.health ? " hbar__seg--on" : "") }));
+  const toggle = el("button", { class: "iconbtn combatant__toggle", "aria-expanded": open ? "true" : "false",
+    "aria-label": `${open ? "Collapse" : "Expand"} ${c.name}`,
+    onClick: () => { if (openRows.has(c.id)) openRows.delete(c.id); else openRows.add(c.id); commit(() => {}); } }, open ? "▲" : "▼");
   card.append(el("div", { class: "combatant__top" },
     el("button", { class: "combatant__init" + (c.card ? "" : " combatant__init--none"), title: "Initiative card",
       "aria-label": `initiative card for ${c.name}${c.card ? ` — currently #${c.card}` : " — not set"}`,
       onClick: () => editCard(c, commit) }, c.card ? `#${c.card}` : "—"),
-    el("span", { class: "combatant__name" }, c.name, el("span", { class: "muted combatant__kind" }, ` · ${c.kind === "pc" ? "PC" : "NPC"}`)),
-    el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${c.name}`, onClick: () => commit((s) => { s.combatants = s.combatants.filter((x) => x.id !== c.id); }) }, "✕")));
+    el("span", { class: "combatant__id" },
+      el("span", { class: "combatant__name" }, c.name, el("span", { class: "muted combatant__kind" }, ` · ${c.kind === "pc" ? "PC" : "NPC"}`)),
+      el("span", { class: "combatant__line" }, bar, el("span", { class: "combatant__hp" }, `${c.health}/${c.maxHealth}`),
+        armor ? el("span", { class: "pip", title: `${armor.name} — roll ${D.ARMOR_DICE}× d${D.LEVEL_DIE[armor.rating]} when hit` }, `🛡 ${armor.rating}`) : null,
+        c.dead ? el("span", { class: "badge badge--danger" }, "☠ Dead") : dying ? el("span", { class: "badge badge--danger" }, "Dying") : broken ? el("span", { class: "badge badge--danger" }, "Broken") : null)),
+    toggle));
+  if (!open) return card;
   card.append(el("div", { class: "combatant__vitals" },
     el("span", { class: "track__num track__num--health" }, `♥ ${c.health}/${c.maxHealth}`),
-    armor ? el("span", { class: "pip", title: `${armor.name} — roll ${D.ARMOR_DICE}× d${D.LEVEL_DIE[armor.rating]} when hit` }, `🛡 ${armor.rating}`) : null,
-    c.dead ? el("span", { class: "badge badge--danger" }, "☠ Dead") : broken ? el("span", { class: "badge badge--danger" }, "Broken") : null,
+    el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${c.name}`, onClick: () => commit((s) => { s.combatants = s.combatants.filter((x) => x.id !== c.id); }) }, "✕ Remove"),
     el("span", { class: "stepper__ctrl" },
       el("button", { class: "btn btn--sm", "aria-label": `damage ${c.name}`, onClick: () => damageCombatant(c, commit) }, "−"),
       el("button", { class: "btn btn--sm", "aria-label": `heal ${c.name}`, onClick: () => commit((s) => adjust(s, c.id, +1)) }, "+"))));
@@ -141,6 +164,10 @@ function combatantCard(c, isTurn, commit) {
     el("button", { class: "btn btn--sm", onClick: () => rollCombatSkill(c, commit) }, "🎲 Skill")));
   return card;
 }
+
+// Which rows you opened by hand, and whose turn was last shown — per page load.
+const openRows = new Set();
+let lastActiveId = null;
 
 function adjust(state, id, delta) {
   const c = state.combatants.find((x) => x.id === id);
@@ -217,7 +244,7 @@ function addActivePc(commit) {
   });
 }
 function addNpc(commit) {
-  modal({ title: "Add adversary", render(body, close) {
+  modal({ title: "Add adversary", sheet: true, search: true, render(body, close) {
     body.append(el("p", { class: "muted" }, "Typical NPCs from the core bestiary. Add as many as the scene needs."));
     const list = el("div", { class: "picker" });
     for (const n of NPCS) list.append(el("button", { class: "list__row", onClick: () => {

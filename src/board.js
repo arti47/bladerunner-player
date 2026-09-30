@@ -156,6 +156,35 @@ export function rollPrompt() {
 // ctx supplies the Solo screen's own builders so the board looks native:
 //   { card, btn, grid, show, rerender, onPromote }
 
+// Draw each connection as a line between its two boxes when suspects and clues
+// sit side by side; on one column there is nothing to draw between.
+function drawLinks(grid, b) {
+  grid.querySelector(".board__lines")?.remove();
+  const cols = grid.querySelectorAll(".board__group");
+  if (cols.length < 2 || cols[0].offsetLeft === cols[1].offsetLeft) return;
+  const g = grid.getBoundingClientRect();
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "board__lines");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("width", g.width); svg.setAttribute("height", g.height);
+  const at = (id) => grid.querySelector(`[data-box-id="${id}"]`);
+  const drawn = new Set();
+  for (const box of b.boxes) for (const other of box.links || []) {
+    const key = [box.id, other].sort().join("|");
+    if (drawn.has(key)) continue; drawn.add(key);
+    const s = at(box.kind === "suspect" ? box.id : other), c = at(box.kind === "suspect" ? other : box.id);
+    if (!s || !c) continue;
+    const sr = s.getBoundingClientRect(), cr = c.getBoundingClientRect();
+    const x1 = sr.right - g.left, y1 = sr.top + Math.min(24, sr.height / 2) - g.top, x2 = cr.left - g.left, y2 = cr.top + Math.min(24, cr.height / 2) - g.top;
+    const path = document.createElementNS(NS, "path");
+    const mid = (x1 + x2) / 2;
+    path.setAttribute("d", `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`);
+    path.setAttribute("class", "board__line" + (b.solvedId && (box.id === b.solvedId || other === b.solvedId) ? " board__line--solved" : ""));
+    svg.append(path);
+  }
+  grid.prepend(svg);
+}
 function spoken(b, name) { b.setAttribute("aria-label", name); b.title = name; return b; }
 export function renderBoardPanel(root, ctx) {
   const { card, btn, grid, show, rerender, onPromote } = ctx;
@@ -167,14 +196,19 @@ export function renderBoardPanel(root, ctx) {
 
   // ---- the board itself
   const boardCard = card("Case Board", H.BOARD.blurb);
-  boardCard.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "House aid"));
+  boardCard.classList.add("card--house");
+  boardCard.prepend(el("div", { class: "roll-eyebrow step-eyebrow house-eyebrow" }, "House aid"));
   boardCard.append(el("p", { class: "muted small" },
     `${b.boxes.length}/${H.BOX_MAX} boxes · ${boxesOf(b, "clue").length} clues · ${boxesOf(b, "suspect").length} suspects`));
 
   if (!b.boxes.length) {
     boardCard.append(el("p", { class: "muted" }, "Empty board. Add the first clue or suspect below — roll one from the Solo tables, or write your own."));
   } else {
-    boardCard.append(boxList("Suspects", boxesOf(b, "suspect")), boxList("Clues", boxesOf(b, "clue")));
+    // Suspects left, clues right; on a wide enough card the connections are
+    // drawn between them, on a phone each box lists its links as chips.
+    const grid = el("div", { class: "board__grid" }, boxList("Suspects", boxesOf(b, "suspect")), boxList("Clues", boxesOf(b, "clue")));
+    boardCard.append(grid);
+    requestAnimationFrame(() => drawLinks(grid, b));
   }
 
   boardCard.append(grid(
@@ -204,7 +238,8 @@ export function renderBoardPanel(root, ctx) {
   // ---- the discovery roll
   const checks = b.checks || 0;
   const disc = card("Discovery Check", H.DISCOVERY_ROLL.note);
-  disc.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "House aid"));
+  disc.classList.add("card--house");
+  disc.prepend(el("div", { class: "roll-eyebrow step-eyebrow house-eyebrow" }, "House aid"));
   disc.append(el("p", { class: checks ? "roll-result--ok" : "muted" },
     checks ? `${checks} check${checks === 1 ? "" : "s"} banked — earned by your investigative rolls.`
            : "None banked. Succeed on an investigative roll on your sheet and the result offers you one."));
@@ -217,7 +252,8 @@ export function renderBoardPanel(root, ctx) {
   if (solved || (top && connectionsOf(b, top) >= H.CLINCHER_CONNECTIONS)) {
     const who = solved || top;
     const ans = card("The answer", H.PROMOTE.note);
-    ans.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, "House aid"));
+    ans.classList.add("card--house");
+    ans.prepend(el("div", { class: "roll-eyebrow step-eyebrow house-eyebrow" }, "House aid"));
     ans.append(el("h3", { class: "roll-result roll-result--big" }, who.name),
       el("p", { class: "muted" }, solved
         ? `A clincher named ${label(who)}.`
@@ -237,13 +273,18 @@ export function renderBoardPanel(root, ctx) {
     if (!list.length) { wrap.append(el("p", { class: "muted small" }, "None yet.")); return wrap; }
     for (const box of list.slice().sort((x, y) => x.n - y.n)) {
       const links = (box.links || []).map((id) => byId(b, id)).filter(Boolean);
-      const row = el("div", { class: "board__box" + (b.solvedId === box.id ? " board__box--solved" : "") },
+      // A suspect's progress towards the clincher, one segment per connection.
+      const meter = box.kind === "suspect" ? el("span", { class: "board__meter", role: "meter", "aria-label": `${links.length} of ${H.CLINCHER_CONNECTIONS} connections`,
+        "aria-valuemin": "0", "aria-valuemax": String(H.CLINCHER_CONNECTIONS), "aria-valuenow": String(links.length) },
+        ...Array.from({ length: H.CLINCHER_CONNECTIONS }, (_, i) => el("span", { class: "board__meter-seg" + (i < links.length ? " board__meter-seg--on" : "") }))) : null;
+      const row = el("div", { class: "board__box board__box--" + box.kind + (b.solvedId === box.id ? " board__box--solved" : ""), dataset: { boxId: box.id } },
         el("div", { class: "board__head" },
           el("span", { class: "board__tag" }, label(box)),
           el("span", { class: "board__name" }, box.name),
           box.kind === "suspect" ? el("span", { class: "board__count", title: "connections" }, `🔗 ${links.length}`) : null),
+        meter,
         box.detail ? el("p", { class: "muted small board__detail" }, box.detail) : null,
-        links.length ? el("p", { class: "muted small" }, `Connected: ${links.map(label).join(", ")}`) : null,
+        links.length ? el("p", { class: "muted small board__links" }, "Connected: ", ...links.map((l) => el("span", { class: "tag tag--sm board__link" }, label(l)))) : null,
         el("div", { class: "btn-row" },
           // Icon-only buttons carry their own accessible name.
           named(btn("🔗", () => connectFlow(box), "sm ghost"), `Connect ${label(box)}`),
@@ -301,7 +342,7 @@ export function renderBoardPanel(root, ctx) {
     if (!options.length) { showToast(`${label(start)} is already connected to everything it can reach.`, { kind: "warn" }); return; }
 
     modal({
-      title: `Connect ${label(start)} — ${start.name}`,
+      title: `Connect ${label(start)} — ${start.name}`, sheet: true,
       render: (body, close) => {
         body.append(el("p", { class: "muted small" }, `Clues connect to suspects only. ${options.length} option${options.length === 1 ? "" : "s"}.`));
         const list = el("div", { class: "board__pick" });

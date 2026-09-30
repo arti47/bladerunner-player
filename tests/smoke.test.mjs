@@ -427,6 +427,9 @@ test("combat tracker: conditions persist, armor shows, crits land on the target 
   const badges = await page.$$eval(".combatant .pip", (els) => els.map((e) => e.textContent));
   assert.ok(await page.$$eval(".combatant .pip .i--shield", (n) => n.length) > 0, `armored NPC shows a shield badge (got ${badges.join(",")})`);
   // toggle In Cover on the thug and confirm it persists through the store
+  // mid-fight, only the combatant whose turn it is opens itself — open the thug's row
+  if (await page.locator(".combatant").nth(1).locator(".combatant__toggle[aria-expanded=false]").count())
+    await page.locator(".combatant").nth(1).locator(".combatant__toggle").click();
   await page.locator(".combatant").nth(1).getByRole("button", { name: "In Cover" }).click();
   await page.waitForTimeout(200);
   const conds = await page.evaluate(async () => (await import("/src/store.js")).Combat.get().combatants[1].conditions);
@@ -1015,6 +1018,7 @@ test("any roll can be pinned into the case notes; the sheet's pin says it target
   await page.waitForTimeout(250);
   const rows = await page.$$eval(".rolllog__row .rolllog__label", (els) => els.map((e) => e.textContent));
   assert.deepEqual(rows, ["Runner · Firearms"], "the sheet roll shows up in the solo log");
+  await page.locator(".rolllog__row").first().locator(".rowmenu__toggle").click();
   await page.locator(".rolllog__row").first().getByRole("button", { name: "Pin to case notes" }).click();
   await page.waitForTimeout(250);
   const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
@@ -1046,6 +1050,7 @@ test("roll logs read top to bottom too — newest entry is last", async (t) => {
   const soloLabels = await page.$$eval(".rolllog__row .rolllog__label", (els) => els.map((e) => e.textContent));
   assert.deepEqual(soloLabels, ["FIRST", "SECOND", "THIRD"]);
   // pinning the newest row puts it at the end of the notes
+  await page.locator(".rolllog__row").last().locator(".rowmenu__toggle").click();
   await page.locator(".rolllog__row").last().getByRole("button", { name: "Pin to case notes" }).click();
   await page.waitForTimeout(250);
   const notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
@@ -1064,7 +1069,8 @@ test("guided play runs a whole case with one question at a time", async (t) => {
   if (unavailable) return t.skip(unavailable);
   let n = 0;
   const go = async () => { await page.goto(`${base}/index.html?gp${++n}#solo`, { waitUntil: "load" }); await page.waitForTimeout(300); };
-  const choices = () => page.$$eval(".play__choices .btn", (e) => e.map((x) => x.textContent.trim()));
+  // a choice's label, without its keyboard number
+  const choices = () => page.$$eval(".play__choices .btn", (e) => e.map((x) => [...x.childNodes].filter((n) => !n.classList?.contains("play__num")).map((n) => n.textContent).join("").trim()));
   const cardText = () => page.$eval(".panel .card", (e) => e.textContent.replace(/\s+/g, " "));
 
   await go();
@@ -3368,4 +3374,223 @@ test("wide screens: a left rail, two card columns, nothing overflowing", async (
   const xs = await page.$$eval(".sheet > .card", (cs) => [...new Set(cs.map((c) => Math.round(c.getBoundingClientRect().left)))]);
   assert.ok(xs.length >= 2, `the sheet flows into two columns: ${xs}`);
   await page.setViewportSize({ width: 390, height: 800 });
+});
+
+// ---------------------------------------------------------------------------
+// UX audit Phase 4 — components.
+// ---------------------------------------------------------------------------
+test("the roll dialog: a summary line, dice that tumble without touching Math.random, the push priced on its button", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?rolldlg#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "Roll Tech" }).click();
+  await page.waitForTimeout(150);
+  // forced failure; count Math.random calls so the animation is proven not to draw from it
+  await page.evaluate(() => { window.__draws = 0; Math.random = () => { window.__draws++; return 0.3; }; });
+  await page.locator(".modal").getByRole("button", { name: "Roll", exact: true }).click();
+  await page.waitForTimeout(60);
+  const mid = await page.evaluate(() => ({ rolling: document.querySelectorAll(".modal .die--rolling").length, draws: window.__draws }));
+  assert.ok(mid.rolling > 0, "new dice tumble");
+  await page.waitForTimeout(900);
+  const end = await page.evaluate(() => ({
+    rolling: document.querySelectorAll(".modal .die--rolling").length, landed: document.querySelectorAll(".modal .die--landed").length,
+    draws: window.__draws, summary: document.querySelector(".modal .roll-summary")?.textContent,
+    push: [...document.querySelectorAll(".modal .btn")].map((b) => b.textContent.trim()).find((x) => /Push the roll/.test(x)),
+    faces: [...document.querySelectorAll(".modal .die")].map((d) => d.querySelector(".die__face").textContent + "|" + d.getAttribute("aria-label")),
+  }));
+  assert.equal(end.rolling, 0, "and land");
+  assert.equal(end.draws, mid.draws, "the tumble never calls Math.random");
+  assert.match(end.summary, /^Tech · d\d+ \+ d\d+/, "the summary names the skill and the dice");
+  assert.match(end.push, /each 1 costs 1 stress/, "a push says what it costs (Tech is Intelligence → stress)");
+  for (const f of end.faces) { const [face, label] = f.split("|"); assert.ok(label.includes(`rolled ${face}`), `the settled face matches its label: ${f}`); }
+  // a push: kept dice do not tumble again
+  await page.evaluate(() => { Math.random = () => 0.3; });
+  await page.locator(".modal .btn", { hasText: "Push the roll" }).click();
+  await page.waitForTimeout(40);
+  const again = await page.evaluate(() => [...document.querySelectorAll(".modal .die")].map((d) => d.classList.contains("die--rolling")));
+  const banes = await page.evaluate(() => [...document.querySelectorAll(".modal .die")].map((d) => d.classList.contains("die--bane")));
+  again.forEach((r, i) => { if (banes[i]) assert.equal(r, false, "a locked 1 is not re-rolled, so it does not tumble"); });
+  await page.keyboard.press("Escape");
+});
+
+test("the roll log is a timeline: outcome markers, the dice it rolled, actions behind one ⋯", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(async () => {
+    const { RollLog } = await import("/src/store.js");
+    RollLog.clear();
+    RollLog.add({ label: "Firearms", text: "Critical success · 2 successes", dice: [[10, 10], [8, 3]], source: "sheet" });
+    RollLog.add({ label: "Tech (push)", text: "Failure · 0 successes · 1 bane", dice: [[8, 1], [6, 4]], source: "sheet" });
+  });
+  await page.goto(`${base}/index.html?tl#home`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => document.querySelectorAll(".rolllog__details").forEach((d) => (d.open = true)));
+  const rows = await page.$$eval(".rolllog__row", (n) => n.map((r) => ({ cls: r.className, dice: [...r.querySelectorAll(".minidie")].map((d) => d.className) })));
+  assert.match(rows[0].cls, /rolllog__row--crit/);
+  assert.match(rows[1].cls, /rolllog__row--bane/);
+  assert.deepEqual(rows[0].dice, ["minidie minidie--crit", "minidie"]);
+  assert.ok(rows[1].dice[0].includes("minidie--bane"));
+  assert.equal(await page.locator(".rolllog__row").first().locator(".rowmenu__list").isVisible(), false, "actions are folded away");
+  await page.locator(".rolllog__row").first().locator(".rowmenu__toggle").click();
+  assert.equal(await page.locator(".rolllog__row").first().locator(".rowmenu__list").isVisible(), true, "and one ⋯ opens them");
+  const box = await page.locator(".rolllog__row").first().locator(".rowmenu__toggle").boundingBox();
+  assert.ok(box.width >= 44, "the ⋯ is a full-size target");
+  await page.evaluate(async () => (await import("/src/store.js")).RollLog.clear());
+});
+
+test("case notes read as a rendered log, and Edit gives the plain text back unchanged", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const text = "=== CASE #1 — Rain ===\n• [Scene Check] Challenging\nMy own line.\n• [Kaz · Firearms] Success · 1 success";
+  await page.evaluate((txt) => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = "notes"; s.scratchpad = txt; localStorage.setItem("brp:solo", JSON.stringify(s)); }, text);
+  await page.goto(`${base}/index.html?notes#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  const read = await page.evaluate(() => ({
+    head: document.querySelector(".notes-read__head")?.textContent,
+    tags: [...document.querySelectorAll(".notes-read__tag")].map((t) => t.textContent),
+    p: document.querySelector(".notes-read__p")?.textContent, ta: !!document.querySelector(".notes-area") }));
+  assert.deepEqual(read, { head: "CASE #1 — Rain", tags: ["Scene Check", "Kaz · Firearms"], p: "My own line.", ta: false });
+  await page.getByRole("button", { name: "Edit notes" }).click();
+  assert.equal(await page.$eval(".notes-area", (t) => t.value), text, "the stored text is untouched");
+  await page.fill(".notes-area", text + "\nAdded.");
+  await page.getByRole("button", { name: "Done" }).click();
+  assert.match(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad), /Added\.$/);
+  assert.ok(await page.$(".notes-read"), "Done returns to the read view");
+});
+
+test("long pickers are bottom sheets with a search that filters their rows", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?pick#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "Acquire gear", exact: true }).first().click();
+  await page.waitForTimeout(250);
+  assert.ok(await page.$(".modal-overlay--sheet .modal--sheet"), "a bottom sheet");
+  const sheetBottom = await page.$eval(".modal--sheet", (m) => Math.round(m.getBoundingClientRect().bottom));
+  assert.ok(sheetBottom >= 790, `anchored to the bottom edge at 390px (${sheetBottom})`);
+  const before = await page.$$eval(".modal .list__row, .modal .picker__row--btn", (n) => n.filter((x) => !x.hidden).length);
+  await page.fill(".picker-search", "blaster");
+  const after = await page.$$eval(".modal .list__row, .modal .picker__row--btn", (n) => n.filter((x) => !x.hidden).map((x) => x.textContent));
+  assert.ok(after.length > 0 && after.length < before, `search narrows ${before} → ${after.length}`);
+  assert.ok(after.every((x) => /blaster/i.test(x)), "and only matches remain");
+  assert.match(await page.$eval(".picker-search__count", (n) => n.textContent), /match/);
+  await page.keyboard.press("Escape");
+});
+
+test("combat rows: the turn opens itself, others fold to one line, a dying combatant never folds", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(async () => {
+    const { Combat } = await import("/src/store.js");
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "a", kind: "npc", name: "First", health: 4, maxHealth: 4, card: 1, conditions: {}, criticalInjuries: [] },
+      { id: "b", kind: "npc", name: "Second", health: 4, maxHealth: 4, card: 2, conditions: {}, criticalInjuries: [] },
+      { id: "c", kind: "npc", name: "Third", health: 0, maxHealth: 4, card: 3, conditions: {},
+        criticalInjuries: [{ id: "x", injury: "Punctured lung", lethal: true, deathSave: "round", instantKill: false, stabilized: false, effect: "" }] }] });
+  });
+  await page.goto(`${base}/index.html?rows#combat`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  const state = () => page.$$eval(".combatant", (n) => n.map((c) => ({ closed: c.classList.contains("combatant--closed"), turn: c.classList.contains("combatant--turn"), bar: !!c.querySelector(".hbar") })));
+  let s = await state();
+  assert.deepEqual(s.map((x) => x.closed), [false, true, false], "turn open · other folded · dying open");
+  assert.ok(s.every((x) => x.bar), "every row carries a Health bar");
+  await page.locator(".combatant").nth(1).locator(".combatant__toggle").click();
+  await page.waitForTimeout(150);
+  s = await state();
+  assert.equal(s[1].closed, false, "a folded row opens on request");
+  await page.getByRole("button", { name: "Next turn" }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.$$eval(".combatant--turn-new", (n) => n.length), 1, "the new turn is announced by its ring");
+  await page.evaluate(async () => (await import("/src/store.js")).Combat.clear());
+});
+
+test("a vital that changes pulses the pip that moved", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?pulse#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "decrease Health" }).click();
+  await page.waitForTimeout(100);
+  assert.equal(await page.$$eval(".track .dot--lost", (n) => n.length), 1, "one pip lost");
+  await page.getByRole("button", { name: "increase Health" }).click();
+  await page.waitForTimeout(100);
+  assert.equal(await page.$$eval(".track .dot--gained", (n) => n.length), 1, "one pip back");
+});
+
+test("the wizard: a stepper that jumps back, budgets as meters, a locked Next that says why", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => localStorage.removeItem("brp:wizard"));
+  await page.goto(`${base}/index.html?wiz#wizard`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.equal(await page.$$eval(".wiz__dot", (n) => n.length), 10, "ten steps on the stepper");
+  assert.match(await page.$eval(".wiz__why", (n) => n.textContent), /Human or Replicant/, "Next says what it is waiting for");
+  await page.getByRole("button", { name: /Roll me a whole Blade Runner/i }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.$$eval(".wiz__dot--done button", (n) => n.length), 9, "every finished step is a way back");
+  await page.getByRole("button", { name: /Back to step 4: Attributes/ }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.$eval("h1", (h) => h.textContent), "Attributes");
+  const meter = await page.$eval(".budget-meter", (m) => ({ now: m.getAttribute("aria-valuenow"), max: m.getAttribute("aria-valuemax"), ok: m.classList.contains("budget-meter--ok"),
+    on: m.querySelectorAll(".budget-meter__seg--on").length }));
+  assert.equal(meter.now, meter.max, "the rolled budget is spent exactly");
+  assert.ok(meter.ok && meter.on === Number(meter.max), "and the meter says so");
+  await page.evaluate(() => localStorage.removeItem("brp:wizard"));
+});
+
+test("the Rules Library: category chips, highlighted matches, weapon stats as a grid, a reading pane on wide screens", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?rlib#rules`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  await page.click('.rules__cats .chip:text-is("Weapons")');
+  const groups = await page.$$eval(".rules__group summary", (n) => n.map((x) => x.textContent));
+  assert.equal(groups.length, 1); assert.match(groups[0], /^Weapons/);
+  assert.ok(await page.$(".rules__item .stat-lines dt"), "weapon stats render as a key/value grid");
+  await page.fill(".rules__search input", "blaster");
+  assert.ok((await page.$$eval(".rules mark", (n) => n.map((m) => m.textContent.toLowerCase()))).every((x) => x === "blaster"), "matches are marked");
+  assert.match(await page.$eval(".rules__count", (n) => n.textContent), /result/);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.click('.rules__cats .chip:text-is("All")');
+  await page.locator(".rules__item").first().click();
+  assert.ok(await page.locator(".rules__detail .card__title").isVisible(), "the entry opens in the reading pane");
+  await page.setViewportSize({ width: 390, height: 800 });
+});
+
+test("the Case Board: suspects beside clues, connections drawn, a meter towards the clincher", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(async () => {
+    const B = await import("/src/board.js");
+    const b = { boxes: [], nextN: 1, checks: 0, solvedId: null };
+    const s = B.addBox(b, "suspect", "Ada Voss"), c1 = B.addBox(b, "clue", "Burnt ticket"), c2 = B.addBox(b, "clue", "Wet coat");
+    B.connect(b, s.id, c1.id); B.connect(b, s.id, c2.id);
+    B.Board.save(b);
+    const st = JSON.parse(localStorage.getItem("brp:solo") || "{}"); st.panel = "board"; localStorage.setItem("brp:solo", JSON.stringify(st));
+  });
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.goto(`${base}/index.html?brd#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(350);
+  const r = await page.evaluate(() => ({
+    cols: [...document.querySelectorAll(".board__grid > .board__group")].map((g) => Math.round(g.getBoundingClientRect().left)),
+    lines: document.querySelectorAll(".board__lines .board__line").length,
+    meter: document.querySelector(".board__box--suspect .board__meter")?.getAttribute("aria-valuenow"),
+    segs: document.querySelectorAll(".board__box--suspect .board__meter-seg").length,
+    chips: document.querySelectorAll(".board__link").length,
+    house: document.querySelector(".card--house") !== null }));
+  assert.ok(r.cols.length === 2 && r.cols[0] !== r.cols[1], "suspects and clues side by side");
+  assert.equal(r.lines, 2, "one line per connection");
+  assert.equal(r.meter, "2");
+  const H = await page.evaluate(async () => (await import("/data-house.js")).CLINCHER_CONNECTIONS);
+  assert.equal(r.segs, H, "the meter has one segment per connection the clincher needs");
+  assert.ok(r.chips >= 2 && r.house, "links as chips, and the card wears the house-aid colour");
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.evaluate(async () => (await import("/src/board.js")).Board.clear());
+});
+
+test("the guided card: where you are, numbered choices, and 1–9 on a keyboard press them", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => { const st = JSON.parse(localStorage.getItem("brp:solo") || "{}"); st.panel = "play"; st.play = null; st.caseOpen = null; localStorage.setItem("brp:solo", JSON.stringify(st)); });
+  await page.goto(`${base}/index.html?keys#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  assert.ok(await page.$(".play-card .play__choices .play__num"), "choices are numbered");
+  const before = await page.$eval(".play-card .card__title, .play-card .sheet__section", (n) => n.textContent);
+  await page.keyboard.press("1");
+  await page.waitForTimeout(300);
+  const after = await page.$eval(".play-card .card__title, .play-card .sheet__section", (n) => n.textContent);
+  assert.notEqual(after, before, "pressing 1 took the first choice");
+  assert.equal(await page.locator(".play-card .play__choices").getByRole("button", { name: /^\d/ }).count(), 0,
+    "the number is not read out as part of the choice");
 });

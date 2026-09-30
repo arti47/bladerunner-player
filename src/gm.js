@@ -12,7 +12,7 @@ import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes, guidanceChip, introLine } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes, guidanceChip, introLine, notesView } from "./ui.js";
 import { rollDie, uid, titleCase, clear, stripGlyphs } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { navigate } from "./router.js";
@@ -51,6 +51,9 @@ function writeGmState(st) { try { localStorage.setItem(GM_KEY, JSON.stringify(st
 let activeBtn = null;
 // Card key of the result just rolled — scrolled into view once, after paint.
 let freshResult = null;
+// The panel fades in only when the TAB changes — a roll re-renders the panel in
+// place and must not replay the entrance.
+let lastPanelKey = null;
 const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__section")?.textContent || null;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const archName = (c) => (c.archetype ? (archetype(c.archetype)?.name || c.archetype) : "No archetype");
@@ -142,7 +145,8 @@ export function renderGm(mount, rerender) {
   if (!st.introSeen) mount.append(introLine("Command center — manage the party, build cases, and drop adversaries into combat.",
     () => { st.introSeen = true; writeGmState(st); rerender(); }));
 
-  const panel = el("div", { class: "panel" });
+  const panel = el("div", { class: "panel" + (st.panel !== lastPanelKey ? " panel--enter" : "") });
+  lastPanelKey = st.panel;
   ({ prep: panelPrep, play: panelPlay, fight: panelFight, wrap: panelWrap, notes: panelNotes }[st.panel] || panelPrep)(panel);
   paintResults(panel);
   mount.append(panel);
@@ -195,7 +199,9 @@ export function renderGm(mount, rerender) {
       requestAnimationFrame(() => {
         const host = [...panelEl.querySelectorAll(".card")].find((c) => c.querySelector(".sheet__section")?.textContent === fresh) || panelEl;
         const slotEls = host.querySelectorAll(":scope > .result-slot");
-        slotEls[slotEls.length - 1]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        const newest = slotEls[slotEls.length - 1];
+        newest?.classList.add("result-slot--fresh");   // only the new one slides in
+        newest?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       });
     }
     // Results with no owning card hang at the end of the panel.
@@ -418,12 +424,9 @@ export function renderGm(mount, rerender) {
       onClear: async () => { const ok = await confirmModal("Clear the entire roll log?", { title: "Clear Roll Log", danger: true }); if (ok) { st.log = []; writeGmState(st); rerender(); } },
     }));
     const c = card("GM Case Scratchpad & Notes", "Persistent notes, oldest at the top. Pinned rolls and briefings are added at the bottom.");
-    const ta = el("textarea", { class: "input notes-area", rows: 12, placeholder: "Record campaign notes, secret twists, and NPC stats..." });
-    ta.value = st.scratchpad || "";
-    // newest entry is at the bottom — show it
-    requestAnimationFrame(() => { ta.scrollTop = ta.scrollHeight; });
-    ta.addEventListener("blur", () => { st.scratchpad = ta.value; writeGmState(st); showToast("GM notes saved."); });
-    c.append(ta); root.append(c);
+    c.append(notesView({ value: st.scratchpad || "", rows: 12, placeholder: "Record campaign notes, secret twists, and NPC stats...", savedToast: "GM notes saved.",
+      onSave: (v) => { st.scratchpad = v; writeGmState(st); } }));
+    root.append(c);
   }
 }
 

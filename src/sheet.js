@@ -228,17 +228,25 @@ function vitalsSection(ch, commit) {
   const hp = maxHealth(ch), rp = maxResolve(ch);
   const card = el("div", { class: "card" },
     sectionTitle("Vitals"),
-    vitalTrack("Health", "health", ch.state.health, hp, "health", commit),
-    vitalTrack("Resolve", "resolve", ch.state.resolve, rp, "resolve", commit));
+    vitalTrack("Health", "health", ch.state.health, hp, "health", commit, ch.id),
+    vitalTrack("Resolve", "resolve", ch.state.resolve, rp, "resolve", commit, ch.id));
   const badges = el("div", { class: "sheet__badges" });
   if (isBrokenByDamage(ch)) badges.append(el("span", { class: "badge badge--danger" }, "Broken (Damage) — no actions or skill rolls"));
   if (isBrokenByStress(ch)) badges.append(el("span", { class: "badge badge--danger" }, "Broken (Stress) — critical stress effect"));
   if (badges.childElementCount) card.append(badges);
   return card;
 }
-function vitalTrack(label, key, value, max, tone, commit) {
+// The last value each track was drawn with, so the pip that just changed can
+// pulse once — damage and healing are visible events, not a silent redraw.
+const lastVitals = new Map();
+function vitalTrack(label, key, value, max, tone, commit, charId) {
   const pips = el("div", { class: "track__pips", role: "img", "aria-label": `${label} ${value} of ${max}` });
-  for (let i = 1; i <= max; i++) pips.append(el("span", { class: `dot dot--${tone}` + (i <= value ? " dot--full" : "") }));
+  const memo = `${charId}:${key}`, prev = lastVitals.get(memo);
+  lastVitals.set(memo, value);
+  for (let i = 1; i <= max; i++) {
+    const changed = prev == null ? "" : i > value && i <= prev ? " dot--lost" : i <= value && i > prev ? " dot--gained" : "";
+    pips.append(el("span", { class: `dot dot--${tone}` + (i <= value ? " dot--full" : "") + changed }));
+  }
   return el("div", { class: "track" },
     el("div", { class: "track__top" },
       el("span", { class: "track__label" }, label),
@@ -373,7 +381,7 @@ function equippedArmor(ch) {
 // not the points.
 function acquireGear(ch, commit, rerender) {
   const catalog = R.acquirableItems();
-  modal({ title: "Acquire gear", render(body, close) {
+  modal({ title: "Acquire gear", sheet: true, search: true, render(body, close) {
     body.append(el("p", { class: "muted" }, `Promotion ${ch.state.promotionPoints} · Chinyen ${ch.state.chinyenPoints}. Cost is paid in points, then you roll ${R.skillName(D.ACQUISITION.skill)}.`));
     const cats = [...new Set(catalog.map((i) => i.cat))];
     for (const cat of cats) {
@@ -396,7 +404,7 @@ function sellGear(ch, commit, rerender) {
     const entry = catalog.find((c) => c.key === it.key || c.name.toLowerCase() === (it.name || "").toLowerCase());
     return { i, it, entry, price: entry ? R.sellPrice(entry.cost) : null };
   });
-  modal({ title: "Sell an item", render(body, close) {
+  modal({ title: "Sell an item", sheet: true, search: true, render(body, close) {
     body.append(el("p", { class: "muted" }, D.ACQUISITION.selling.note));
     if (!owned.length) { body.append(el("p", { class: "muted" }, "Nothing in your inventory.")); }
     const list = el("div", { class: "picker" });
@@ -791,7 +799,7 @@ function learnSpecialty(ch, commit) {
     const times = owned.filter((k) => k === sp.key).length;
     return sp.maxTimes ? times < sp.maxTimes : times < 1;
   });
-  modal({ title: "Learn a specialty (5 PP)", render(body, close) {
+  modal({ title: "Learn a specialty (5 PP)", sheet: true, search: true, render(body, close) {
     body.append(el("p", { class: "muted" }, "Spend 5 Promotion Points (one Downtime Shift at the Training Grounds)."));
     const list = el("div", { class: "picker" });
     for (const sp of available) list.append(el("button", { class: "list__row", onClick: () => {

@@ -18,7 +18,7 @@
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, guidanceChip, introLine } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, guidanceChip, introLine, notesView } from "./ui.js";
 import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY, stripGlyphs } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
@@ -81,6 +81,9 @@ const Cases = {
 let activeBtn = null;
 // Card key of the result just rolled — scrolled into view once, after paint.
 let freshResult = null;
+// The panel fades in only when the TAB changes — a roll re-renders the panel in
+// place and must not replay the entrance.
+let lastPanelKey = null;
 const cardTitleOf = (node) => node?.closest(".card")?.querySelector(".sheet__section")?.textContent || null;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -485,7 +488,8 @@ export function renderSolo(mount, rerender) {
   }
   const doneChip = (key) => (flagged(key) ? el("span", { class: "chip chip--done" }, "✓ done this Shift") : null);
 
-  const panel = el("div", { class: "panel" });
+  const panel = el("div", { class: "panel" + (st.panel !== lastPanelKey ? " panel--enter" : "") });
+  lastPanelKey = st.panel;
   ({ play: panelPlay, case: panelCase, shift: panelShift, scene: panelScene, board: panelBoard, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
   paintResults(panel);
   mount.append(panel);
@@ -538,7 +542,9 @@ export function renderSolo(mount, rerender) {
       requestAnimationFrame(() => {
         const host = [...panelEl.querySelectorAll(".card")].find((c) => c.querySelector(".sheet__section")?.textContent === fresh) || panelEl;
         const slotEls = host.querySelectorAll(":scope > .result-slot");
-        slotEls[slotEls.length - 1]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        const newest = slotEls[slotEls.length - 1];
+        newest?.classList.add("result-slot--fresh");   // only the new one slides in
+        newest?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       });
     }
     // Results with no owning card hang at the end of the panel.
@@ -778,7 +784,7 @@ export function renderSolo(mount, rerender) {
 
     // Pick a filed case, and seed the new one from what it left unfinished.
     function pickThread(filed) {
-      modal({ title: "Follow a thread", render(body, close) {
+      modal({ title: "Follow a thread", sheet: true, render(body, close) {
         body.append(el("p", { class: "muted" }, "Which closed case leaves something unfinished? Its answer, and what it cost, become the seed for this one."));
         const list = el("div", { class: "picker" });
         for (const f of filed) {
@@ -1209,12 +1215,8 @@ export function renderSolo(mount, rerender) {
       },
     }));
     const c = card("Solo Case Notes", "Persistent scratchpad, oldest at the top. Pinned rolls and briefings are added at the bottom.");
-    const ta = el("textarea", { class: "input notes-area", rows: 10, placeholder: "Record clues, suspects, and timeline events..." });
-    ta.value = st.scratchpad || "";
-    // newest entry is at the bottom — show it
-    requestAnimationFrame(() => { ta.scrollTop = ta.scrollHeight; });
-    ta.addEventListener("blur", () => { st.scratchpad = ta.value; writeSoloState(st); showToast("Notes saved."); });
-    c.append(ta);
+    c.append(notesView({ value: st.scratchpad || "", rows: 10, placeholder: "Record clues, suspects, and timeline events...",
+      onSave: (v) => { st.scratchpad = v; writeSoloState(st); } }));
     c.append(el("div", { class: "btn-row" },
       // One action, and it wipes the whole case (owner ruling): every solo tab,
       // every inline result, both roll logs, the Case Board, and any fight or

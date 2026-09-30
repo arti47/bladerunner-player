@@ -36,8 +36,12 @@ function pushPool(dice) { return dice.map((d) => (d.bane || d.succ > 0 ? d : mak
 const sumSucc = (dice) => dice.reduce((n, d) => n + d.succ, 0);
 const sumBane = (dice) => dice.reduce((n, d) => n + (d.bane ? 1 : 0), 0);
 
-function logRoll({ label, text, charId = null, charName = null, source = "roll" }) {
-  try { RollLog.add({ label, text, charId, charName, source }); } catch { /* storage best-effort */ }
+// `dice` (optional) is kept compact — [[size, face], …] — so the log can draw
+// the roll it records. Older entries without it simply show no dice.
+function logRoll({ label, text, charId = null, charName = null, source = "roll", dice = null }) {
+  const entry = { label, text, charId, charName, source };
+  if (Array.isArray(dice) && dice.length) entry.dice = dice.map((d) => [d.size, d.face]);
+  try { RollLog.add(entry); } catch { /* storage best-effort */ }
 }
 
 // Auto advantage/disadvantage from the character's current state. [§3.6]
@@ -184,10 +188,46 @@ export function dieNode(d) {
     el("span", { class: "die__face", "aria-hidden": "true" }, d.face),
     el("span", { class: "die__size", "aria-hidden": "true" }, `d${d.size}`));
 }
+// Dice are the one thing in the app that is animated for its own sake: each new
+// die tumbles through faces of its own size, then lands one after another and
+// flares (success) or flashes (a 1). A die kept from before a push was already
+// rolled, so it does not tumble again. The true face is in the aria-label from
+// the start; the scramble uses its own generator so it never draws from
+// Math.random (seeded playtests and forced-face tests stay deterministic).
+const rolledOnce = new WeakSet();
+const reduceMotion = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+let scrambleSeed = 0x2545f491;
+const scramble = (size) => { scrambleSeed = (scrambleSeed * 1103515245 + 12345) >>> 0; return 1 + (scrambleSeed % size); };
 function diceRow(dice) {
   const row = el("div", { class: "dice" });
-  dice.forEach((d, i) => { const n = dieNode(d); n.style.setProperty("--i", i); row.append(n); });
+  const fresh = [];
+  dice.forEach((d, i) => {
+    const n = dieNode(d);
+    n.style.setProperty("--i", i);
+    row.append(n);
+    if (!rolledOnce.has(d)) { fresh.push([n, d]); rolledOnce.add(d); }
+  });
+  if (fresh.length) row.classList.add("dice--fresh");
+  if (fresh.length && !reduceMotion()) tumble(fresh);
   return row;
+}
+function tumble(fresh) {
+  const t0 = performance.now();
+  fresh.forEach(([n]) => n.classList.add("die--rolling"));
+  const step = () => {
+    const t = performance.now() - t0;
+    let rolling = 0;
+    fresh.forEach(([n, d], i) => {
+      if (!n.classList.contains("die--rolling")) return;
+      const face = n.querySelector(".die__face");
+      if (t < 360 + i * 90) { rolling++; face.textContent = scramble(d.size); return; }
+      face.textContent = d.face;
+      n.classList.remove("die--rolling");
+      n.classList.add("die--landed");
+    });
+    if (rolling) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 function outcomeLine(succ, banes, pushed = false) {
   const ok = succ >= 1, crit = succ >= 2;
@@ -241,13 +281,15 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
             const km = st.keyMemory ? 1 : 0;
             const n = netOf(a.adv + st.adv + km, a.dis + st.dis);
             st.dice = poolFor(dsize(attrLevel()), dsize(ch.skills[skillKey]), n);
+            st.net = n;
             consumeAiming(ch, skillKey); // spend the aim on this shot
-            logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
+            logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet", dice: st.dice });
             st.phase = "result"; paint();
           } }, "⚄ Roll")));
       };
       const result = (b) => {
         const succ = sumSucc(st.dice), banes = sumBane(st.dice);
+        b.append(rollSummary(sk.name, st.dice, st.net || 0));
         b.append(diceRow(st.dice));
         b.append(outcomeLine(succ, banes, st.pushed));
         b.append(nextSteps(ch, sk, succ, (node) => b.insertBefore(node, b.lastChild)));
@@ -261,7 +303,7 @@ export function openSkillRoll(ch, skillKey, onDone, { maneuver = null } = {}) {
           if (st.keyMemory && ns < 1) { ch.state.resolve = Math.max(0, ch.state.resolve - 1); reclampVitals(ch); Store.save(ch); msg += " Key memory failed: +1 stress."; }
           logRoll({ label: `${sk.name} (push)`, text: outcomeSummary(ns, nb, true), charId: ch.id, charName: ch.name, source: "sheet" });
           st.note = msg; paint();
-        } }, "↻ Push the roll"));
+        } }, `↻ Push the roll — ${pushCost(ch, attrKey)}`));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
         b.append(actions);
       };
@@ -312,7 +354,7 @@ export function openOpposedSkillRoll(ch, onDone) {
             st.theirDice = poolFor(dsize(st.theirAttr), dsize(st.theirSkill), netOf(st.theirAdv, st.theirDis));
             consumeAiming(ch, st.mine);
             logRoll({ label: `Opposed — ${sk.name} vs ${R.skillName(st.theirSkillKey)}`,
-              text: `${sumSucc(st.mineDice)}–${sumSucc(st.theirDice)}`, charId: ch.id, charName: ch.name, source: "sheet" });
+              text: `${sumSucc(st.mineDice)}–${sumSucc(st.theirDice)}`, charId: ch.id, charName: ch.name, source: "sheet", dice: st.mineDice });
             st.phase = "result"; paint();
           } }, "⚄ Roll opposed")));
       };
@@ -333,9 +375,9 @@ export function openOpposedSkillRoll(ch, onDone) {
           st.mineDice = pushPool(st.mineDice); st.pushed = true;
           const risk = applyPushRisk(ch, R.skill(st.mine).attr, sumBane(st.mineDice));
           st.note = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
-          logRoll({ label: `Opposed — ${R.skillName(st.mine)} (push)`, text: `${sumSucc(st.mineDice)}–${theirs}`, charId: ch.id, charName: ch.name, source: "sheet" });
+          logRoll({ label: `Opposed — ${R.skillName(st.mine)} (push)`, text: `${sumSucc(st.mineDice)}–${theirs}`, charId: ch.id, charName: ch.name, source: "sheet", dice: st.mineDice });
           paint();
-        } }, "↻ Push (initiator only)"));
+        } }, `↻ Push (initiator only) — ${pushCost(ch, R.skill(st.mine).attr)}`));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
         b.append(actions);
       };
@@ -413,7 +455,7 @@ export function proceduralRoll(ch, { skillKey, title, adv = 0, dis = 0, allowPus
           b.append(netBadge(net));
           b.append(el("div", { class: "modal__actions" },
             el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
-            el("button", { class: "btn btn--primary", onClick: () => { st.dice = poolFor(dsize(attrLv), dsize(ch.skills[skillKey]), net); logRoll({ label: title || sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" }); paint(); } }, "⚄ Roll")));
+            el("button", { class: "btn btn--primary", onClick: () => { st.dice = poolFor(dsize(attrLv), dsize(ch.skills[skillKey]), net); logRoll({ label: title || sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet", dice: st.dice }); paint(); } }, "⚄ Roll")));
           return;
         }
         b.append(diceRow(st.dice));
@@ -424,9 +466,9 @@ export function proceduralRoll(ch, { skillKey, title, adv = 0, dis = 0, allowPus
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.msg = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
-          logRoll({ label: `${title || sk.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice), true), charId: ch.id, charName: ch.name, source: "sheet" });
+          logRoll({ label: `${title || sk.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice), true), charId: ch.id, charName: ch.name, source: "sheet", dice: st.dice });
           paint();
-        } }, "↻ Push"));
+        } }, `↻ Push — ${pushCost(ch, sk.attr)}`));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => { close(); onResult && onResult({ successes: sumSucc(st.dice), banes: sumBane(st.dice), pushed: st.pushed }); } }, "Apply result"));
         b.append(actions);
       };
@@ -491,7 +533,7 @@ export function openWeaponPicker(ch, onDone) {
   }
 
   modal({
-    title: "Choose a weapon",
+    title: "Choose a weapon", sheet: true, search: true,
     render(body, close) {
       const list = el("div", { class: "picker" });
       if (armedWeapons.length) {
@@ -584,7 +626,7 @@ export function openAttackRoll(ch, weapon, onDone) {
             const n = netOf(a.adv + st.adv, a.dis + st.dis);
             st.dice = poolFor(dsize(ch.attributes[sk.attr]), dsize(ch.skills[skillKey]), n);
             consumeAiming(ch, skillKey); // spend the aim on this shot
-            logRoll({ label: `Attack — ${weapon.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet" });
+            logRoll({ label: `Attack — ${weapon.name}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: ch.id, charName: ch.name, source: "sheet", dice: st.dice });
             st.phase = "result"; paint();
           } }, "⚄ Attack")));
       };
@@ -599,9 +641,9 @@ export function openAttackRoll(ch, weapon, onDone) {
           st.dice = pushPool(st.dice); st.pushed = true;
           const risk = applyPushRisk(ch, sk.attr, sumBane(st.dice));
           st.note = risk ? `Push: ${risk.banes} ${risk.stress ? "stress" : "damage"} taken.` : "Push: no banes.";
-          logRoll({ label: `Attack — ${weapon.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice), true), charId: ch.id, charName: ch.name, source: "sheet" });
+          logRoll({ label: `Attack — ${weapon.name} (push)`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice), true), charId: ch.id, charName: ch.name, source: "sheet", dice: st.dice });
           paint();
-        } }, "↻ Push the roll"));
+        } }, `↻ Push the roll — ${pushCost(ch, sk.attr)}`));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
         b.append(actions);
       };
@@ -705,7 +747,21 @@ function autoNote(ch, skillKey, a) {
     if (ch.state.conditions?.[c.key] && c.effect?.selfMeleeDisadvantage && skillKey === "hand_to_hand") parts.push(`${c.name}: −1`);
   for (const inj of ch.state.criticalInjuries || []) if ((inj.disadvantage || []).includes(skillKey)) parts.push(`${inj.injury}: −1`);
   if (ch.state.criticalStress?.skillDisadvantage) parts.push(`${ch.state.criticalStress.name}: −1`);
-  return "Auto from state — " + (parts.join("; ") || "none");
+  // Each automatic modifier is a tag (a penalty in the danger role, a bonus in
+  // the success role), so the reason a die appeared or vanished is scannable.
+  return el("span", { class: "roll-auto__tags" }, el("span", { class: "roll-auto__lead" }, "Auto from state —"),
+    ...(parts.length ? parts : ["none"]).map((p) => el("span", { class: "tag tag--sm" + (/−/.test(p) ? " tag--dis" : /\+/.test(p) ? " tag--adv" : "") }, p)));
+}
+// One line at the top of a result: what was rolled, from which dice.
+function rollSummary(name, dice, net) {
+  const mod = net > 0 ? " · +1 advantage" : net < 0 ? " · disadvantage" : "";
+  return el("div", { class: "roll-summary" }, `${name} · ${dice.map((d) => `d${d.size}`).join(" + ")}${mod}`);
+}
+// What a push will cost, said on the button: damage for Strength/Agility,
+// stress for Intelligence/Empathy — and always stress for a Replicant.
+function pushCost(ch, attrKey) {
+  const stress = ch?.nature === "replicant" || attrKey === "INT" || attrKey === "EMP";
+  return `each 1 costs ${stress ? "1 stress" : "1 damage"}`;
 }
 function checkbox(on, onChange) { const i = el("input", { type: "checkbox", checked: on || null }); i.addEventListener("change", onChange); return i; }
 function weaponLine(w) {
@@ -862,7 +918,7 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
           el("button", { class: "btn btn--primary", onClick: () => {
             st.dice = poolFor(dsize(attrLv), dsize(skLv), net);
-            logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
+            logRoll({ label: sk.name, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat", dice: st.dice });
             st.phase = "result"; paint();
           } }, "⚄ Roll")));
       };
@@ -887,7 +943,7 @@ function openCombatSkillExecute(c, rc, sk, attrLv, skLv, commit) {
             st.note = nb > 0 ? `Push: ${nb} stress banes ignored for NPC.` : "Push: no banes.";
           }
           paint();
-        } }, "↻ Push the roll"));
+        } }, `↻ Push the roll — ${pushCost(rc.pc, sk.attr)}`));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
         b.append(actions);
       };
@@ -920,7 +976,7 @@ export function rollCombatDeathProcedure(c, inj, mode, commit) {
           el("button", { class: "btn btn--ghost", onClick: () => close() }, "Cancel"),
           el("button", { class: "btn btn--primary", onClick: () => {
             st.dice = poolFor(dsize(attrLv), dsize(skLv), netOf(st.adv, st.dis));
-            logRoll({ label: mode === "save" ? "Death save" : "Stabilize", text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: c.charId || null, charName: c.name, source: "combat" });
+            logRoll({ label: mode === "save" ? "Death save" : "Stabilize", text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: c.charId || null, charName: c.name, source: "combat", dice: st.dice });
             st.phase = "result"; paint();
           } }, "⚄ Roll")));
       };
@@ -968,7 +1024,7 @@ export function rollCombatAttack(c, commit) {
   if (c.health <= 0) { showToast(`${c.name} is Broken — attack rolls blocked.`, { kind: "warn" }); return; }
   const rc = resolveCombatant(c);
   modal({
-    title: `Combat Attack — ${c.name}`,
+    title: `Combat Attack — ${c.name}`, sheet: true, search: true,
     render(body, close) {
       body.append(el("p", { class: "muted" }, "Select weapon to attack with:"));
       const list = el("div", { class: "picker" });
@@ -1054,7 +1110,7 @@ function openRangedAttack(c, rc, w, commit) {
             }
             st.dice = poolFor(dsize(attrLv), dsize(skLv), net);
             consumeCombatAiming(c, skKey, commit);   // the aim is spent on this shot
-            logRoll({ label: `Ranged ${w.name} → ${targetOf()?.name || "no target"}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat" });
+            logRoll({ label: `Ranged ${w.name} → ${targetOf()?.name || "no target"}`, text: outcomeSummary(sumSucc(st.dice), sumBane(st.dice)), charId: rc.pc?.id || null, charName: c.name, source: "combat", dice: st.dice });
             st.phase = "result"; paint();
           } }, "⚄ Attack")));
       };
@@ -1103,7 +1159,7 @@ function openRangedAttack(c, rc, w, commit) {
             st.note = "Push: no banes.";
           }
           paint();
-        } }, "↻ Push the roll"));
+        } }, `↻ Push the roll — ${pushCost(rc.pc, "AGI")}`));
         actions.append(el("button", { class: "btn btn--primary", onClick: () => close() }, "Done"));
         b.append(actions);
       };
@@ -1258,7 +1314,7 @@ function runOpposedMeleeModal(c, rc, w, e, rEnemy, commit) {
           el("button", { class: "btn btn--primary", onClick: () => {
             st.attDice = poolFor(dsize(attAttrLv), dsize(attSkLv), netOf(st.attAdv + tm.adv, st.attDis + sm.dis));
             st.defDice = noDefence ? [] : poolFor(dsize(defAttrLv), dsize(defSkLv), netOf(st.defAdv, st.defDis));
-            logRoll({ label: `Close combat ${w.name} → ${e.name}`, text: `${sumSucc(st.attDice)}–${sumSucc(st.defDice)} (${w.name})`, charId: rc.pc?.id || null, charName: c.name, source: "combat" });
+            logRoll({ label: `Close combat ${w.name} → ${e.name}`, text: `${sumSucc(st.attDice)}–${sumSucc(st.defDice)} (${w.name})`, charId: rc.pc?.id || null, charName: c.name, source: "combat", dice: st.attDice });
             st.phase = "result"; paint();
           } }, "⚄ Roll Opposed")));
       };

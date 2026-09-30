@@ -77,9 +77,19 @@ function paint(mount) {
   const step = STEPS[draft.step];
   const wrap = el("section", { class: "screen wizard" });
   // progress
+  // A labelled stepper: every finished step is a way back to it.
+  const dots = el("ol", { class: "wiz__steps", "aria-label": "Creation steps" });
+  STEPS.forEach((s, i) => {
+    const state = i < draft.step ? "done" : i === draft.step ? "now" : "todo";
+    dots.append(el("li", { class: `wiz__dot wiz__dot--${state}` },
+      i < draft.step
+        ? el("button", { class: "wiz__dot-btn", "aria-label": `Back to step ${i + 1}: ${s.title}`, title: s.title,
+            onClick: () => { draft.step = i; paint(mount); window.scrollTo(0, 0); } }, String(i + 1))
+        : el("span", { class: "wiz__dot-btn", "aria-current": i === draft.step ? "step" : null, title: s.title }, String(i + 1))));
+  });
   wrap.append(el("div", { class: "wiz__progress" },
     el("div", { class: "wiz__count muted" }, `Step ${draft.step + 1} of ${STEPS.length}`),
-    el("div", { class: "wiz__bar" }, el("div", { class: "wiz__bar-fill", style: `width:${((draft.step + 1) / STEPS.length) * 100}%` }))));
+    dots));
   wrap.append(el("h1", { class: "screen__title" }, step.title));
   const body = el("div", { class: "wiz__body" });
   step.render(body, () => paint(mount));
@@ -93,11 +103,18 @@ function paint(mount) {
       ? el("button", { class: "btn btn--primary", disabled: !canNext || null, onClick: () => next(mount) }, "Next ›")
       : el("button", { class: "btn btn--primary", onClick: () => finish() }, "Create Blade Runner"));
   wrap.append(nav);
+  // A locked Next says why, right under it.
+  const why = el("p", { class: "wiz__why muted", "aria-live": "polite" }, canNext ? "" : whyNot(step));
+  wrap.append(why);
   // Typing a name must un-gate Next without a repaint (a repaint would take the
   // caret out of the field mid-word).
   navSync = () => {
     const b = nav.querySelector(".btn--primary");
-    if (b && draft.step < STEPS.length - 1) b.disabled = !stepReady(STEPS[draft.step]);
+    if (b && draft.step < STEPS.length - 1) {
+      const ready = stepReady(STEPS[draft.step]);
+      b.disabled = !ready;
+      why.textContent = ready ? "" : whyNot(STEPS[draft.step]);
+    }
   };
   mount.append(wrap);
 }
@@ -105,6 +122,11 @@ function paint(mount) {
 let navSync = null;
 const refreshNav = () => { try { navSync && navSync(); } catch {} };
 
+function whyNot(step) {
+  if (step.validate) { const v = step.validate(draft); return v.ok ? "" : `Next unlocks when: ${(v.errors || [])[0] || "this step is complete"}`; }
+  return { nature: "Next unlocks when you choose Human or Replicant.", archetype: "Next unlocks when you choose an archetype.",
+    years: "Next unlocks when you choose your years on the force.", identity: "Next unlocks when your Blade Runner has a name." }[step.key] || "";
+}
 function stepReady(step) {
   if (step.validate) return step.validate(draft).ok;
   switch (step.key) {
@@ -262,7 +284,7 @@ function stepAttributes(body, rerender) {
   const used = R.attrStepsUsed(draft.attributes);
   const arch = R.archetype(draft.archetype);
   body.append(el("p", { class: "muted" }, `Start at C. Spend exactly ${budget} increase${budget === 1 ? "" : "s"} (one step each). Lower one attribute to D to gain an extra.` + (arch.keyAttr ? ` Key: ${R.attrDisplay(arch.keyAttr)} must be B+.` : " No archetype — choose your own focus.")));
-  body.append(el("div", { class: "budget" + (used === budget ? " budget--ok" : "") }, `Increases used: ${used} / ${budget}`));
+  body.append(budgetMeter(used, budget));
   for (const a of D.ATTRIBUTES) {
     body.append(stepper(a.name + (a.key === arch.keyAttr ? " ★" : ""), draft.attributes[a.key],
       (dir) => { draft.attributes[a.key] = R.stepLevel(draft.attributes[a.key], dir); rerender(); }, `d${D.LEVEL_DIE[draft.attributes[a.key]]}`));
@@ -280,7 +302,7 @@ function stepSkills(body, rerender) {
   const used = R.skillStepsUsed(draft.skills);
   const arch = R.archetype(draft.archetype);
   body.append(el("p", { class: "muted" }, `Start at D. Spend exactly ${budget} increases.` + (arch.keySkills.length ? " Key skills (★) must end C+." : " No archetype — spend them where you like.")));
-  body.append(el("div", { class: "budget" + (used === budget ? " budget--ok" : "") }, `Increases used: ${used} / ${budget}`));
+  body.append(budgetMeter(used, budget));
   for (const s of D.SKILLS) {
     if (s.key === "driving") continue; // Driving uses vehicle Maneuverability; still trainable
     const isKey = arch.keySkills.includes(s.key);
@@ -443,6 +465,15 @@ function stepper(label, level, onStep, dieLabel, meta) {
       el("button", { class: "btn btn--sm", "aria-label": "decrease " + label, onClick: () => onStep(-1) }, "−"),
       el("span", { class: "stepper__val" }, level, el("span", { class: "muted stepper__die" }, " " + dieLabel)),
       el("button", { class: "btn btn--sm", "aria-label": "increase " + label, onClick: () => onStep(+1) }, "+")));
+}
+// The increases to spend, as a meter that fills — over-spending shows red.
+function budgetMeter(used, budget) {
+  const m = el("div", { class: "budget-meter" + (used === budget ? " budget-meter--ok" : used > budget ? " budget-meter--over" : ""),
+    role: "meter", "aria-valuemin": "0", "aria-valuemax": String(budget), "aria-valuenow": String(used), "aria-label": "Increases used" });
+  const segs = el("div", { class: "budget-meter__segs" });
+  for (let i = 1; i <= Math.max(budget, used); i++) segs.append(el("span", { class: "budget-meter__seg" + (i <= used ? " budget-meter__seg--on" : "") + (i > budget ? " budget-meter__seg--over" : "") }));
+  m.append(segs, el("div", { class: "budget" + (used === budget ? " budget--ok" : "") }, `Increases used: ${used} / ${budget}`));
+  return m;
 }
 function rollBtn(label, onClick) { return el("button", { class: "btn btn--roll", onClick }, "⚄ " + label); }
 function field(label, value, onInput, onRoll, wide, placeholder) {

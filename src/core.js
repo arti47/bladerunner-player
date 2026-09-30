@@ -25,7 +25,7 @@ export const ICON_GLYPHS = {
   "🛡": "shield", "🛒": "cart", "🕵": "person", "📋": "clipboard", "📖": "book",
   "♥": "heart", "◈": "resolve", "▲": "up", "▼": "down", "←": "back", "→": "next",
   "●": "dot-on", "○": "dot-off", "◉": "home", "☰": "people", "❖": "library",
-  "◐": "solo", "▣": "gm", "⚙": "settings",
+  "◐": "solo", "▣": "gm", "⚙": "settings", "⋯": "more",
 };
 const G = Object.keys(ICON_GLYPHS).sort((a, b) => b.length - a.length).map((g) => g.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const RX_ONLY = new RegExp(`^\\s*(${G})\uFE0F?\\s*$`, "u");

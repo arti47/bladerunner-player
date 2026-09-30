@@ -35,7 +35,24 @@ const ACTIONS = [
 // How many things you can turn up at one place before the app suggests moving on.
 const ACTIONS_PER_LOCATION = 3;
 
+// One keyboard listener for the whole app: on the guided card, 1–9 press the
+// matching choice (never while typing, and never under a dialog).
+let keysBound = false;
+function bindChoiceKeys() {
+  if (keysBound) return;
+  keysBound = true;
+  document.addEventListener("keydown", (e) => {
+    if (!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (document.querySelector(".modal-overlay")) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) return;
+    const btns = document.querySelectorAll(".play-card .play__choices .btn");
+    const b = btns[Number(e.key) - 1];
+    if (b && !b.disabled) { e.preventDefault(); b.click(); }
+  });
+}
+
 export function renderPlayPanel(root, ctx) {
+  bindChoiceKeys();
   const { card, btn, st, save, rerender, openCase, closeCase, rollBriefing, rollMainNpc, addNote, pinNote, applyPoints, navigate } = ctx;
   const ch = Store.getActive();
   const p = (st.play ||= blank());
@@ -44,12 +61,22 @@ export function renderPlayPanel(root, ctx) {
   // title: where you are. prose: what just happened. choices: what you can do.
   function ask({ eyebrow, title, prose, choices, footer }) {
     const c = card(title, null);
+    c.classList.add("play-card");
     if (eyebrow) c.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, eyebrow));
+    // Where you are in the case, as a file reference.
+    const crumbs = [st.caseOpen ? `Case #${st.caseOpen.no}` : null, st.caseOpen ? `Shift ${st.shiftNo || 1}` : null, p.location || null].filter(Boolean);
+    if (crumbs.length) c.prepend(el("div", { class: "play__crumbs", "aria-label": "Where you are" }, crumbs.join(" · ")));
     for (const line of [].concat(prose || [])) {
       if (line) c.append(el("p", { class: "play__prose" }, line));
     }
+    // Numbered choices: press 1–4 on a keyboard, or tap.
     const row = el("div", { class: "play__choices" });
-    for (const [label, fn, variant] of choices.filter(Boolean)) row.append(btn(label, fn, variant || "primary"));
+    choices.filter(Boolean).forEach(([label, fn, variant], i) => {
+      const b = btn(label, fn, variant || "primary");
+      if (i < 9) b.prepend(el("span", { class: "play__num", "aria-hidden": "true" }, String(i + 1)));
+      b.append(el("span", { class: "play__chev", "aria-hidden": "true" }, "→"));
+      row.append(b);
+    });
     c.append(row);
     if (footer) c.append(el("p", { class: "muted small" }, footer));
     root.append(c);

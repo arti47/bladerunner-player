@@ -44,10 +44,12 @@ export function announce(text) {
 }
 
 // Core modal. Returns { close }. `render(body, close)` fills the body.
-export function modal({ title = "", render, dismissable = true, onClose } = {}) {
+// `sheet: true` presents a long list as a bottom sheet on a phone (a centred box
+// on wider screens); `search: true` adds a filter over its rows.
+export function modal({ title = "", render, dismissable = true, onClose, sheet = false, search = false } = {}) {
   const prevFocus = document.activeElement;
-  const overlay = el("div", { class: "modal-overlay" });
-  const dialog = el("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-label": title || "Dialog" });
+  const overlay = el("div", { class: "modal-overlay" + (sheet ? " modal-overlay--sheet" : "") });
+  const dialog = el("div", { class: "modal" + (sheet ? " modal--sheet" : ""), role: "dialog", "aria-modal": "true", "aria-label": title || "Dialog" });
   const header = title ? el("div", { class: "modal__header" }, el("h2", { class: "modal__title" }, title)) : null;
   const body = el("div", { class: "modal__body" });
   if (header) dialog.append(header);
@@ -69,12 +71,39 @@ export function modal({ title = "", render, dismissable = true, onClose } = {}) 
   if (dismissable) overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
 
   if (typeof render === "function") render(body, close);
+  if (search) body.prepend(searchFilter(body));
   // focus first focusable
   requestAnimationFrame(() => {
-    const f = dialog.querySelector("button, [href], input, select, textarea, [tabindex]");
+    // On a touch screen, do not open the keyboard by focusing a picker's search.
+    const touch = !!window.matchMedia?.("(pointer: coarse)").matches;
+    const f = dialog.querySelector(touch ? "button, [href], input:not(.picker-search), select, textarea, [tabindex]" : "button, [href], input, select, textarea, [tabindex]");
     (f || dialog).focus?.();
   });
   return { close, dialog, body };
+}
+
+// Filter the rows of a picker as you type. Groups (<details>) open while a
+// search is active and hide when nothing in them matches.
+const PICK_ROWS = ".list__row, .picker__row, .picker__row--btn, .board__pick .btn, .choice";
+function searchFilter(body) {
+  const input = el("input", { class: "input picker-search", type: "search", placeholder: "Search…", "aria-label": "Filter this list", autocomplete: "off" });
+  const count = el("span", { class: "picker-search__count muted", "aria-live": "polite" });
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row of body.querySelectorAll(PICK_ROWS)) {
+      const hit = !q || row.textContent.toLowerCase().includes(q);
+      row.hidden = !hit;
+      if (hit) shown++;
+    }
+    for (const d of body.querySelectorAll("details")) {
+      const any = [...d.querySelectorAll(PICK_ROWS)].some((r) => !r.hidden);
+      d.hidden = !!q && !any;
+      if (q && any) d.open = true;
+    }
+    count.textContent = q ? `${shown} match${shown === 1 ? "" : "es"}` : "";
+  });
+  return el("div", { class: "picker-search__wrap" }, input, count);
 }
 
 function trapFocus(e, container) {
@@ -150,6 +179,42 @@ export function introLine(text, onDismiss) {
     el("button", { class: "btn btn--sm btn--ghost", "aria-label": "Dismiss this introduction", onClick: onDismiss }, "✕"));
 }
 
+// Case notes: a rendered read view by default (pinned rolls as tagged entries,
+// case headers as headings), with Edit switching to the plain textarea. The
+// stored text is exactly what it was — this is presentation only.
+export function notesView({ value = "", onSave, rows = 10, placeholder = "", savedToast = "Notes saved." } = {}) {
+  const box = el("div", { class: "notes" });
+  const paintRead = () => {
+    box.replaceChildren();
+    const read = el("div", { class: "notes-read", tabindex: "0", "aria-label": "Case notes" });
+    const text = String(value || "").trim();
+    if (!text) read.append(el("p", { class: "muted" }, "No notes yet — pinned rolls and briefings land here, oldest at the top. Press Edit notes to write your own."));
+    for (const raw of text ? text.split("\n") : []) {
+      const line = raw.trim();
+      if (!line) continue;
+      let m;
+      if ((m = line.match(/^=+\s*(.*?)\s*=+$/))) read.append(el("h3", { class: "notes-read__head" }, m[1]));
+      else if (/^-{3,}$/.test(line)) read.append(el("hr", { class: "notes-read__rule" }));
+      else if ((m = line.match(/^[•*-]?\s*\[([^\]]+)\]\s*(.*)$/))) read.append(el("div", { class: "notes-read__entry" },
+        el("span", { class: "tag tag--sm notes-read__tag" }, m[1]), el("span", { class: "notes-read__text" }, m[2])));
+      else read.append(el("p", { class: "notes-read__p" }, line.replace(/^[•*]\s*/, "")));
+    }
+    box.append(read, el("div", { class: "btn-row" }, el("button", { class: "btn btn--sm btn--ghost", onClick: paintEdit }, "✎ Edit notes")));
+    requestAnimationFrame(() => { read.scrollTop = read.scrollHeight; });   // newest at the bottom
+  };
+  const paintEdit = () => {
+    box.replaceChildren();
+    const ta = el("textarea", { class: "input notes-area", rows, placeholder, "aria-label": "Case notes" });
+    ta.value = value || "";
+    const save = () => { if (ta.value !== value) { value = ta.value; onSave?.(value); showToast(savedToast); } };
+    ta.addEventListener("blur", save);
+    box.append(ta, el("div", { class: "btn-row" }, el("button", { class: "btn btn--sm btn--primary", onClick: () => { save(); paintRead(); } }, "✓ Done")));
+    requestAnimationFrame(() => { ta.focus(); ta.scrollTop = ta.scrollHeight; });
+  };
+  paintRead();
+  return box;
+}
+
 // Re-exported so the note-writing screens keep a single import surface.
 export { appendToNotes };
 
@@ -210,6 +275,16 @@ export function segmentNav({ segments = [], active, onSelect } = {}) {
   return row;
 }
 
+// The outcome a log line reports, as a tone for its marker. Text is what every
+// entry has (older entries carry no dice), so read it from there.
+function outcomeTone(text = "") {
+  if (/\bbane/.test(text)) return "bane";
+  if (/^Critical/.test(text)) return "crit";
+  if (/^Success|Wins|win the opposition/.test(text)) return "succ";
+  if (/^Failure/.test(text)) return "fail";
+  return "";
+}
+
 // Collapsible "Roll Log" card. Entries are given newest-first (storage order)
 // and rendered oldest-first so the whole screen reads top to bottom, like the
 // notes below it; the list scrolls to the newest entry after render.
@@ -229,13 +304,34 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
   } else {
     for (const e of [...entries].reverse()) {
       const time = new Date(e.ts || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      list.append(el("div", { class: "rolllog__row" },
+      const tone = outcomeTone(e.text);
+      const menu = (onPin || onDelete) ? el("details", { class: "rowmenu" },
+        el("summary", { class: "rowmenu__toggle", "aria-label": `Actions for ${e.label}`, title: "Actions" }, "⋯"),
+        el("div", { class: "rowmenu__list" },
+          onPin ? el("button", { class: "iconbtn rowmenu__item", "aria-label": pinLabel, onClick: () => onPin(e) }, "📌", el("span", {}, pinLabel)) : null,
+          onDelete ? el("button", { class: "iconbtn rowmenu__item", "aria-label": "Remove entry", onClick: () => onDelete(e) }, "✕", el("span", {}, "Remove entry")) : null)) : null;
+      // The log scrolls, so an absolutely placed menu would be clipped by it —
+      // pin the menu to the viewport under (or above) its button instead, and
+      // close it when the page moves. Only one is open at a time.
+      menu?.addEventListener("toggle", () => {
+        if (!menu.open) return;
+        list.querySelectorAll(".rowmenu[open]").forEach((m) => { if (m !== menu) m.open = false; });
+        const pop = menu.querySelector(".rowmenu__list");
+        const r = menu.querySelector("summary").getBoundingClientRect();
+        const h = pop.offsetHeight;
+        pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
+        pop.style.top = `${r.bottom + 4 + h > innerHeight ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+        const shut = () => { menu.open = false; };
+        window.addEventListener("scroll", shut, { once: true, capture: true });
+      });
+      list.append(el("div", { class: "rolllog__row" + (tone ? ` rolllog__row--${tone}` : "") },
         el("span", { class: "rolllog__time muted" }, time),
         el("span", { class: "rolllog__label" }, e.label),
-        el("span", { class: "rolllog__text" }, e.text),
-        el("span", { class: "rolllog__row-actions" },
-          onPin ? el("button", { class: "iconbtn", title: pinLabel, "aria-label": pinLabel, onClick: () => onPin(e) }, "📌") : null,
-          onDelete ? el("button", { class: "iconbtn", title: "Remove entry", "aria-label": "Remove entry", onClick: () => onDelete(e) }, "✕") : null)));
+        el("span", { class: "rolllog__text" }, e.text, Array.isArray(e.dice) && e.dice.length
+          ? el("span", { class: "minidice", "aria-hidden": "true" }, ...e.dice.map(([size, face]) =>
+              el("span", { class: "minidie" + (face === 1 ? " minidie--bane" : face >= 10 ? " minidie--crit" : face >= 6 ? " minidie--succ" : ""), title: `d${size}` }, String(face))))
+          : null),
+        el("span", { class: "rolllog__row-actions" }, menu)));
     }
   }
   details.append(list);
