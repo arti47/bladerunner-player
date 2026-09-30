@@ -12,7 +12,7 @@ import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes, guidanceChip, introLine } from "./ui.js";
 import { rollDie, uid, titleCase, clear, stripGlyphs } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { navigate } from "./router.js";
@@ -129,18 +129,18 @@ export function renderGm(mount, rerender) {
     record(label, text, pinLine);   // record() rerenders, painting the slot
   };
 
-  mount.append(el("div", { class: "card screen-head" },
-    sectionTitle("Game Master Screen"),
-    el("p", { class: "muted" }, "Command center — manage the party, build cases, and drop adversaries into combat.")));
-  mount.append(el("div", { class: "chips autopin" },
+  mount.append(el("h1", { class: "visually-hidden" }, "Game Master Screen"));
+  mount.append(el("div", { class: "screen-tools" }, el("div", { class: "chips autopin" },
     el("button", {
       class: "chip" + (st.autoPin ? " chip--on" : ""),
       "aria-pressed": st.autoPin ? "true" : "false",
       onClick: () => { st.autoPin = !st.autoPin; writeGmState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
-    }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)));
+    }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)), guidanceChip()));
   mount.append(segmentNav({ segments: SEGMENTS, active: st.panel,
     // Switching tabs starts at the top; an in-panel roll keeps your place.
-    onSelect: (k) => { st.panel = k; writeGmState(st); rerender(); window.scrollTo(0, 0); } }));
+    onSelect: (k) => { st.panel = k; st.introSeen = true; writeGmState(st); rerender(); window.scrollTo(0, 0); } }));
+  if (!st.introSeen) mount.append(introLine("Command center — manage the party, build cases, and drop adversaries into combat.",
+    () => { st.introSeen = true; writeGmState(st); rerender(); }));
 
   const panel = el("div", { class: "panel" });
   ({ prep: panelPrep, play: panelPlay, fight: panelFight, wrap: panelWrap, notes: panelNotes }[st.panel] || panelPrep)(panel);

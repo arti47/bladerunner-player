@@ -7,7 +7,7 @@ import * as D from "../data.js";
 import * as R from "./rules.js";
 import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress, downtimeLimitFor, applyInvestigationShift, applyDowntimeShift } from "./derived.js";
 import { Store, RollLog } from "./store.js";
-import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard } from "./ui.js";
+import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard, guidanceChip } from "./ui.js";
 import { navigate } from "./router.js";
 import { Settings } from "./settings.js";
 import { openSkillRoll, openWeaponPicker, proceduralRoll, openOpposedSkillRoll } from "./roller.js";
@@ -123,20 +123,35 @@ export function renderSheet(mount) {
   if (Settings.solo()) wrap.append(backToSolo());
   wrap.append(sheetHeader(ch, arch, y, commit));
   if (ch.state.dead) wrap.append(deceasedBanner(ch, commit, rerender));
-  wrap.append(vitalsSection(ch, commit));
-  wrap.append(criticalInjuriesSection(ch, commit, rerender));
+  // Priority stack: what you touch every scene stays open at the top; the rest
+  // sits behind one "More" (UX audit). A wound or a breakdown is never hidden —
+  // while one is live its section joins the stack.
+  const injured = (ch.state.criticalInjuries || []).length > 0;
+  const vitals = vitalsSection(ch, commit);
+  vitals.append(resourcesBlock(ch, commit));
+  wrap.append(vitals);
+  if (injured) wrap.append(criticalInjuriesSection(ch, commit, rerender));
   if (isBrokenByStress(ch) && !ch.state.dead) wrap.append(stressSection(ch, commit));
-  wrap.append(resourcesSection(ch, commit));
   wrap.append(conditionsSection(ch, commit));
-  wrap.append(attributesSection(ch));
-  wrap.append(skillsSection(ch, arch, rerender));
-  wrap.append(specialtiesSection(ch));
+  const skills = skillsSection(ch, arch, rerender);
+  skills.prepend(attributesBlock(ch));   // the dice you roll, above the skills that use them
+  wrap.append(skills);
   wrap.append(inventorySection(ch, commit, rerender));
-  wrap.append(recoverySection(ch, commit, rerender));
-  wrap.append(advancementSection(ch, commit, rerender));
-  wrap.append(rollLogSection(ch, commit, rerender));
-  wrap.append(journalSection(ch, commit));
-  wrap.append(identitySection(ch, commit));
+  const more = el("details", { class: "sheet-more", open: sheetPrefs().moreOpen || null });
+  more.addEventListener("toggle", () => sheetPrefs({ moreOpen: more.open }));
+  more.append(el("summary", { class: "sheet-more__summary" },
+    el("span", { class: "sheet-more__title" }, "More"),
+    el("span", { class: "muted sheet-more__list" }, `specialties, ${injured ? "" : "injuries, "}recovery, advancement, roll log, journal, identity`)));
+  const moreBody = el("div", { class: "sheet-more__body" });
+  moreBody.append(specialtiesSection(ch));
+  if (!injured) moreBody.append(criticalInjuriesSection(ch, commit, rerender));
+  moreBody.append(recoverySection(ch, commit, rerender));
+  moreBody.append(advancementSection(ch, commit, rerender));
+  moreBody.append(rollLogSection(ch, commit, rerender));
+  moreBody.append(journalSection(ch, commit));
+  moreBody.append(identitySection(ch, commit));
+  more.append(moreBody);
+  wrap.append(more);
   wrap.append(dangerZone(ch, mount));
   paintGuidance(wrap);
 
@@ -144,15 +159,25 @@ export function renderSheet(mount) {
 }
 
 // Attach the collapsed "how to use this" note to every section that has one.
+// A card that folds two sections together (Vitals + Resources, Skills +
+// Attributes) carries both sets of lines.
 function paintGuidance(wrap) {
   for (const cardEl of wrap.querySelectorAll(".card")) {
-    const key = cardEl.querySelector(".sheet__section")?.textContent;
-    if (!key || !HOW[key]) continue;
+    const lines = [...cardEl.querySelectorAll(".sheet__section")].flatMap((h) => HOW[h.textContent] || []);
+    if (!lines.length) continue;
     cardEl.append(el("details", { class: "how" },
       el("summary", {}, "How to use this"),
-      ...HOW[key].map(([what, when]) => el("p", { class: "how__line" },
+      ...lines.map(([what, when]) => el("p", { class: "how__line" },
         el("strong", {}, what), " ", el("span", { class: "muted" }, when)))));
   }
+}
+// Per-device sheet layout preferences (the More expander).
+const SHEET_KEY = "brp:sheet";
+function sheetPrefs(patch) {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(SHEET_KEY) || "{}"); } catch { /* best-effort */ }
+  if (patch) { p = { ...p, ...patch }; try { localStorage.setItem(SHEET_KEY, JSON.stringify(p)); } catch { /* best-effort */ } }
+  return p;
 }
 
 // ---- Header + portrait ----------------------------------------------------
@@ -179,11 +204,12 @@ function sheetHeader(ch, arch, y, commit) {
   const head = el("div", { class: "card sheet__head" },
     el("label", { class: "sheet__portrait-wrap", for: "portrait-file", title: "Change portrait" }, portrait, fileInput),
     el("div", { class: "sheet__id" },
-      el("div", { class: "card__title" }, ch.name),
+      el("h1", { class: "card__title sheet__name" }, ch.name),
       el("div", { class: "muted" }, `${titleCase(ch.nature)} · ${arch?.name || "—"} · ${y?.name || "—"}`),
       ch.identity.portraitUrl
         ? el("button", { class: "btn btn--sm btn--ghost", onClick: () => commit((c) => { c.identity.portraitUrl = ""; }) }, "Remove portrait")
-        : null));
+        : null),
+    el("div", { class: "sheet__tools" }, guidanceChip()));
   // Secret Replicant (§3.5): the reveal switches on the full Replicant rules.
   if (ch.secretReplicant && ch.nature !== "replicant") {
     head.append(el("div", { class: "sheet__secret" },
@@ -225,15 +251,15 @@ function vitalTrack(label, key, value, max, tone, commit) {
 }
 
 // ---- Resources (Promotion / Chinyen / Humanity) ---------------------------
-function resourcesSection(ch, commit) {
+function resourcesBlock(ch, commit) {
   const rows = el("div", { class: "res-grid" },
     counter("Promotion", "promotionPoints", ch, commit, "PP earned on the job — spend on gear & specialties."),
     counter("Chinyen", "chinyenPoints", ch, commit, "Black-market currency."),
     counter("Humanity", "humanityPoints", ch, commit, "Compassion points — spend to raise skills in Downtime."));
-  const card = el("div", { class: "card" }, sectionTitle("Resources"), rows);
+  const block = el("div", { class: "sheet__sub" }, sectionTitle("Resources"), rows);
   if (ch.nature === "replicant")
-    card.append(el("div", { class: "muted sheet__note" }, `Baseline Tests failed: ${ch.state.baselineFails || 0}`));
-  return card;
+    block.append(el("div", { class: "muted sheet__note" }, `Baseline Tests failed: ${ch.state.baselineFails || 0}`));
+  return block;
 }
 function counter(label, key, ch, commit, hint) {
   return el("div", { class: "counter" },
@@ -262,7 +288,7 @@ function conditionsSection(ch, commit) {
 }
 
 // ---- Attributes -----------------------------------------------------------
-function attributesSection(ch) {
+function attributesBlock(ch) {
   const grid = el("div", { class: "stat-grid" });
   for (const a of D.ATTRIBUTES) {
     const lv = ch.attributes[a.key];
@@ -271,7 +297,7 @@ function attributesSection(ch) {
       el("span", { class: "stat__lv" }, lv),
       el("span", { class: "stat__die muted" }, `d${D.LEVEL_DIE[lv]} · ${D.ATTR_LEVEL_DESC[lv]}`)));
   }
-  return el("div", { class: "card" }, sectionTitle("Attributes"), grid);
+  return el("div", { class: "sheet__sub" }, sectionTitle("Attributes"), grid);
 }
 
 // ---- Skills (tap to roll) -------------------------------------------------

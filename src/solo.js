@@ -18,7 +18,7 @@
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, guidanceChip, introLine } from "./ui.js";
 import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY, stripGlyphs } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
@@ -377,19 +377,21 @@ export function renderSolo(mount, rerender) {
   }
 
   // header + segmented nav
-  mount.append(el("div", { class: "card screen-head" },
-    sectionTitle("Solo Mode Assistant"),
-    el("p", { class: "muted" }, "Official Solo Mode oracle, generators, and trackers — organized by the flow of play.")));
-  mount.append(el("div", { class: "chips autopin" },
+  // The page heading is for screen readers; the tab bar already names the screen.
+  mount.append(el("h1", { class: "visually-hidden" }, "Solo Mode Assistant"));
+  mount.append(el("div", { class: "screen-tools" }, el("div", { class: "chips autopin" },
     el("button", {
       class: "chip" + (st.autoPin ? " chip--on" : ""),
       "aria-pressed": st.autoPin ? "true" : "false",
       onClick: () => { st.autoPin = !st.autoPin; writeSoloState(st); showToast(st.autoPin ? "Auto-pin on — every roll is written to your notes." : "Auto-pin off."); rerender(); },
-    }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)));
+    }, `\u{1F4CC} Auto-pin every roll to notes${st.autoPin ? " \u2713" : ""}`)), guidanceChip()));
   mount.append(statusStrip());
   mount.append(segmentNav({ segments: SEGMENTS, active: st.panel,
     // Switching tabs starts at the top; an in-panel roll keeps your place.
-    onSelect: (k) => { st.panel = k; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
+    onSelect: (k) => { st.panel = k; st.introSeen = true; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
+  // First visit only: one line saying what this screen is, gone once you move on.
+  if (!st.introSeen) mount.append(introLine("Official Solo Mode oracle, generators, and trackers — organized by the flow of play.",
+    () => { st.introSeen = true; writeSoloState(st); rerender(); }));
 
   // Step 4's actual dice. openSkillRoll/openWeaponPicker/openOpposedSkillRoll are
   // standalone modals (the sheet calls them the same way), so a scene never has to

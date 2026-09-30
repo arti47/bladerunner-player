@@ -1,6 +1,7 @@
 // ui.js — themed modal/toast/confirm/prompt primitives. No native alert/confirm.
 // Accessible: focus trap, Escape, aria-modal, focus restore.
 import { el, $, $$, clear, appendToNotes } from "./core.js";
+import { Settings } from "./settings.js";
 
 let modalHost = null;
 function host() {
@@ -121,6 +122,32 @@ export function promptModal(message, { title = "Input", value = "", okLabel = "O
       onClose: () => { if (!settled) resolve(null); },
     });
   });
+}
+
+// The header chip that shows or hides every "How to use this" note at once.
+// It changes a root attribute only — the page does not re-render.
+export function guidanceChip() {
+  const on = Settings.guidance();
+  const b = el("button", { class: "chip chip--sm guidance-chip" + (on ? " chip--on" : ""), "aria-pressed": on ? "true" : "false",
+    title: "Show or hide the \u201cHow to use this\u201d notes" }, on ? "Guidance on" : "Guidance off");
+  b.addEventListener("click", () => {
+    const next = !Settings.guidance();
+    Settings.set("guidance", next);
+    b.classList.toggle("chip--on", next);
+    b.setAttribute("aria-pressed", next ? "true" : "false");
+    b.textContent = next ? "Guidance on" : "Guidance off";
+    showToast(next ? "Guidance on — each card explains itself." : "Guidance hidden. Turn it back on here or in Settings.");
+  });
+  return b;
+}
+
+// A screen's one-line introduction, shown on the first visit and dismissable —
+// it replaces the intro card that used to cost a third of the viewport.
+export function introLine(text, onDismiss) {
+  return el("p", { class: "intro-line" },
+    el("span", { class: "intro-line__text" }, text),
+    el("a", { class: "btn btn--sm btn--ghost", href: "#tutorial" }, "How to Play →"),
+    el("button", { class: "btn btn--sm btn--ghost", "aria-label": "Dismiss this introduction", onClick: onDismiss }, "✕"));
 }
 
 // Re-exported so the note-writing screens keep a single import surface.

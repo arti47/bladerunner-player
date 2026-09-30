@@ -1,6 +1,6 @@
 // screens.js — top-level screen renderers (home / characters / rules / settings)
 // + party banner. Wizard, sheet, combat, gm, solo mount from their own modules.
-import { el, clear, titleCase } from "./core.js";
+import { el, clear, icon, titleCase } from "./core.js";
 import * as D from "../data.js";
 import * as S from "../data-solo.js";
 import { NPCS, NPC_BUILD } from "../data-npcs.js";
@@ -22,30 +22,25 @@ export function renderHome(mount) {
   const chars = Store.list();
   const active = Store.getActive();
   const rerender = () => renderHome(mount);
-  const body = screen(
-    "Blade Runner Player",
-    el("p", { class: "muted" }, "A player companion for the Blade Runner RPG — create Blade Runners, track cases, and roll the dice."),
+  // The app bar already names the app, so Home's heading is for screen readers
+  // and the one-line description sits under it quietly.
+  const body = el("section", { class: "screen" },
+    el("h1", { class: "visually-hidden" }, "Blade Runner Player"),
+    el("p", { class: "muted small home-tagline" }, "A player companion for the Blade Runner RPG — create Blade Runners, track cases, and roll the dice."),
     renderPartyBanner(),
     startHereCard(chars, rerender),
-    active
-      ? el("div", { class: "card card--active" },
-          el("div", { class: "card__eyebrow" }, "Active character"),
-          el("div", { class: "card__title" }, active.name),
-          el("div", { class: "muted" }, `${titleCase(active.nature)} · ${archLabel(active.archetype)}`),
-          vitalsPips(active),
-          el("button", { class: "btn btn--primary", onClick: () => navigate("sheet") }, "Open sheet"))
-      : el("div", { class: "card" },
+    active ? heroCard(active) : el("div", { class: "card" },
           el("p", {}, "No active character yet."),
           el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "Create a Blade Runner")),
     el("div", { class: "home-grid" },
-      tile("Characters", `${chars.length} saved`, () => navigate("characters")),
-      tile("New Blade Runner", "Creation wizard", () => navigate("wizard")),
-      tile("How to Play", "Solo & table tutorial", () => navigate("tutorial")),
-      tile("Rules Library", "Searchable reference", () => navigate("rules")),
-      tile("Combat Tracker", "Initiative & vitals", () => navigate("combat")),
-      Settings.solo() ? tile("▶ Play", "Guided solo — one question at a time", () => navigate("solo")) : null,
-      Settings.gm() ? tile("GM Screen", "Run the table", () => navigate("gm")) : null,
-      tile("Settings", "Theme & toggles", () => navigate("settings")),
+      tile("Characters", `${chars.length} saved`, () => navigate("characters"), "people"),
+      tile("New Blade Runner", "Creation wizard", () => navigate("wizard"), "pen"),
+      tile("How to Play", "Solo & table tutorial", () => navigate("tutorial"), "book"),
+      tile("Rules Library", "Searchable reference", () => navigate("rules"), "library"),
+      tile("Combat Tracker", "Initiative & vitals", () => navigate("combat"), "attack"),
+      Settings.solo() ? tile("Play", "Guided solo — one question at a time", () => navigate("solo"), "play") : null,
+      Settings.gm() ? tile("GM Screen", "Run the table", () => navigate("gm"), "gm") : null,
+      tile("Settings", "Theme & toggles", () => navigate("settings"), "settings"),
     ),
   );
   const rolls = RollLog.list();
@@ -99,8 +94,31 @@ function startHereCard(chars, rerender) {
     el("button", { class: "btn btn--ghost btn--sm", onClick: () => { try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {} rerender(); } }, "Hide this"));
 }
 const archLabel = (key) => (key ? (D.ARCHETYPES.find((a) => a.key === key)?.name || titleCase(key)) : "No archetype");
-function tile(title, sub, onClick) {
-  return el("button", { class: "tile", onClick }, el("span", { class: "tile__title" }, title), el("span", { class: "tile__sub muted" }, sub));
+function tile(title, sub, onClick, iconName) {
+  return el("button", { class: "tile", onClick },
+    iconName ? el("span", { class: "tile__icon" }, icon(iconName)) : null,
+    el("span", { class: "tile__title" }, title), el("span", { class: "tile__sub muted" }, sub));
+}
+// The active character, front and centre: face, name, vitals, and the two
+// places you are most likely going next.
+function heroCard(ch) {
+  const face = ch.identity?.portraitUrl
+    ? el("img", { class: "hero__portrait", src: ch.identity.portraitUrl, alt: "" })
+    : el("span", { class: "hero__portrait hero__portrait--empty", "aria-hidden": "true" }, icon("person"));
+  let caseOpen = null;
+  try { caseOpen = JSON.parse(localStorage.getItem("brp:solo") || "{}").caseOpen || null; } catch { /* storage best-effort */ }
+  return el("div", { class: "card card--hero hero" },
+    el("div", { class: "hero__row" }, face,
+      el("div", { class: "hero__id" },
+        el("div", { class: "card__eyebrow" }, "Active character"),
+        el("div", { class: "card__title" }, ch.name),
+        el("div", { class: "muted" }, `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}`))),
+    vitalsPips(ch),
+    el("div", { class: "btn-row hero__actions" },
+      el("button", { class: "btn btn--primary", onClick: () => navigate("sheet") }, "Open sheet"),
+      Settings.solo() && caseOpen && !ch.state?.dead
+        ? el("button", { class: "btn btn--roll", onClick: () => navigate("solo") }, `▶ Pick up case #${caseOpen.no}`)
+        : null));
 }
 function vitalsPips(ch) {
   return el("div", { class: "pips" },

@@ -228,6 +228,17 @@ body::after {
 .tile__title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-md); line-height: var(--lh-tight); overflow-wrap: anywhere; }
 .tile__sub { font-size: var(--fs-xs); line-height: var(--lh-snug); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
+/* ---- Home hero ------------------------------------------------------------ */
+.home-tagline { margin-top: calc(var(--sp-2) * -1); }
+.hero { gap: var(--sp-3); }
+.hero__row { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; }
+.hero__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hero__portrait { width: 64px; height: 64px; flex: 0 0 auto; border-radius: var(--r-lg); object-fit: cover; border: 1px solid var(--line-strong); }
+.hero__portrait--empty { display: grid; place-items: center; background: var(--panel-2); color: var(--muted); }
+.hero__portrait--empty .i { width: 32px; height: 32px; }
+.hero__actions .btn { flex: 1 1 10rem; }
+.tile__icon .i { width: 22px; height: 22px; }
+
 /* ---- Tags: one component, five historic names ----------------------------- */
 .tag, .pip, .badge, .chip, .net-badge, .budget {
   display: inline-flex; align-items: center; gap: .3em;
@@ -263,6 +274,7 @@ body::after {
   transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast), transform var(--dur-fast) var(--ease), filter var(--dur-fast);
 }
 .btn:hover { background: var(--panel-3); }
+a.btn { text-decoration: none; }
 .btn:active { transform: translateY(1px); }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; transform: none; }
 .btn--primary {
@@ -515,6 +527,19 @@ details[open] > summary::before { transform: rotate(45deg); }
 .sheet__danger .btn { flex: 1; }
 .sheet__secret { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px dashed var(--line); }
 
+.sheet__name { margin: 0; }
+.sheet__head { flex-wrap: wrap; }
+.sheet__tools { margin-left: auto; align-self: flex-start; }
+.sheet__sub { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--sp-2); }
+.card > .sheet__sub:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+/* the one expander that holds the less-used half of the sheet */
+.sheet-more { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-2); }
+.sheet-more__summary { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; cursor: pointer; min-height: var(--tap);
+  padding: var(--sp-3) var(--sp-4); font-family: var(--font-display); font-weight: 700; }
+.sheet-more__title { font-size: var(--fs-lg); color: var(--text); }
+.sheet-more__list { font-family: var(--font-body); font-weight: 400; font-size: var(--fs-sm); flex: 1 1 12rem; min-width: 0; }
+.sheet-more__body { display: flex; flex-direction: column; gap: var(--sp-3); padding: 0 var(--sp-2) var(--sp-2); }
+
 /* vitals tracks */
 .track { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); }
 .track:last-child { margin-bottom: 0; }
@@ -543,7 +568,7 @@ details[open] > summary::before { transform: rotate(45deg); }
 .counter__hint { font-size: var(--fs-2xs); line-height: var(--lh-snug); }
 
 /* attributes */
-.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: var(--sp-2); }
 .stat {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-width: 0;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3);
@@ -871,6 +896,16 @@ details[open] > summary::before { transform: rotate(45deg); }
 .roll-next .btn { align-self: flex-start; }
 .roll-next__crit { border-top: 1px solid var(--line); padding-top: var(--sp-2); }
 
+/* guidance: one switch hides every "How to use this" note (Settings.guidance) */
+:root[data-guidance="off"] .how { display: none; }
+.screen-tools { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; justify-content: space-between; }
+.screen-tools .chips { gap: var(--sp-2); }
+/* first-visit one-liner under a sub-nav (replaces the old intro card) */
+.intro-line { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-sm); color: var(--muted);
+  padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--line); border-radius: var(--r-md); }
+.intro-line__text { flex: 1 1 14rem; min-width: 0; }
+.intro-line .btn { min-height: 32px; }
+
 /* first-run "Start here" */
 .start__list { list-style: none; margin: var(--sp-2) 0 var(--sp-3); padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .start__step { display: grid; grid-template-columns: 1.75rem 1fr; gap: var(--sp-3); align-items: start; min-width: 0; }
@@ -902,6 +937,34 @@ details[open] > summary::before { transform: rotate(45deg); }
 @media (max-width: 380px) {
   .home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (min-width: 560px) {
-  .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+
+/* ---- Wide screens: left rail + two-column cards (≥900px) -------------------
+   The phone layout is untouched below this line. The bottom nav becomes a
+   fixed-width rail; card stacks flow into two columns (break-inside: avoid);
+   anything that frames a screen spans both. */
+@media (min-width: 900px) {
+  body { display: grid; grid-template-columns: 104px minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .appbar { grid-column: 2; grid-row: 1; }
+  .screen-host { grid-column: 2; grid-row: 2; max-width: 1120px; padding: var(--sp-6) var(--sp-8) var(--sp-8); }
+  .nav {
+    grid-column: 1; grid-row: 1 / span 2;
+    position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh;
+    flex-direction: column; justify-content: flex-start; gap: var(--sp-2);
+    padding: var(--sp-4) var(--sp-2); border-top: 0; border-right: 1px solid var(--line);
+  }
+  .nav__btn { flex: 0 0 auto; min-height: 68px; }
+  .nav__label { font-size: var(--fs-xs); }
+  #toast-region { left: 104px; bottom: var(--sp-6); }
+  .wiz__nav { bottom: 0; }
+  .home-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tile { min-height: 96px; }
+
+  .sheet, .panel:has(> .card ~ .card) { display: block; columns: 2; column-gap: var(--sp-4); }
+  .sheet > *, .panel > * { break-inside: avoid; margin: 0 0 var(--sp-4); }
+  .sheet > .solo-return, .sheet > .sheet__head, .sheet > .deceased, .sheet > .sheet-more, .sheet > .sheet__danger,
+  .panel > .btn-row, .panel > .result-clear, .panel > .intro-line { column-span: all; }
+  .sheet-more__body { display: block; columns: 2; column-gap: var(--sp-4); }
+  .sheet-more__body > * { break-inside: avoid; margin-bottom: var(--sp-4); }
+  .modal { max-width: 560px; }
 }

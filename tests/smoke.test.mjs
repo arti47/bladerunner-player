@@ -79,6 +79,8 @@ before(async () => {
   await page.goto(base + "/index.html", { waitUntil: "load" });
   await page.evaluate(async () => {
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true, advanced: false }));
+    // The sheet's less-used half sits behind "More"; most checks drive it, so open it.
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const ch = normalizeCharacter({ name: "Test Runner", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
@@ -2068,6 +2070,8 @@ test("a first-timer is walked from a cold launch to a playable character", async
   // This test wipes storage, so put the suite's shared fixture back.
   await page.evaluate(async () => {
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true, advanced: false }));
+    // The sheet's less-used half sits behind "More"; most checks drive it, so open it.
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const ch = normalizeCharacter({ name: "Test Runner", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
@@ -3266,4 +3270,102 @@ test("no label glyph reaches the screen as text — every one is an SVG icon [UX
       el("button", { "aria-label": "🎲 Roll it" }).getAttribute("aria-label"), el("option", {}, "⚄ Firearms").textContent];
   });
   assert.deepEqual(spacing, ["Blast Power A — Damage 4", " Roll it", "Roll it", "Firearms"]);
+});
+
+// ---------------------------------------------------------------------------
+// UX audit Phase 3 — layout.
+// ---------------------------------------------------------------------------
+test("the sheet is a priority stack: four sections open, the rest behind one remembered More", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?stack#sheet`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.removeItem("brp:sheet");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Stacked", attributes: { STR: "C", AGI: "C", INT: "C", EMP: "C" }, skills: {} });
+    Store.setActiveId(Store.save(ch).id);
+  });
+  await page.goto(`${base}/index.html?stack2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  const layout = await page.evaluate(() => ({
+    top: [...document.querySelectorAll(".sheet > .card .sheet__section")].map((h) => h.textContent),
+    more: [...document.querySelectorAll(".sheet-more .sheet__section")].map((h) => h.textContent),
+    open: document.querySelector(".sheet-more").open,
+  }));
+  assert.deepEqual(layout.top, ["Vitals", "Resources", "Conditions", "Attributes", "Skills", "Inventory"], "the stack you touch every scene");
+  for (const s of ["Specialties", "Critical Injuries", "Rest & Recovery", "Advancement", "Roll Log", "Journal", "Identity & Notes"])
+    assert.ok(layout.more.includes(s), `${s} sits behind More`);
+  assert.equal(layout.open, false, "More starts closed on a new device");
+  await page.click(".sheet-more__summary");
+  await page.goto(`${base}/index.html?stack3#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.equal(await page.$eval(".sheet-more", (d) => d.open), true, "and remembers being opened");
+  // a live wound is never hidden behind More
+  await page.evaluate(async () => {
+    const { Store } = await import("/src/store.js");
+    const ch = Store.getActive(); ch.state.criticalInjuries = [{ id: "w1", injury: "Broken nose", type: "crushing", roll: 1, lethal: false, deathSave: null, disadvantage: [], effect: "" }];
+    Store.save(ch);
+  });
+  await page.goto(`${base}/index.html?stack4#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.ok(await page.$(".sheet > .card .sheet__section:text-is('Critical Injuries')"), "an injury joins the stack");
+  // Vitals+Resources and Attributes+Skills each carry both sets of guidance lines
+  const how = await page.$$eval(".sheet > .card", (cs) => cs.map((c) => [c.querySelector(".sheet__section")?.textContent, c.querySelectorAll(".how__line").length]));
+  assert.ok(how.find(([k, n]) => k === "Vitals" && n >= 6), `folded guidance: ${JSON.stringify(how)}`);
+  await page.evaluate(() => localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true })));
+});
+
+test("one Guidance switch hides every how-to note; Solo/GM open with a one-line intro that goes once you move on", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); delete s.introSeen; s.panel = "scene"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+  await page.goto(`${base}/index.html?guide#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(250);
+  assert.equal(await page.$(".screen-head"), null, "the old intro card is gone");
+  assert.ok(await page.$(".intro-line"), "a one-line intro on the first visit");
+  assert.equal(await page.$eval("h1", (h) => h.textContent), "Solo Mode Assistant", "the screen still has its heading");
+  const visible = () => page.$$eval(".how", (n) => n.filter((x) => x.offsetParent !== null).length);
+  assert.ok((await visible()) > 0, "guidance on by default");
+  await page.click(".guidance-chip");
+  assert.equal(await visible(), 0, "one press hides every note");
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:settings")).guidance), false);
+  await page.goto(`${base}/index.html?guide2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  assert.equal(await visible(), 0, "and stays hidden on the sheet");
+  await page.click(".guidance-chip");
+  assert.ok((await visible()) > 0, "and comes back");
+  await page.goto(`${base}/index.html?guide3#solo`, { waitUntil: "load" });
+  await page.click('.segnav__pill:text-is("Shift")');
+  await page.waitForTimeout(200);
+  assert.equal(await page.$(".intro-line"), null, "the intro is gone once you move on");
+});
+
+test("Home leads with the active character; the tiles carry icons", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?hero#home`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  assert.ok(await page.$(".hero .hero__portrait"), "a face on the hero card");
+  assert.equal(await page.$eval(".hero .btn--primary", (b) => b.textContent.trim()), "Open sheet");
+  const tiles = await page.$$eval(".tile", (n) => n.map((x) => !!x.querySelector(".tile__icon .i")));
+  assert.ok(tiles.length >= 6 && tiles.every(Boolean), "every tile has an icon");
+  assert.equal(await page.$eval("h1", (h) => getComputedStyle(h).position), "absolute", "the duplicate title is for screen readers only");
+});
+
+test("wide screens: a left rail, two card columns, nothing overflowing", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  for (const route of ["home", "sheet", "solo", "gm", "rules", "settings"]) {
+    await page.goto(`${base}/index.html?wide=${route}#${route}`, { waitUntil: "load" });
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(() => {
+      const n = document.querySelector("#nav").getBoundingClientRect();
+      return { navW: n.width, navH: n.height, navLeft: n.left, over: document.documentElement.scrollWidth > innerWidth + 1 };
+    });
+    assert.ok(r.navW < 130 && r.navH > 700 && r.navLeft === 0, `#${route}: the nav is a left rail (${JSON.stringify(r)})`);
+    assert.equal(r.over, false, `#${route}: no horizontal overflow at 1280`);
+  }
+  await page.goto(`${base}/index.html?wide2#sheet`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  const xs = await page.$$eval(".sheet > .card", (cs) => [...new Set(cs.map((c) => Math.round(c.getBoundingClientRect().left)))]);
+  assert.ok(xs.length >= 2, `the sheet flows into two columns: ${xs}`);
+  await page.setViewportSize({ width: 390, height: 800 });
 });
