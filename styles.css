@@ -97,7 +97,11 @@
 /* ---- Base ----------------------------------------------------------------- */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; scroll-padding-top: var(--sp-4); }
+/* No zoom (owner decision 2026-09-30): pan-x pan-y keeps scrolling in both
+   directions but drops pinch- and double-tap-zoom, so quick repeated taps on
+   the steppers register as taps. The viewport tag covers Android; iOS Safari
+   ignores it, so main.js also cancels its pinch gesture. */
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: var(--sp-4); touch-action: pan-x pan-y; }
 body {
   background: var(--bg);
   color: var(--text);

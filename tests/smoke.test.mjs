@@ -3617,3 +3617,17 @@ test("the Characters list shows faces, vitals and which one is active; skills si
   await page.waitForTimeout(200);
   assert.ok(await page.$(".empty.empty--combat"), "an empty tracker is dressed as an empty state");
 });
+
+test("the app does not zoom: viewport locked, pinch and double-tap dropped, iOS pinch cancelled", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?zoom#home`, { waitUntil: "load" });
+  await page.waitForTimeout(150);
+  const r = await page.evaluate(() => {
+    const ev = new Event("gesturestart", { cancelable: true });
+    document.dispatchEvent(ev);
+    return { meta: document.querySelector('meta[name="viewport"]').content, touch: getComputedStyle(document.documentElement).touchAction, cancelled: ev.defaultPrevented };
+  });
+  assert.match(r.meta, /maximum-scale=1/); assert.match(r.meta, /user-scalable=no/);
+  assert.equal(r.touch, "pan-x pan-y", "scrolling stays, pinch and double-tap zoom go");
+  assert.equal(r.cancelled, true, "the iOS pinch gesture is cancelled");
+});
