@@ -128,3 +128,61 @@ export function skyline(cls = "") {
     <circle cx="150" cy="7" r="1.2" class="skyline__beacon"/><path d="M122 6h14" class="skyline__ship"/>`;
   return svg("0 0 220 40", inner, `art skyline ${cls}`.trim());
 }
+
+// ---- explainer diagrams (tutorial) ------------------------------------------------------
+// Drawn from the same die markup the roll dialog uses, with every number passed
+// in from the data layer by the caller (§10.2) — the diagram states no rule.
+function miniDie(size, face, state = "") {
+  return el("span", { class: `die die--d${size}${state ? " die--" + state : ""} diagram__die` },
+    el("span", { class: "die__face" }, String(face)), el("span", { class: "die__size" }, `d${size}`));
+}
+const arrow = () => el("span", { class: "diagram__arrow", "aria-hidden": "true" }, "→");
+
+// Attribute die + skill die → successes.
+export function dicePoolDiagram({ attr, skill, success, double }) {
+  // Example faces: the attribute die lands a double if it can, the skill die just misses.
+  const aFace = attr.size >= double ? double : success, sFace = Math.max(1, success - 2);
+  const count = aFace >= double ? 2 : 1;
+  return el("figure", { class: "diagram", "aria-label": `Example: a d${attr.size} and a d${skill.size}; ${success}+ is one success, ${double}+ is two.` },
+    el("div", { class: "diagram__row" },
+      el("span", { class: "diagram__cell" }, miniDie(attr.size, aFace, count === 2 ? "crit" : "succ"), el("small", {}, `Attribute ${attr.level}`)),
+      el("span", { class: "diagram__plus", "aria-hidden": "true" }, "+"),
+      el("span", { class: "diagram__cell" }, miniDie(skill.size, sFace), el("small", {}, `Skill ${skill.level}`)),
+      arrow(),
+      el("span", { class: "diagram__result" }, el("b", {}, String(count)), el("small", {}, count === 1 ? "success" : "successes"))),
+    el("figcaption", {}, el("span", { class: "tag tag--sm tag--adv" }, `${success}+ = 1`), " ", el("span", { class: "tag tag--sm tag--adv" }, `${double}+ = 2`), " ", el("span", { class: "tag tag--sm" }, "one is enough")));
+}
+
+// A failed roll → push → the 1 stays locked and costs.
+export function pushDiagram({ bane, size = 8 }) {
+  return el("figure", { class: "diagram", "aria-label": `Pushing: every die not showing ${bane} and not already a success is rolled again; each ${bane} left costs you.` },
+    el("div", { class: "diagram__row" },
+      el("span", { class: "diagram__cell" }, el("span", { class: "diagram__pair" }, miniDie(size, 3), miniDie(size, bane)), el("small", {}, "Failure")),
+      el("span", { class: "diagram__cell diagram__push" }, el("span", { class: "i-wrap" }, "↻"), el("small", {}, "Push")),
+      el("span", { class: "diagram__cell" }, el("span", { class: "diagram__pair" }, miniDie(size, 7, "succ"), miniDie(size, bane, "bane")), el("small", {}, "1 success · 1 bane"))),
+    el("figcaption", {}, `The ${bane} was locked — it costs 1 damage or 1 stress.`));
+}
+
+// The Investigation Procedure as a loop: numbered stops round a circle.
+export function loopDiagram(steps) {
+  const n = steps.length, R = 58, cx = 80, cy = 80;
+  let nodes = "", labels = "";
+  steps.forEach((s, i) => {
+    const a = (-90 + (360 / n) * i) * Math.PI / 180, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+    nodes += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="11" class="loop__node"/><text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" class="loop__num">${s.step}</text>`;
+  });
+  // A chevron on the ring halfway between the first two stops, pointing clockwise.
+  const ha = (-90 + 180 / n) * Math.PI / 180, hx = cx + R * Math.cos(ha), hy = cy + R * Math.sin(ha);
+  const deg = (-90 + 180 / n) + 90;
+  const head = `<path d="M-4 -5 L3 0 L-4 5" transform="translate(${hx.toFixed(1)} ${hy.toFixed(1)}) rotate(${deg.toFixed(1)})" class="loop__head"/>`;
+  const fig = el("figure", { class: "diagram diagram--loop", "aria-label": `The ${n} steps of a Shift, in a loop: ${steps.map((s) => s.title).join(", ")}.` });
+  fig.append(svg("0 0 160 160", `<circle cx="${cx}" cy="${cy}" r="${R}" class="loop__ring"/>${head}${nodes}<text x="${cx}" y="${cy - 2}" class="loop__mid">one</text><text x="${cx}" y="${cy + 11}" class="loop__mid">Shift</text>`, "loop"));
+  fig.append(el("ol", { class: "loop__list" }, ...steps.map((s) => el("li", {}, s.title))));
+  return fig;
+}
+
+// The Range Categories as a plain band, near to far.
+export function rangeBands(ranges) {
+  return el("figure", { class: "diagram", "aria-label": `Ranges, near to far: ${ranges.map((r) => r.name).join(", ")}.` },
+    el("div", { class: "bands" }, ...ranges.map((r, i) => el("span", { class: "bands__band", style: `--i:${i}` }, r.name))));
+}

@@ -1,6 +1,6 @@
 // ui.js — themed modal/toast/confirm/prompt primitives. No native alert/confirm.
 // Accessible: focus trap, Escape, aria-modal, focus restore.
-import { el, $, $$, clear, appendToNotes } from "./core.js";
+import { el, $, $$, clear, appendToNotes, icon } from "./core.js";
 import { Settings } from "./settings.js";
 
 let modalHost = null;
@@ -21,7 +21,8 @@ export function showToast(message, { kind = "info", timeout = 2600, action = nul
     region = el("div", { id: "toast-region", "aria-live": "polite", "aria-atomic": "true" });
     document.body.append(region);
   }
-  const t = el("div", { class: `toast toast--${kind}`, role: "status" }, el("span", { class: "toast__msg" }, message));
+  const mark = { info: "info", warn: "warn", error: "close" }[kind] || "info";
+  const t = el("div", { class: `toast toast--${kind}`, role: "status" }, el("span", { class: "toast__icon" }, icon(mark)), el("span", { class: "toast__msg" }, message));
   const dismiss = () => { t.classList.remove("toast--in"); setTimeout(() => t.remove(), 200); };
   if (action?.label) {
     t.classList.add("toast--action");

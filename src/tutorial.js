@@ -12,6 +12,8 @@ import { el, clear, titleCase, TUTORIAL_KEY } from "./core.js";
 import { segmentNav } from "./ui.js";
 import { Settings } from "./settings.js";
 import { navigate } from "./router.js";
+import { SOLO_SEQUENCE } from "../data-solo.js";
+import { dicePoolDiagram, pushDiagram, loopDiagram, rangeBands } from "./art.js";
 
 const SEGMENTS = [
   { key: "basics", label: "What is this?" },
@@ -124,7 +126,7 @@ function panelSolo(host, rerender) {
       ["6. Turn up the heat", "The Countdown Event Check on the Shift tab is once per Shift, as you set off for a new location (never for Downtime). <b>Any success fires an event</b> — roll it, let it complicate the case, and reset the timer. No successes means no event, but the timer escalates and the next check is likelier to bite."],
       ["7. Trouble", "Fights and chases run in the Combat Tracker. Let NPC Tactics and NPC Chase Maneuvers decide what the opposition does — that's the point of solo play."],
       ["8. Close the shift", "Solo ▸ <b>Wrap</b> ▸ End the Shift (it advances the Shift counter on your sheet and enforces the Downtime cadence), roll a Downtime scene if you took one, then walk the Promotion and Humanity checklists."],
-    ], [["Open Solo Mode", () => navigate("solo")], ["Combat Tracker", () => navigate("combat")]]),
+    ], [["Open Solo Mode", () => navigate("solo")], ["Combat Tracker", () => navigate("combat")]], loopDiagram(SOLO_SEQUENCE)),
 
     steps("Optional: the Case Board", "A house aid, not part of the Blade Runner rules — the Board tab in Solo Mode. Skip it and nothing else changes.", [
       ["What it adds", "Somewhere to pin your clues and suspects, draw the connections between them, and let the evidence tell you when the case has an answer."],
@@ -265,25 +267,26 @@ function panelTable(host) {
 function panelReference(host) {
   const dice = D.LEVELS.map((lv) => `${lv} = D${D.LEVEL_DIE[lv]}`).join(" · ");
   host.append(
-    facts("Rolling", [
+    withFigure(facts("Rolling", [
       ["Base Dice", `Attribute die + skill die (${dice}).`],
       ["Success", `A die showing ${D.SUCCESS_THRESHOLD}+ is one success; ${D.DOUBLE_THRESHOLD}+ is two. One success is enough — extras mean more effect or more damage.`],
       ["Advantage", "Adds a third die of the lower type. Disadvantage removes the lower die. They cancel one for one and never stack past one."],
       ["Push", `Only a <b>failed</b> roll can be pushed. Re-roll everything that isn't showing a ${D.PUSH_BANE_FACE}; every ${D.PUSH_BANE_FACE} left in the pool costs you 1 damage (Strength/Agility) or 1 stress (Intelligence/Empathy) — Replicants always take stress. NPCs never push.`],
-    ]),
+    ]), dicePoolDiagram({ attr: { level: "B", size: D.LEVEL_DIE.B }, skill: { level: "C", size: D.LEVEL_DIE.C }, success: D.SUCCESS_THRESHOLD, double: D.DOUBLE_THRESHOLD }),
+      pushDiagram({ bane: D.PUSH_BANE_FACE, size: D.LEVEL_DIE.C })),
     facts("Vitals", [
       ["Health", "(Strength die + Agility die) ÷ 4, rounded up. Replicants +2."],
       ["Resolve", "(Intelligence die + Empathy die) ÷ 4, rounded up. Replicants −2."],
       ["Broken", "Health 0 = out of action, no skill rolls, further damage crits. Resolve 0 = a critical stress effect until you get a point back."],
     ]),
-    facts("Combat", [
+    withFigure(facts("Combat", [
       ["Initiative", `${D.INITIATIVE_CARDS} cards, drawn once, act low to high, order persists.`],
       ["Turn", "One action, one move, plus free actions."],
       ["Ranges", D.RANGES.map((r) => r.name).join(" → ")],
       ["Close combat", "Opposed roll — the winner hits, ties miss, and only the attacker may push."],
       ["Armor", `When you are hit, roll ${D.ARMOR_DICE} dice of your armor's rating; each success stops ${D.ARMOR_DAMAGE_PER_SUCCESS} damage, and stopping all of it also stops the critical injury. Only one suit counts.`],
       ["Criticals", "Two successes over the target rolls the weapon's Crit Die on the Crushing or Piercing table; extra successes roll extra dice and you choose."],
-    ]),
+    ]), rangeBands(D.RANGES)),
     facts("Chases", [
       ["How it runs", "No map: both sides pick a maneuver in secret, the Game Runner reveals an obstacle, then they resolve — prey first, pursuer last."],
       ["Distance", D.CHASE.distance],
@@ -307,9 +310,10 @@ function panelReference(host) {
 }
 
 // ---- builders -------------------------------------------------------------
-function steps(title, sub, rows, actions) {
+function steps(title, sub, rows, actions, figure) {
   const card = el("div", { class: "card" }, el("div", { class: "card__title" }, title));
   if (sub) card.append(el("p", { class: "muted" }, sub));
+  if (figure) card.append(figure);
   const list = el("ol", { class: "tut__steps" });
   for (const [label, text] of rows) {
     list.append(el("li", { class: "tut__step" },
@@ -322,6 +326,11 @@ function steps(title, sub, rows, actions) {
     for (const [label, onClick] of actions) row.append(el("button", { class: "btn btn--ghost", onClick }, label + " →"));
     card.append(row);
   }
+  return card;
+}
+// An explainer drawing sits under the card title, above the facts it illustrates.
+function withFigure(card, ...figs) {
+  card.querySelector(".card__title").after(...figs);
   return card;
 }
 function facts(title, rows) {

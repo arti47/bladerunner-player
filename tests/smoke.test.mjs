@@ -3787,3 +3787,31 @@ test("atmosphere: rain in dark only and switchable, a skyline, a splash that nev
   const sw = await page.evaluate(async () => (await fetch("/service-worker.js")).text());
   for (const i of manifest.icons) assert.ok(sw.includes(i.src), `${i.src} is in the offline shell`);
 });
+
+test("explainers: tutorial diagrams read their numbers from the data, empty states carry the missing thing's mark, toasts carry their kind's icon", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?explain#home`, { waitUntil: "load" });
+  await page.evaluate(() => localStorage.setItem("brp:tutorial", "reference"));
+  await page.goto(`${base}/index.html?explain2#tutorial`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  const data = await page.evaluate(async () => { const D = await import("/data.js"); const S = await import("/data-solo.js");
+    return { s: D.SUCCESS_THRESHOLD, d: D.DOUBLE_THRESHOLD, ranges: D.RANGES.map((r) => r.name), steps: S.SOLO_SEQUENCE.length }; });
+  const ref = await page.evaluate(() => [...document.querySelectorAll("figure.diagram")].map((f) => ({ label: f.getAttribute("aria-label"), text: f.textContent, dice: f.querySelectorAll(".die").length, bands: [...f.querySelectorAll(".bands__band")].map((b) => b.textContent) })));
+  assert.equal(ref.length, 3, "Cheat Sheet: dice pool, push, range bands");
+  assert.ok(ref[0].text.includes(`${data.s}+ = 1`) && ref[0].text.includes(`${data.d}+ = 2`), "the thresholds come from data.js");
+  assert.ok(ref[0].dice === 2 && ref[1].dice === 4, "dice drawn with the roll dialog's die markup");
+  assert.deepEqual(ref[2].bands, data.ranges, "one band per Range Category, in order");
+  assert.ok(ref.every((f) => f.label), "every diagram has a spoken description");
+  await page.evaluate(() => localStorage.setItem("brp:tutorial", "solo"));
+  await page.reload({ waitUntil: "load" }); await page.waitForTimeout(300);
+  const loop = await page.$eval("figure.diagram--loop", (f) => ({ nodes: f.querySelectorAll(".loop__node").length, items: f.querySelectorAll(".loop__list li").length }));
+  assert.deepEqual(loop, { nodes: data.steps, items: data.steps }, "the solo loop draws every step of SOLO_SEQUENCE");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, "no overflow");
+  await page.evaluate(() => { localStorage.setItem("brp:tutorial", "basics"); localStorage.removeItem("brp:characters"); });
+  await page.goto(`${base}/index.html?explain3#characters`, { waitUntil: "load" }); await page.waitForTimeout(300);
+  const mark = await page.$eval(".empty--people", (n) => getComputedStyle(n, "::before").maskImage || getComputedStyle(n, "::before").webkitMaskImage);
+  assert.ok(/^url\("data:image\/svg\+xml/.test(mark), "an empty list shows the icon of what is missing");
+  const kinds = await page.evaluate(async () => { const u = await import("/src/ui.js");
+    return ["info", "warn", "error"].map((k) => { const h = u.showToast("x", { kind: k, timeout: 0 }); const n = [...document.querySelectorAll(".toast")].pop(); const r = n.querySelector(".toast__icon use")?.getAttribute("href"); h.dismiss(); return r; }); });
+  assert.deepEqual(kinds, ["#i-info", "#i-warn", "#i-close"], "each toast kind carries its icon");
+});

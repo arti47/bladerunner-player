@@ -52,6 +52,7 @@ const S = {
   coin: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="6" opacity=".45"/><path d="M9.2 8.5 12 12l2.8-3.5M12 12v4.5M9.5 12.8h5" />',
   hand: '<path d="M7.5 12.5V7a1.5 1.5 0 0 1 3 0v4.5M10.5 11V5.5a1.5 1.5 0 0 1 3 0V11M13.5 11V6.5a1.5 1.5 0 0 1 3 0v6.3"/><path d="M16.5 12.5a1.5 1.5 0 0 1 3 0V14c0 4-3 7-7 7h-.5a6 6 0 0 1-5.2-3l-2.4-4.2a1.4 1.4 0 0 1 2.4-1.4l1.2 1.8"/>',
   more: '<circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r=".6" fill="currentColor"/>',
   settings: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
 };
 
