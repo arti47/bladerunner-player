@@ -5,7 +5,7 @@ import * as D from "../data.js";
 import * as S from "../data-solo.js";
 import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, RollLog } from "./store.js";
-import { Settings, TOGGLES, applyTheme } from "./settings.js";
+import { Settings, TOGGLES, THEMES } from "./settings.js";
 import { showToast, promptModal, confirmModal, rollLogCard } from "./ui.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
@@ -244,35 +244,58 @@ const natLabel = (n) => (n === "any" ? "Any" : n === "human" ? "Human only" : "R
 // ---- SETTINGS -------------------------------------------------------------
 export function renderSettings(mount) {
   clear(mount);
-  const rows = el("div", { class: "settings" });
-  rows.append(toggleRow("Dark theme", "Neo-noir dark, or switch to light.", Settings.theme() === "dark",
-    (on) => { Settings.set("theme", on ? "dark" : "light"); applyTheme(); }));
+  const modes = el("div", { class: "settings" });
   for (const t of TOGGLES) {
-    rows.append(toggleRow(t.label, t.desc, !!Settings.get(t.key), (on) => { Settings.set(t.key, on); showToast(`${t.label} ${on ? "on" : "off"}`); navigate(location.hash.slice(1) || "settings"); }));
+    modes.append(toggleRow(t.label, t.desc, !!Settings.get(t.key), (on) => { Settings.set(t.key, on); showToast(`${t.label} ${on ? "on" : "off"}`); navigate(location.hash.slice(1) || "settings"); }));
   }
   bindSyncRerender();
   mount.append(screen("Settings & About",
-    accountSection(),
-    rows,
-    el("div", { class: "card" },
-      el("div", { class: "card__title" }, "App version"),
-      el("p", { class: "muted" }, "The app updates itself from GitHub when a new version is deployed — you get a toast with an Update button. Check by hand here."),
-      el("button", { class: "btn btn--ghost", onClick: async (e) => {
-        const b = e.currentTarget;
-        b.disabled = true; b.textContent = "Checking…";
-        const waiting = await checkForUpdates();
-        b.disabled = false; b.textContent = "Check for updates";
-        if (waiting) showToast("A new version is ready.", { timeout: 0, action: { label: "Update now", onClick: applyUpdate } });
-        else showToast("You're on the latest version.");
-      } }, "Check for updates")),
-    el("div", { class: "card" },
-      el("div", { class: "card__title" }, "How to Play"),
-      el("p", { class: "muted" }, "Step-by-step walkthroughs for running a case solo or at a table, plus a cheat sheet."),
-      el("button", { class: "btn btn--ghost", onClick: () => navigate("tutorial") }, "Open the tutorial →")),
-    el("div", { class: "about muted" },
-      el("p", {}, `${D.META.game} · ${D.META.scope}`),
-      el("p", {}, "A personal play aid built from your own rulebooks. Numbers and mechanics are extracted; flavor text is paraphrased. Not affiliated with or endorsed by the publisher or rights-holders."))));
+    group("Play modes", modes),
+    group("Appearance", themeControl()),
+    group("Account & campaign", accountSection()),
+    group("App",
+      el("div", { class: "card" },
+        el("div", { class: "card__title" }, "App version"),
+        el("p", { class: "muted" }, "The app updates itself from GitHub when a new version is deployed — you get a toast with an Update button. Check by hand here."),
+        el("button", { class: "btn btn--ghost", onClick: async (e) => {
+          const b = e.currentTarget;
+          b.disabled = true; b.textContent = "Checking…";
+          const waiting = await checkForUpdates();
+          b.disabled = false; b.textContent = "Check for updates";
+          if (waiting) showToast("A new version is ready.", { timeout: 0, action: { label: "Update now", onClick: applyUpdate } });
+          else showToast("You're on the latest version.");
+        } }, "Check for updates")),
+      el("div", { class: "card" },
+        el("div", { class: "card__title" }, "How to Play"),
+        el("p", { class: "muted" }, "Step-by-step walkthroughs for running a case solo or at a table, plus a cheat sheet."),
+        el("button", { class: "btn btn--ghost", onClick: () => navigate("tutorial") }, "Open the tutorial →")),
+      el("div", { class: "about muted" },
+        el("p", {}, `${D.META.game} · ${D.META.scope}`),
+        el("p", {}, "A personal play aid built from your own rulebooks. Numbers and mechanics are extracted; flavor text is paraphrased. Not affiliated with or endorsed by the publisher or rights-holders.")))));
 }
+// An inset group: eyebrow heading over a stack of rows/cards.
+function group(title, ...blocks) {
+  return el("section", { class: "settings-group", "aria-label": title },
+    el("h2", { class: "eyebrow settings-group__title" }, title), ...blocks);
+}
+const THEME_LABELS = { dark: "Dark", light: "Light", system: "System" };
+function themeControl() {
+  const current = Settings.theme();
+  const seg = el("div", { class: "segmented", role: "group", "aria-label": "Theme" });
+  for (const t of THEMES) {
+    seg.append(el("button", {
+      class: "segmented__opt" + (t === current ? " segmented__opt--on" : ""),
+      "aria-pressed": t === current ? "true" : "false",
+      onClick: () => { Settings.setTheme(t); renderSettings(mount()); },
+    }, THEME_LABELS[t]));
+  }
+  return el("div", { class: "settings__row settings__row--static" },
+    el("span", { class: "settings__text" },
+      el("span", { class: "settings__label" }, "Theme"),
+      el("span", { class: "settings__desc muted" }, "Neo-noir dark, noir-by-day light, or follow your device.")),
+    seg);
+}
+const mount = () => document.getElementById("screen");
 function toggleRow(label, desc, checked, onChange) {
   const input = el("input", { type: "checkbox", class: "switch__input", checked: checked || null });
   input.addEventListener("change", () => onChange(input.checked));

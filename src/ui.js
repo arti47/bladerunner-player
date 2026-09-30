@@ -33,6 +33,15 @@ export function showToast(message, { kind = "info", timeout = 2600, action = nul
   return { dismiss };
 }
 
+// Screen-reader announcement through the one polite live region in the shell
+// (the screen mount itself is NOT live — a re-render would read the whole page).
+export function announce(text) {
+  const live = document.getElementById("live");
+  if (!live || !text) return;
+  live.textContent = "";
+  requestAnimationFrame(() => { live.textContent = String(text); });
+}
+
 // Core modal. Returns { close }. `render(body, close)` fills the body.
 export function modal({ title = "", render, dismissable = true, onClose } = {}) {
   const prevFocus = document.activeElement;
@@ -166,6 +175,11 @@ export function segmentNav({ segments = [], active, onSelect } = {}) {
       onClick: () => { if (!on && typeof onSelect === "function") onSelect(s.key); },
     }, s.label));
   }
+  // Bring the active pill into view — a clipped active tab reads as "missing".
+  requestAnimationFrame(() => {
+    const on = row.querySelector(".segnav__pill--on");
+    if (on && row.scrollWidth > row.clientWidth) row.scrollLeft = Math.max(0, on.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
+  });
   return row;
 }
 

@@ -13,7 +13,7 @@ import { announceSkip } from "./harness.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ROUTES = ["home", "characters", "rules", "wizard", "sheet", "combat", "solo", "gm", "tutorial", "settings"];
-const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
 // Browser discovery, in order: explicit CHROME_PATH → a Playwright browser bundle
 // (PLAYWRIGHT_BROWSERS_PATH, as used by CI images) → the usual macOS/Linux install
 // locations → playwright-core's own `channel: "chrome"` lookup. Without the Linux
@@ -116,14 +116,17 @@ test("no horizontal overflow at 360px and 390px on every screen", async (t) => {
   await page.setViewportSize({ width: 390, height: 800 });
 });
 
-test("a11y basics: labeled nav, main landmark with aria-live", async (t) => {
+test("a11y basics: labeled nav, main landmark, one dedicated live region", async (t) => {
   if (unavailable) return t.skip(unavailable);
   await page.goto(base + "/index.html#home", { waitUntil: "load" });
   await page.waitForTimeout(150);
   const navLabels = await page.$$eval("#nav .nav__btn", (els) => els.map((e) => e.getAttribute("aria-label")));
   assert.ok(navLabels.length >= 4, "expected at least 4 nav tabs");
   assert.ok(navLabels.every(Boolean), "every nav button needs an aria-label");
-  assert.equal(await page.$eval("main#screen", (el) => el.getAttribute("aria-live")), "polite");
+  // The screen mount must NOT be live — every roll re-renders it, and a live
+  // mount re-reads the whole page to a screen reader. [UX audit D5]
+  assert.equal(await page.$eval("main#screen", (el) => el.getAttribute("aria-live")), null);
+  assert.equal(await page.$eval("#live", (el) => el.getAttribute("aria-live")), "polite");
   // icon-only nav still has a text label node for screen readers
   const active = await page.$eval("#nav .nav__btn--active", (el) => el.getAttribute("aria-current"));
   assert.equal(active, "page");
@@ -3159,4 +3162,68 @@ test("the CHORUS minors: named suspects, journal order, dead NPCs, labels", asyn
   await page.waitForTimeout(300);
   const entries = await page.$$eval(".journal__text", (n) => n.map((x) => x.textContent));
   assert.deepEqual(entries, ["FIRST", "SECOND"], "the journal reads oldest-first like the notes");
+});
+
+// ---------------------------------------------------------------------------
+// UX audit 2026-09-30 — the visual foundation.
+// ---------------------------------------------------------------------------
+test("theme is Dark / Light / System, System follows the device, chrome colour tracks it", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?theme#settings`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  const opts = await page.$$eval(".segmented__opt", (n) => n.map((x) => x.textContent.trim()));
+  assert.deepEqual(opts, ["Dark", "Light", "System"]);
+  await page.click('.segmented__opt:text-is("Light")');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "light");
+  assert.equal(await page.$eval('meta[name="theme-color"]', (m) => m.content.toLowerCase()), "#f4f1ea", "browser chrome follows the page");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.click('.segmented__opt:text-is("System")');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForTimeout(50);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "light", "System re-resolves live");
+  await page.click('.segmented__opt:text-is("Dark")');
+  await page.emulateMedia({ colorScheme: null });
+  assert.equal(await page.$eval('.segmented__opt--on', (n) => n.getAttribute("aria-pressed")), "true");
+  // the light-mode app-bar title is readable (was 1.1:1 on a hardcoded dark gradient)
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  const bar = await page.$eval(".appbar", (n) => getComputedStyle(n).backgroundImage);
+  assert.ok(!/rgba\(16, 21, 29/.test(bar), "no hardcoded dark stop on the app bar");
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+});
+
+test("toasts clear the bottom nav; the app bar scrolls away; the sub-nav keeps its active pill in view", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto(`${base}/index.html?toast#home`, { waitUntil: "load" });
+  await page.waitForTimeout(200);
+  await page.evaluate(async () => { const { showToast } = await import("/src/ui.js"); showToast("Clearance check", { timeout: 0 }); });
+  await page.waitForTimeout(300);
+  const { toastBottom, navTop } = await page.evaluate(() => ({
+    toastBottom: document.querySelector(".toast").getBoundingClientRect().bottom,
+    navTop: document.querySelector("#nav").getBoundingClientRect().top }));
+  assert.ok(toastBottom <= navTop, `toast bottom ${toastBottom} overlaps nav top ${navTop}`);
+  assert.equal(await page.$eval(".appbar", (n) => getComputedStyle(n).position), "relative", "the app bar is not sticky");
+  await page.evaluate(() => localStorage.setItem("brp:solo", JSON.stringify({ panel: "notes" })));
+  await page.goto(`${base}/index.html?pill#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  const vis = await page.evaluate(() => {
+    const row = document.querySelector(".segnav"), on = document.querySelector(".segnav__pill--on");
+    const r = row.getBoundingClientRect(), p = on.getBoundingClientRect();
+    return { inView: p.left >= r.left - 1 && p.right <= r.right + 1, label: on.textContent.trim() };
+  });
+  assert.ok(vis.inView, `the active pill (${vis.label}) is scrolled into view`);
+  await page.setViewportSize({ width: 390, height: 800 });
+});
+
+test("dice wear their type: shape class, size tag, and a spoken label", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.goto(`${base}/index.html?dice#home`, { waitUntil: "load" });
+  const out = await page.evaluate(async () => {
+    const { dieNode } = await import("/src/roller.js");
+    return [dieNode({ size: 10, face: 10, succ: 2, bane: false }), dieNode({ size: 6, face: 1, succ: 0, bane: true })]
+      .map((n) => ({ cls: n.className, tag: n.querySelector(".die__size").textContent, label: n.getAttribute("aria-label") }));
+  });
+  assert.deepEqual(out[0], { cls: "die die--d10 die--crit", tag: "d10", label: "d10 rolled 10, two successes" });
+  assert.deepEqual(out[1], { cls: "die die--d6 die--bane", tag: "d6", label: "d6 rolled 1, a 1" });
 });

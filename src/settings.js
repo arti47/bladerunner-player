@@ -3,7 +3,7 @@ import { STORAGE_PREFIX } from "./core.js";
 
 const KEY = STORAGE_PREFIX + "settings";
 const DEFAULTS = {
-  theme: "dark",        // "dark" | "light"
+  theme: "dark",        // "dark" | "light" | "system" (dark is primary, §0.7)
   solo: false,          // Solo Mode assistant
   gm: false,            // GM screen
   advanced: false,      // advanced/GM automation
@@ -24,11 +24,31 @@ export const Settings = {
   gm() { return !!readAll().gm; },
   advanced() { return !!readAll().advanced; },
   theme() { return readAll().theme; },
-  toggleTheme() { const t = readAll().theme === "dark" ? "light" : "dark"; this.set("theme", t); applyTheme(t); return t; },
+  setTheme(t) { this.set("theme", THEMES.includes(t) ? t : "dark"); applyTheme(); return t; },
 };
 
+export const THEMES = ["dark", "light", "system"];
+
+// "system" follows the OS live; the attribute always carries the resolved
+// theme so the stylesheet only ever needs two token blocks. The browser chrome
+// colour (theme-color) tracks whatever the page background resolves to.
+const systemDark = () => !window.matchMedia || window.matchMedia("(prefers-color-scheme: dark)").matches;
+export function resolveTheme(theme = Settings.theme()) {
+  return theme === "system" ? (systemDark() ? "dark" : "light") : theme === "light" ? "light" : "dark";
+}
+let watching = false;
 export function applyTheme(theme = Settings.theme()) {
-  document.documentElement.dataset.theme = theme;
+  const root = document.documentElement;
+  root.dataset.theme = resolveTheme(theme);
+  const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta && bg) meta.setAttribute("content", bg);
+  if (!watching && window.matchMedia) {
+    watching = true;
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+      if (Settings.theme() === "system") applyTheme();
+    });
+  }
 }
 
 export const TOGGLES = [

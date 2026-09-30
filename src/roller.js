@@ -11,7 +11,7 @@ import { NPCS } from "../data-npcs.js";
 import { CRITICAL_SUCCESS } from "../data-solo.js";
 import * as R from "./rules.js";
 import { Store, Combat, RollLog } from "./store.js";
-import { modal, showToast } from "./ui.js";
+import { modal, showToast, announce } from "./ui.js";
 import { reclampVitals, isBrokenByDamage } from "./derived.js";
 import { Settings } from "./settings.js";
 import * as H from "../data-house.js";
@@ -175,16 +175,23 @@ function applyPushRisk(ch, attrKey, banes) {
 }
 
 // ---- shared result rendering ----------------------------------------------
+// Each die wears its type: the silhouette (d6 square … d12 near-round) and a
+// size tag on the face, so the pool can be read and checked at a glance.
+export function dieNode(d) {
+  const state = d.bane ? " die--bane" : d.succ === 2 ? " die--crit" : d.succ === 1 ? " die--succ" : "";
+  const what = d.bane ? "a 1" : d.succ === 2 ? "two successes" : d.succ === 1 ? "a success" : "no success";
+  return el("span", { class: `die die--d${d.size}${state}`, role: "img", "aria-label": `d${d.size} rolled ${d.face}, ${what}`, dataset: { face: String(d.face) } },
+    el("span", { class: "die__face", "aria-hidden": "true" }, d.face),
+    el("span", { class: "die__size", "aria-hidden": "true" }, `d${d.size}`));
+}
 function diceRow(dice) {
   const row = el("div", { class: "dice" });
-  for (const d of dice) {
-    const cls = d.bane ? "die die--bane" : d.succ === 2 ? "die die--crit" : d.succ === 1 ? "die die--succ" : "die";
-    row.append(el("span", { class: cls, title: `d${d.size}` }, d.face));
-  }
+  dice.forEach((d, i) => { const n = dieNode(d); n.style.setProperty("--i", i); row.append(n); });
   return row;
 }
 function outcomeLine(succ, banes, pushed = false) {
   const ok = succ >= 1, crit = succ >= 2;
+  announce(`${ok ? (crit ? "Critical success" : "Success") : "Failure"}, ${succ} success${succ === 1 ? "" : "es"}.`);
   return el("div", { class: "roll-outcome" },
     el("span", { class: "roll-outcome__main " + (ok ? "is-succ" : "is-fail") }, ok ? (crit ? "Critical success" : "Success") : "Failure"),
     el("span", { class: "muted" }, `${succ} success${succ === 1 ? "" : "es"}${pushed && banes ? ` · ${banes} bane${banes === 1 ? "" : "s"}` : ""}`));

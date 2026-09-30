@@ -3,20 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0a0d12" />
+  <meta name="theme-color" content="#06080c" />
   <title>Blade Runner Player</title>
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="./icon.svg" />
+  <link rel="preload" href="./fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="./fonts/chakra-petch-700.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <header class="appbar">
-    <span class="appbar__badge" aria-hidden="true">🕵</span>
+    <img class="appbar__badge" src="./icon.svg" alt="" width="26" height="26" />
     <span class="appbar__title">Blade Runner <span class="appbar__accent">Player</span></span>
   </header>
 
-  <main id="screen" class="screen-host" role="main" aria-live="polite"></main>
+  <main id="screen" class="screen-host" role="main"></main>
+  <div id="live" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
 
   <nav id="nav" class="nav" aria-label="Primary"></nav>
 

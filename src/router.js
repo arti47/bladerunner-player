@@ -81,7 +81,19 @@ function updateNav(active) {
   }
 }
 
+// The nav's real height drives everything that must clear it (toasts, the
+// wizard's sticky footer) — no hardcoded pixel guesses. [UX audit D4]
+function measureNav() {
+  const nav = $("#nav");
+  if (!nav) return;
+  const set = () => document.documentElement.style.setProperty("--nav-h", `${Math.ceil(nav.getBoundingClientRect().height)}px`);
+  set();
+  if (window.ResizeObserver) new ResizeObserver(set).observe(nav);
+  else window.addEventListener("resize", set);
+}
+
 export function startRouter() {
+  measureNav();
   window.addEventListener("hashchange", () => render(location.hash.slice(1) || "home"));
   render(location.hash.slice(1) || "home");
 }

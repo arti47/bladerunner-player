@@ -870,3 +870,55 @@ test("every data table has a reader in src/ — no unreachable content", async (
   }
   assert.deepEqual(orphans, [], `data with no reader — the player cannot reach it:\n${orphans.join("\n")}`);
 });
+
+// ---------------------------------------------------------------------------
+// Visual design system  [UX audit 2026-09-30]
+// The stylesheet is a token system: every custom property a rule reads must be
+// defined, and every text role must stay readable on every surface it sits on.
+// ---------------------------------------------------------------------------
+import fs from "node:fs";
+const CSS = fs.readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+function themeTokens(selectorStart) {
+  const i = CSS.indexOf(selectorStart);
+  const block = CSS.slice(CSS.indexOf("{", i) + 1, CSS.indexOf("\n}", i));
+  return Object.fromEntries([...block.matchAll(/(--[a-z0-9-]+)\s*:\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
+}
+const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const lum = (h) => { const n = parseInt(h.slice(1), 16); return 0.2126 * lin(n >> 16 & 255) + 0.7152 * lin(n >> 8 & 255) + 0.0722 * lin(n & 255); };
+const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+
+test("every CSS custom property read is defined [UX D2]", () => {
+  const used = new Set([...CSS.matchAll(/var\(\s*(--[a-z0-9-]+)/gi)].map((m) => m[1]));
+  const defined = new Set([...CSS.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((m) => m[1]));
+  const missing = [...used].filter((v) => !defined.has(v));
+  assert.deepEqual(missing, [], `read but never defined: ${missing.join(", ")}`);
+});
+
+test("text roles pass WCAG AA and boundaries pass 3:1 in both themes [UX contrast]", () => {
+  const themes = { dark: themeTokens(':root, :root[data-theme="dark"]'), light: themeTokens(':root[data-theme="light"]') };
+  const roles = ["--text", "--muted", "--amber", "--cyan", "--ok", "--health", "--danger", "--magenta", "--resolve"];
+  const fails = [];
+  for (const [name, t] of Object.entries(themes)) {
+    for (const r of roles) for (const bg of ["--bg", "--panel", "--panel-2"]) {
+      assert.ok(t[r] && t[bg], `${name}: ${r} / ${bg} defined as hex`);
+      const v = ratio(t[r], t[bg]);
+      if (v < 4.5) fails.push(`${name} ${r} on ${bg} = ${v.toFixed(2)}`);
+    }
+    for (const bg of ["--panel", "--bg"]) { const v = ratio(t["--line-strong"], t[bg]); if (v < 3) fails.push(`${name} --line-strong on ${bg} = ${v.toFixed(2)}`); }
+    const v = ratio(t["--on-amber"], t["--amber"]); if (v < 4.5) fails.push(`${name} primary button label = ${v.toFixed(2)}`);
+  }
+  assert.deepEqual(fails, []);
+});
+
+test("no hardcoded colour on the app bar; texture and motion honour the user [UX D1]", () => {
+  const appbar = CSS.slice(CSS.indexOf(".appbar {"), CSS.indexOf("}", CSS.indexOf(".appbar {")));
+  assert.ok(!/#[0-9a-f]{3,6}|rgba?\(/i.test(appbar), "the app bar background must come from tokens, or light mode breaks it");
+  assert.match(CSS, /@media \(prefers-reduced-motion: reduce\)/);
+  for (const f of ["chakra-petch-700", "inter-var", "jetbrains-mono-var"]) {
+    assert.ok(CSS.includes(`fonts/${f}.woff2`), `${f} declared`);
+    assert.ok(fs.existsSync(new URL(`../fonts/${f}.woff2`, import.meta.url)), `${f} shipped`);
+  }
+  const sw = fs.readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
+  for (const f of fs.readdirSync(new URL("../fonts/", import.meta.url)).filter((x) => x.endsWith(".woff2")))
+    assert.ok(sw.includes(`./fonts/${f}`), `${f} is in the offline app shell`);
+});
