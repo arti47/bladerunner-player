@@ -156,6 +156,7 @@ export function rollPrompt() {
 // ctx supplies the Solo screen's own builders so the board looks native:
 //   { card, btn, grid, show, rerender, onPromote }
 
+function spoken(b, name) { b.setAttribute("aria-label", name); b.title = name; return b; }
 export function renderBoardPanel(root, ctx) {
   const { card, btn, grid, show, rerender, onPromote } = ctx;
   const b = Board.get();
@@ -177,10 +178,12 @@ export function renderBoardPanel(root, ctx) {
   }
 
   boardCard.append(grid(
-    btn("🎲 ＋ Clue", () => addRolled("clue"), "sm"),
-    btn("🎲 ＋ Suspect", () => addRolled("suspect"), "sm"),
-    btn("✍ ＋ Clue", () => addTyped("clue"), "sm ghost"),
-    btn("✍ ＋ Suspect", () => addTyped("suspect"), "sm ghost"),
+    // The rolled and the written buttons share a visible label and differ by
+    // icon only — so each says which it is out loud.
+    spoken(btn("🎲 ＋ Clue", () => addRolled("clue"), "sm"), "＋ Clue — rolled from the tables"),
+    spoken(btn("🎲 ＋ Suspect", () => addRolled("suspect"), "sm"), "＋ Suspect — rolled from the tables"),
+    spoken(btn("✍ ＋ Clue", () => addTyped("clue"), "sm ghost"), "＋ Clue — written by you"),
+    spoken(btn("✍ ＋ Suspect", () => addTyped("suspect"), "sm ghost"), "＋ Suspect — written by you"),
   ));
   boardCard.append(el("div", { class: "btn-row" },
     btn("🔗 Connect two boxes", () => connectFlow(), "sm ghost"),   // wrapped: btn passes the click event on

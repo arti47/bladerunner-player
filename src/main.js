@@ -1,10 +1,12 @@
 // main.js — entry point / boot.
 import { applyTheme } from "./settings.js";
+import { mountSprite } from "./icons.js";
 import { startRouter } from "./router.js";
 import { initSync } from "./sync.js";
 import { registerServiceWorker } from "./update.js";
 
 function boot() {
+  mountSprite();
   applyTheme();
   startRouter();
   registerServiceWorker();

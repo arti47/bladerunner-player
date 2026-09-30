@@ -19,7 +19,7 @@ import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
 import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal } from "./ui.js";
-import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY } from "./core.js";
+import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY, stripGlyphs } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
 import { applyInvestigationShift, applyDowntimeShift, downtimeLimitFor, maxHealth, maxResolve } from "./derived.js";
@@ -239,7 +239,7 @@ export function renderSolo(mount, rerender) {
     if (key) {
       st.results = st.results || {};
       const list = resultList(key);
-      list.push({ id: uid(), title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn?.textContent || null });
+      list.push({ id: uid(), title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn ? stripGlyphs(activeBtn.textContent) : null });
       while (list.length > RESULT_HISTORY) list.shift();   // keep the last few to compare
       st.results[key] = list;
       writeSoloState(st);
@@ -518,7 +518,7 @@ export function renderSolo(mount, rerender) {
         title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts,
         onPin: pinNote,
         onReroll: i === list.length - 1 ? () => {
-          const again = [...cardEl.querySelectorAll(".btn")].find((b) => b.textContent === r.btnLabel);
+          const again = [...cardEl.querySelectorAll(".btn")].find((b) => stripGlyphs(b.textContent) === stripGlyphs(r.btnLabel || ""));
           if (again) again.click();
           else showToast("Roll it again from the buttons above.", { kind: "warn" });
         } : null,

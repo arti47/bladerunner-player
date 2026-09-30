@@ -321,7 +321,7 @@ function inventorySection(ch, commit, rerender) {
     const name = await promptModal("Item name", { title: "Add item", okLabel: "Add" });
     if (name && name.trim()) commit((c) => { c.inventory.items.push({ name: name.trim(), equipped: false }); });
   } }, "＋ Add item");
-  const acquire = el("button", { class: "btn btn--sm", onClick: () => acquireGear(ch, commit, rerender) }, "⚖ Acquire gear");
+  const acquire = el("button", { class: "btn btn--sm", onClick: () => acquireGear(ch, commit, rerender) }, "🛒 Acquire gear");
   const sell = el("button", { class: "btn btn--sm btn--ghost", onClick: () => sellGear(ch, commit, rerender) }, "¥ Sell an item");
   const attack = el("button", { class: "btn btn--sm btn--roll", onClick: () => openWeaponPicker(ch, rerender) }, "⚔ Roll an attack");
   const armor = equippedArmor(ch);

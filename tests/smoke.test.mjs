@@ -178,11 +178,11 @@ test("the chase card runs a chase and rolls obstacles from the right table [§3.
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?chase#combat`, { waitUntil: "load" });
   await page.waitForTimeout(200);
-  const start = await page.getByRole("button", { name: "▶ Start the chase" });
+  const start = await page.getByRole("button", { name: "Start the chase", exact: true });
   assert.ok(await start.count(), "chase card offers a start button");
   await start.first().click();
   await page.waitForTimeout(150);
-  await page.getByRole("button", { name: "🎲 Reveal obstacle" }).first().click();
+  await page.getByRole("button", { name: "Reveal obstacle", exact: true }).first().click();
   await page.waitForTimeout(200);
   const obstacle = await page.$eval(".result-slot", (m) => m.textContent);
   const legal = await page.evaluate(async () => (await import("/data.js")).CHASE.obstacles.foot);
@@ -208,7 +208,7 @@ test("the gear-acquisition flow is reachable from the sheet [§3.11]", async (t)
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?acq#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(200);
-  const btn = page.getByRole("button", { name: "⚖ Acquire gear" });
+  const btn = page.getByRole("button", { name: "Acquire gear", exact: true });
   assert.ok(await btn.count(), "sheet exposes Acquire gear");
   await btn.first().click();
   await page.waitForTimeout(200);
@@ -274,7 +274,7 @@ test("gear catalog rows open the pay/roll step [§3.11]", async (t) => {
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?buy2#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "⚖ Acquire gear" }).first().click();
+  await page.getByRole("button", { name: "Acquire gear", exact: true }).first().click();
   await page.waitForTimeout(150);
   await page.evaluate(() => document.querySelectorAll(".modal details").forEach((d) => (d.open = true)));
   await page.getByRole("button", { name: /Police Undershirt Armor/ }).first().click();
@@ -288,7 +288,7 @@ test("gear catalog rows open the pay/roll step [§3.11]", async (t) => {
   assert.ok(!/Roll Connections/.test(body));
   await page.keyboard.press("Escape");
   // …but Premium and rarer goods do
-  await page.getByRole("button", { name: "⚖ Acquire gear" }).first().click();
+  await page.getByRole("button", { name: "Acquire gear", exact: true }).first().click();
   await page.waitForTimeout(150);
   await page.evaluate(() => document.querySelectorAll(".modal details").forEach((d) => (d.open = true)));
   await page.getByRole("button", { name: /Police Heavy Duty Street Gear/ }).first().click();
@@ -366,12 +366,12 @@ test("opposed skill rolls are available and only the initiator may push [§3.1/�
   });
   await page.goto(`${base}/index.html?opp2#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "⚖ Opposed roll" }).first().click();
+  await page.getByRole("button", { name: "Opposed roll", exact: true }).first().click();
   await page.waitForTimeout(200);
   let body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(/Opposing skill/.test(body) && /Their attribute/.test(body), "configures both sides");
   await page.evaluate(() => { Math.random = () => 0.3; });   // both sides fail on low faces → initiator may push
-  await page.getByRole("button", { name: "⚄ Roll opposed" }).first().click();
+  await page.getByRole("button", { name: "Roll opposed", exact: true }).first().click();
   await page.waitForTimeout(200);
   body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(/You win the opposition|They hold/.test(body), "declares a winner");
@@ -381,9 +381,9 @@ test("opposed skill rolls are available and only the initiator may push [§3.1/�
   await page.keyboard.press("Escape");
   // winning the opposition is a success — nothing left to push
   await page.evaluate(() => { Math.random = () => 0.999; });
-  await page.getByRole("button", { name: "⚖ Opposed roll" }).first().click();
+  await page.getByRole("button", { name: "Opposed roll", exact: true }).first().click();
   await page.waitForTimeout(150);
-  await page.getByRole("button", { name: "⚄ Roll opposed" }).first().click();
+  await page.getByRole("button", { name: "Roll opposed", exact: true }).first().click();
   await page.waitForTimeout(200);
   const won = await page.$eval(".modal", (m) => m.textContent);
   assert.match(won, /You win the opposition/);
@@ -423,7 +423,7 @@ test("combat tracker: conditions persist, armor shows, crits land on the target 
   await page.waitForTimeout(250);
   // the officer wears Police Heavy Duty Street Gear -> armor badge B
   const badges = await page.$$eval(".combatant .pip", (els) => els.map((e) => e.textContent));
-  assert.ok(badges.some((b) => b.includes("🛡")), `armored NPC shows a shield badge (got ${badges.join(",")})`);
+  assert.ok(await page.$$eval(".combatant .pip .i--shield", (n) => n.length) > 0, `armored NPC shows a shield badge (got ${badges.join(",")})`);
   // toggle In Cover on the thug and confirm it persists through the store
   await page.locator(".combatant").nth(1).getByRole("button", { name: "In Cover" }).click();
   await page.waitForTimeout(200);
@@ -480,15 +480,15 @@ test("the creation wizard walks end to end and saves a legal character [§3.5]",
   await next().click();
 
   await page.waitForTimeout(150);
-  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Strength ★" }).first().click(); // C→B→A (key attr B+)
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Strength (key)" }).first().click(); // C→B→A (key attr B+)
   for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Agility" }).first().click();
   assert.ok(await next().isEnabled(), "attribute budget spent exactly");
   await next().click();
 
   await page.waitForTimeout(150);
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Hand-to-Hand Combat ★" }).first().click();
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Stamina ★" }).first().click();
-  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Firearms ★" }).first().click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Hand-to-Hand Combat (key)" }).first().click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Stamina (key)" }).first().click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Firearms (key)" }).first().click();
   assert.ok(await next().isEnabled(), "skill budget spent exactly, key skills at C+");
   await next().click();          // specialties (none for a Rookie)
   await next().click();          // key memory
@@ -531,7 +531,7 @@ test("Countdown Timer fires on a success and escalates on a miss [Solo p.006]", 
     }, forceHigh);
     await page.evaluate(() => { location.hash = "#__r"; location.hash = "#solo"; });
     await page.waitForTimeout(150);
-    await page.getByRole("button", { name: "🎲 Roll the timer" }).first().click();
+    await page.getByRole("button", { name: "Roll the timer", exact: true }).first().click();
     await page.waitForTimeout(250);
     // The result lands inline in the Countdown card, not in a modal.
     const title = await page.$eval(".result-slot", (m) => m.textContent);
@@ -558,11 +558,11 @@ test("NPC rolls are never pushed [Solo p.010]", async (t) => {
   });
   await page.goto(`${base}/index.html?npcpush2#combat`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  await page.locator(".combatant").first().getByRole("button", { name: "🎲 Skill" }).click();
+  await page.locator(".combatant").first().getByRole("button", { name: "Skill", exact: true }).click();
   await page.waitForTimeout(150);
   await page.getByRole("button", { name: /^Stamina/ }).first().click();
   await page.waitForTimeout(150);
-  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.getByRole("button", { name: "Roll", exact: true }).first().click();
   await page.waitForTimeout(200);
   const body = await page.$eval(".modal", (m) => m.textContent);
   assert.ok(!/Push/.test(body), `no push button for an NPC roll: ${body.slice(0, 160)}`);
@@ -613,7 +613,7 @@ test("a successful roll offers no push; a failed one does [Core Ch01 p016]", asy
     await page.waitForTimeout(150);
     await page.getByRole("button", { name: /Roll Stamina/ }).first().click();
     await page.waitForTimeout(120);
-    await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+    await page.getByRole("button", { name: "Roll", exact: true }).first().click();
     await page.waitForTimeout(180);
     const body = await page.$eval(".modal", (m) => m.textContent);
     await page.keyboard.press("Escape");
@@ -643,7 +643,7 @@ test("an all-1s failure is not pushable [§3.1]", async (t) => {
   await page.waitForTimeout(150);
   await page.getByRole("button", { name: /Roll Stamina/ }).first().click();
   await page.waitForTimeout(120);
-  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.getByRole("button", { name: "Roll", exact: true }).first().click();
   await page.waitForTimeout(180);
   const body = await page.$eval(".modal", (m) => m.textContent);
   assert.match(body, /Failure/);
@@ -676,12 +676,12 @@ test("wizard rolls key relationship, signature item and home from the book's tab
   await next().click();
   await page.getByRole("button", { name: /^Rookie/ }).first().click();
   await next().click();
-  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Strength ★" }).first().click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Strength (key)" }).first().click();
   for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Agility" }).first().click();
   await next().click();
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Hand-to-Hand Combat ★" }).first().click();
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Stamina ★" }).first().click();
-  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Firearms ★" }).first().click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Hand-to-Hand Combat (key)" }).first().click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "increase Stamina (key)" }).first().click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "increase Firearms (key)" }).first().click();
   await next().click();   // specialties
   await next().click();   // memory
   await next().click();   // relationship step
@@ -788,18 +788,18 @@ test("the GM screen rolls the Ch09 case tables [Ch09]", async (t) => {
   // Each table now sits on the panel of the session where you'd reach for it.
   // Results are inline, so read the newest slot in the card that owns the button.
   for (const [pill, label, check] of [
-    ["Prep", "🎲 Clue (D8)", /Witness|Forensic Evidence|Recording|Documents|Rumors|Anonymous Tip|Item/],
-    ["Prep", "🎲 Final Confrontation (D10)", /rain|Thunder|heat|cold|colors|Overgrown|wind|outage|dust|Fog/],
-    ["Play", "🎲 Location (D6×D6)", /Sector|Downtown/],
-    ["Play", "🎲 Mood (D8×3)", /Weather/],
-    ["Wrap", "🎲 Downtime Event (D8)", /At home/],
+    ["Prep", "Clue (D8)", /Witness|Forensic Evidence|Recording|Documents|Rumors|Anonymous Tip|Item/],
+    ["Prep", "Final Confrontation (D10)", /rain|Thunder|heat|cold|colors|Overgrown|wind|outage|dust|Fog/],
+    ["Play", "Location (D6×D6)", /Sector|Downtown/],
+    ["Play", "Mood (D8×3)", /Weather/],
+    ["Wrap", "Downtime Event (D8)", /At home/],
   ]) {
     await page.click(`.segnav__pill:text-is("${pill}")`);
     await page.waitForTimeout(120);
     await page.click(`.btn:text-is("${label}")`);
     await page.waitForTimeout(250);
     const body = await page.evaluate((lbl) => {
-      const b = [...document.querySelectorAll(".btn")].find((x) => x.textContent === lbl);
+      const b = [...document.querySelectorAll(".btn")].find((x) => x.textContent.trim() === lbl);
       const slots = b.closest(".card").querySelectorAll(".result-slot");
       return slots[slots.length - 1].textContent;
     }, label);
@@ -853,7 +853,7 @@ test("Start a fresh case wipes the whole case and nothing on the sheet", async (
   const actions = await page.$$eval(".panel .btn", (e) => e.map((x) => x.textContent.trim()));
   assert.ok(!actions.some((a) => /Clear notes/.test(a)), `no Clear-notes button any more: ${actions}`);
 
-  await page.getByRole("button", { name: "⟲ Start a fresh case" }).first().click();
+  await page.getByRole("button", { name: "Start a fresh case", exact: true }).first().click();
   await page.waitForTimeout(150);
   await page.getByRole("button", { name: "Wipe everything" }).last().click();
   await page.waitForTimeout(400);
@@ -944,17 +944,17 @@ test("case notes read top to bottom — new entries land at the end", async (t) 
   });
   await page.goto(`${base}/index.html?flow2#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  await page.getByRole("button", { name: "⚡ Generate full briefing" }).first().click();
+  await page.getByRole("button", { name: "Generate full briefing", exact: true }).first().click();
   await page.waitForTimeout(250);
   let notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
   assert.ok(notes.startsWith("OLDEST LINE"), `existing notes stay on top:\n${notes}`);
   assert.ok(notes.indexOf("CASE BRIEFING") > notes.indexOf("OLDEST LINE"), "the briefing is appended below");
 
   // pinning a roll result adds to the bottom too
-  await page.getByRole("button", { name: "🎲 Relevance" }).first().click();
+  await page.getByRole("button", { name: "Relevance", exact: true }).first().click();
   await page.waitForTimeout(200);
   // The card now holds the briefing's slot too — pin the Relevance one.
-  await page.locator(".result-slot").filter({ hasText: "Relevance" }).last().getByRole("button", { name: /^📌 Pin/ }).click();
+  await page.locator(".result-slot").filter({ hasText: "Relevance" }).last().getByRole("button", { name: /^Pin/ }).click();
   await page.waitForTimeout(250);
   notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad);
   const pinIdx = notes.lastIndexOf("• [Relevance]");
@@ -969,9 +969,9 @@ test("case notes read top to bottom — new entries land at the end", async (t) 
   });
   await page.goto(`${base}/index.html?flow4#gm`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  await page.getByRole("button", { name: "🎲 Twist (D12)" }).first().click();
+  await page.getByRole("button", { name: "Twist (D12)", exact: true }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: /^📌 Pin/ }).first().click();
+  await page.getByRole("button", { name: /^Pin/ }).first().click();
   await page.waitForTimeout(250);
   const gmNotes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:gm")).scratchpad);
   assert.ok(gmNotes.startsWith("OLDEST LINE"), `GM notes keep their order:\n${gmNotes}`);
@@ -996,7 +996,7 @@ test("any roll can be pinned into the case notes; the sheet's pin says it target
   await page.waitForTimeout(200);
   await page.getByRole("button", { name: /Roll Firearms/ }).first().click();
   await page.waitForTimeout(150);
-  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.getByRole("button", { name: "Roll", exact: true }).first().click();
   await page.waitForTimeout(150);
   await page.getByRole("button", { name: "Done" }).first().click();
   await page.waitForTimeout(200);
@@ -1077,8 +1077,8 @@ test("guided play runs a whole case with one question at a time", async (t) => {
   await go();
 
   // Play is the first tab and the default — a lazy user lands in it.
-  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "▶ Play");
-  assert.deepEqual(await choices(), ["▶ Get me a case"], "with no case, there is exactly one thing to press");
+  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Play");
+  assert.deepEqual(await choices(), ["Get me a case"], "with no case, there is exactly one thing to press");
 
   await page.getByRole("button", { name: /Get me a case/ }).click();
   await page.waitForTimeout(250);
@@ -1091,12 +1091,12 @@ test("guided play runs a whole case with one question at a time", async (t) => {
 
   // Where do you go: three real places, and a way to name your own.
   let opts = await choices();
-  assert.equal(opts.filter((o) => o.startsWith("📍")).length, 3, `three places offered: ${opts}`);
+  assert.equal(await page.$$eval(".play__choices .btn .i--place", (n) => n.length), 3, `three places offered: ${opts}`);
   assert.ok(opts.some((o) => /Somewhere else/.test(o)));
   await page.locator(".play__choices .btn").first().click();
   await page.waitForTimeout(300);
-  assert.deepEqual(await choices(), ["Go in →"], "arriving is one press");
-  await page.getByRole("button", { name: "Go in →" }).click();
+  assert.deepEqual(await choices(), ["Go in"], "arriving is one press");
+  await page.getByRole("button", { name: "Go in" }).click();
   await page.waitForTimeout(300);
 
   // At the location: four concrete things a detective does.
@@ -1156,7 +1156,7 @@ test("guided play runs a whole case with one question at a time", async (t) => {
   assert.equal(filed.length, 1);
   assert.equal(filed[0].title, "Ghosts of Sector 4");
   assert.ok(filed[0].culprit, "with the culprit you named");
-  assert.deepEqual(await choices(), ["▶ Get me a case"], "and hands you a fresh one");
+  assert.deepEqual(await choices(), ["Get me a case"], "and hands you a fresh one");
 
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
 });
@@ -1217,7 +1217,7 @@ test("a solo case can be opened, resumed, closed, and filed", async (t) => {
   assert.match(head, /Pick up where you left off/);
 
   // End: closing files the case with what it cost and what it paid.
-  await page.getByRole("button", { name: "✔ Close the case" }).click();
+  await page.getByRole("button", { name: "Close the case", exact: true }).click();
   await page.waitForTimeout(250);
   assert.equal(await page.$eval(".modal input", (e) => e.value), "The fixer did it", "the culprit is prefilled from your leads");
   await page.fill(".modal input", "Roy Batty");
@@ -1278,7 +1278,8 @@ test("the solo loop rolls, applies and reports without leaving the screen", asyn
 
   // (5) the status strip is on every panel, with the numbers that matter
   const strip = await page.$eval(".solo-status", (e) => e.textContent.replace(/\s+/g, " "));
-  for (const probe of ["Kaz", "♥", "◈", "Shift 2", "to Downtime", "⏱ D8"]) assert.ok(strip.includes(probe), `strip shows ${probe}: ${strip}`);
+  for (const probe of ["Kaz", "Shift 2", "to Downtime", "D8"]) assert.ok(strip.includes(probe), `strip shows ${probe}: ${strip}`);
+  for (const ic of ["heart", "resolve", "timer"]) assert.ok(await page.$(`.solo-status .i--${ic}`), `strip shows the ${ic} icon`);
   for (const p of ["case", "shift", "scene", "board", "leads", "wrap", "notes"]) {
     await setSolo({ panel: p }); await go();
     assert.equal((await page.$$(".solo-status")).length, 1, `${p} shows the status strip`);
@@ -1287,14 +1288,14 @@ test("the solo loop rolls, applies and reports without leaving the screen", asyn
   // (1) a scene rolls in place — no navigation
   await setSolo({ panel: "scene" }); await go();
   const surface = await page.$$eval(".solo-roll .btn", (e) => e.map((x) => x.textContent.trim()));
-  assert.deepEqual(surface, ["⚄ Roll", "⚔ Attack", "⚖ Opposed", "Sheet →"], "skill, attack and opposed rolls are all here");
+  assert.deepEqual(surface, ["Roll", "Attack", "Opposed", "Sheet"], "skill, attack and opposed rolls are all here");
   assert.equal(await page.$$eval(".solo-roll select option", (e) => e.length), 13, "every skill is selectable");
   await page.selectOption(".solo-roll select", "observation");
   await page.evaluate(() => { Math.random = () => 0.999; });
-  await page.getByRole("button", { name: "⚄ Roll" }).click();
+  await page.getByRole("button", { name: "Roll", exact: true }).click();
   await page.waitForTimeout(200);
   assert.equal(await page.evaluate(() => location.hash), "#solo", "rolling never left the solo screen");
-  await page.locator(".modal").getByRole("button", { name: "⚄ Roll" }).click();
+  await page.locator(".modal").getByRole("button", { name: "Roll", exact: true }).click();
   await page.waitForTimeout(220);
 
   // (6) a banked Discovery Check offers the jump to the Board
@@ -1304,7 +1305,7 @@ test("the solo loop rolls, applies and reports without leaving the screen", asyn
   await page.waitForTimeout(320);
   assert.equal(await page.evaluate(() => location.hash), "#solo");
   assert.equal((await solo()).panel, "board", "and lands on the Board tab");
-  assert.ok((await page.$eval(".solo-status", (e) => e.textContent)).includes("🔍 1"), "the strip shows the banked check");
+  assert.ok((await page.$eval(".solo-status", (e) => e.textContent)).includes("1") && await page.$(".solo-status .i--search"), "the strip shows the banked check");
 
   // (2) both screens Solo sends you to offer a way back
   await page.goto(`${base}/index.html?flowback1#sheet`, { waitUntil: "load" });
@@ -1322,7 +1323,7 @@ test("the solo loop rolls, applies and reports without leaving the screen", asyn
   await go();
   const before = await chr();
   await page.evaluate(() => { Math.random = () => 0.999; });
-  await page.getByRole("button", { name: "🎲 Check" }).first().click();
+  await page.getByRole("button", { name: "Check", exact: true }).first().click();
   await page.waitForTimeout(300);
   await page.getByRole("button", { name: /Apply \+5 PP/ }).click();
   await page.waitForTimeout(280);
@@ -1348,7 +1349,7 @@ test("the solo loop rolls, applies and reports without leaving the screen", asyn
   await setSolo({ panel: "shift", timerDie: "D12/D12", pendingEvent: null });
   await go();
   await page.evaluate(() => { Math.random = () => 0.999; });
-  await page.getByRole("button", { name: "🎲 Roll the timer" }).click();
+  await page.getByRole("button", { name: "Roll the timer", exact: true }).click();
   await page.waitForTimeout(300);
   assert.ok((await solo()).pendingEvent?.name, "the event is held as pending");
   assert.match(await page.$eval(".panel > .btn-row .btn--primary", (e) => e.textContent), /event interrupts/);
@@ -1356,7 +1357,7 @@ test("the solo loop rolls, applies and reports without leaving the screen", asyn
   await page.waitForTimeout(250);
   const first = await page.$eval(".panel .card .sheet__section", (e) => e.textContent.trim());
   assert.match(first, /^Interruption — /, `the Scene panel opens with it: ${first}`);
-  await page.getByRole("button", { name: "✓ Played it out" }).click();
+  await page.getByRole("button", { name: "Played it out", exact: true }).click();
   await page.waitForTimeout(250);
   assert.equal((await solo()).pendingEvent, null, "and it clears once played");
 
@@ -1386,12 +1387,12 @@ test("resetting the Countdown Timer clears the done-this-Shift marker [Solo p.00
 
   // The label names the die from the data, not a hardcoded "D6".
   const resetLabel = await page.$$eval(".panel .btn", (e) => e.map((x) => x.textContent.trim()).find((x) => /Reset/.test(x)));
-  assert.equal(resetLabel, `✕ Reset (${first})`);
+  assert.equal(resetLabel, `Reset (${first})`);
 
   await page.evaluate(() => { Math.random = () => 0; });   // all 1s: no event, the timer escalates
-  await page.getByRole("button", { name: "🎲 Roll the timer" }).click();
+  await page.getByRole("button", { name: "Roll the timer", exact: true }).click();
   await page.waitForTimeout(250);
-  assert.deepEqual(await chips(), ["✓ done this Shift"], "the check is marked done");
+  assert.deepEqual(await chips(), ["done this Shift"], "the check is marked done");
   assert.equal((await solo()).shiftFlags.countdown, true);
   assert.equal((await solo()).timerDie, "D10", "a miss escalated D8 → D10");
   assert.equal((await slots()).length, 1, "the result is on the card");
@@ -1405,7 +1406,7 @@ test("resetting the Countdown Timer clears the done-this-Shift marker [Solo p.00
   assert.deepEqual(await slots(), [], "the stale result is dropped");
 
   // A reset really is an undo: rolling again must not ask to confirm.
-  await page.getByRole("button", { name: "🎲 Roll the timer" }).click();
+  await page.getByRole("button", { name: "Roll the timer", exact: true }).click();
   await page.waitForTimeout(250);
   assert.equal((await page.$$(".modal")).length, 0, "no 'already done this Shift' prompt after a reset");
 });
@@ -1436,7 +1437,7 @@ test("the Case Board runs a case: boxes, connections, discovery, clincher, promo
 
   const board = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:board")));
   // Rolled boxes take their content from the official Solo tables.
-  for (const name of ["🎲 ＋ Clue", "🎲 ＋ Suspect", "🎲 ＋ Clue", "🎲 ＋ Suspect"]) {
+  for (const name of ["＋ Clue — rolled from the tables", "＋ Suspect — rolled from the tables", "＋ Clue — rolled from the tables", "＋ Suspect — rolled from the tables"]) {
     await page.getByRole("button", { name, exact: true }).click();
     await page.waitForTimeout(180);
   }
@@ -1446,7 +1447,7 @@ test("the Case Board runs a case: boxes, connections, discovery, clincher, promo
   assert.ok(b.boxes.every((x) => x.name && x.detail), "rolled boxes carry a name and detail");
 
   // Typed box
-  await page.getByRole("button", { name: "✍ ＋ Suspect", exact: true }).click();
+  await page.getByRole("button", { name: "＋ Suspect — written by you", exact: true }).click();
   await page.waitForTimeout(150);
   await page.fill(".modal input, .modal textarea", "Eldon Tyrell");
   await page.getByRole("button", { name: /^(OK|Add)$/ }).click();
@@ -1454,7 +1455,7 @@ test("the Case Board runs a case: boxes, connections, discovery, clincher, promo
   assert.ok((await board()).boxes.some((x) => x.name === "Eldon Tyrell"), "a typed suspect lands on the board");
 
   // Connect from the pick list — clues may only be offered suspects.
-  await page.getByRole("button", { name: "🔗 Connect two boxes" }).click();
+  await page.getByRole("button", { name: "Connect two boxes", exact: true }).click();
   await page.waitForTimeout(150);
   const options = await page.$$eval(".board__pick .btn", (e) => e.map((x) => x.textContent.trim()));
   assert.ok(options.length >= 3 && options.every((o) => o.startsWith("S")), `only suspects offered: ${options}`);
@@ -1474,7 +1475,7 @@ test("the Case Board runs a case: boxes, connections, discovery, clincher, promo
     await page.locator(".board__box").filter({ has: page.locator(".board__tag", { hasText: new RegExp(`^${tag}$`) }) })
       .getByRole("button", { name: /^Connect / }).click();
     await page.waitForTimeout(150);
-    await page.getByRole("button", { name: "🎲 Let the board decide" }).click();
+    await page.getByRole("button", { name: "Let the board decide", exact: true }).click();
     await page.waitForTimeout(250);
   };
   const before = await links();
@@ -1488,7 +1489,7 @@ test("the Case Board runs a case: boxes, connections, discovery, clincher, promo
   await page.keyboard.press("Escape");
 
   // The discovery roll lands inline, in its own card.
-  await page.getByRole("button", { name: "🎲 Discovery Check" }).click();
+  await page.getByRole("button", { name: "Discovery Check", exact: true }).click();
   await page.waitForTimeout(150);
   await page.getByRole("button", { name: "Roll anyway" }).click();
   await page.waitForTimeout(300);
@@ -1563,7 +1564,7 @@ test("a Discovery Check is earned on the sheet, and only by investigative rolls 
     await page.evaluate(() => { Math.random = () => 0.999; });
     await page.getByRole("button", { name: new RegExp(`Roll ${skillName}`) }).first().click();
     await page.waitForTimeout(150);
-    await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+    await page.getByRole("button", { name: "Roll", exact: true }).first().click();
     await page.waitForTimeout(250);
     const offered = await page.$$eval(".modal .btn", (e) => e.map((x) => x.textContent.trim()));
     return offered;
@@ -1596,7 +1597,7 @@ test("Solo panels and Shift-opening buttons follow the book's procedure [Solo p.
   await page.waitForTimeout(200);
 
   const pills = await page.$$eval(".segnav__pill", (els) => els.map((e) => e.textContent.trim()));
-  assert.deepEqual(pills, ["▶ Play", "Case", "Shift", "Scene", "Board", "Leads", "Wrap", "Notes"],
+  assert.deepEqual(pills, ["Play", "Case", "Shift", "Scene", "Board", "Leads", "Wrap", "Notes"],
     "the house-aid Board sits between the scene that finds evidence and the leads it feeds");
   // a legacy panel key migrates instead of falling back to the first panel
   const active = await page.$eval(".segnav__pill--on", (e) => e.textContent.trim());
@@ -1755,14 +1756,14 @@ test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t)
     card: e.closest(".card").querySelector(".sheet__section").textContent,
   })));
 
-  await page.getByRole("button", { name: "\u{1F3B2} Scene Check (D8)" }).first().click();
+  await page.getByRole("button", { name: "Scene Check (D8)", exact: true }).first().click();
   await page.waitForTimeout(250);
   assert.equal((await page.$$(".modal")).length, 0, "no modal — the result is inline");
   let live = await slots();
   assert.equal(live.length, 1);
   assert.equal(live[0].card, "Frame the scene", "the result sits in the card that rolled it");
 
-  await page.getByRole("button", { name: "\u{1F3B2} Meaning (D8)" }).first().click();
+  await page.getByRole("button", { name: "Meaning (D8)", exact: true }).first().click();
   await page.waitForTimeout(250);
   live = await slots();
   assert.equal(live.length, 2, "each card keeps its own result");
@@ -1787,7 +1788,7 @@ test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t)
   await page.goto(`${base}/index.html?slot3#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
   assert.equal((await slots()).length, 4, "inline results persist across a reload");
-  await page.locator(".result-slot").first().getByRole("button", { name: /^\u{1F4CC} Pin/u }).click();
+  await page.locator(".result-slot").first().getByRole("button", { name: /^Pin/u }).click();
   await page.waitForTimeout(200);
   await page.click(".result-clear .btn");
   await page.waitForTimeout(250);
@@ -1799,7 +1800,7 @@ test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t)
   await page.evaluate(() => localStorage.setItem("brp:gm", JSON.stringify({ panel: "prep", log: [], scratchpad: "" })));
   await page.goto(`${base}/index.html?slotgm#gm`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  await page.getByRole("button", { name: "\u{1F3B2} Theme (D10)" }).first().click();
+  await page.getByRole("button", { name: "Theme (D10)", exact: true }).first().click();
   await page.waitForTimeout(250);
   assert.equal((await page.$$(".modal")).length, 0);
   const gm = await slots();
@@ -1810,7 +1811,7 @@ test("Solo/GM rolls land inline with reroll, pin and a per-tab clear", async (t)
   await page.click(".autopin .chip");
   await page.waitForTimeout(150);
   assert.equal(await page.$eval(".autopin .chip", (b) => b.getAttribute("aria-pressed")), "true");
-  await page.click('.btn:text-is("🎲 Sector (D8)")');
+  await page.click('.btn:text-is("Sector (D8)")');
   await page.waitForTimeout(250);
   const pad = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:gm")).scratchpad || "");
   assert.match(pad, /\[Sector\]/, "auto-pin wrote the roll to the notes with no extra tap");
@@ -1832,7 +1833,7 @@ test("every oracle button on Solo and GM shows a result", async (t) => {
       await page.waitForTimeout(250);
       await page.evaluate(() => document.querySelectorAll("details").forEach((d) => (d.open = true)));
       const labels = await page.$$eval(".panel .btn", (els) =>
-        els.map((e) => e.textContent).filter((l) => /^[\u{1F3B2}\u26A1]/u.test(l)));   // dice + the "full" generators
+        els.filter((e) => e.querySelector(".i--dice, .i--bolt")).map((e) => e.textContent.trim()));   // dice + the "full" generators
       for (const label of labels) {
         await page.locator(`.panel .btn:text-is("${label}")`).first().click();
         await page.waitForTimeout(200);
@@ -1843,7 +1844,7 @@ test("every oracle button on Solo and GM shows a result", async (t) => {
           // A dialog counts: some generators ask you something before they can
           // finish. What must never happen is the press doing nothing visible.
           if (document.querySelector(".modal")) return true;
-          const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent === lbl);
+          const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent.trim() === lbl);
           if (!b) return false;
           const host = b.closest(".card") || b.closest(".panel");
           return host.querySelectorAll(":scope > .result-slot").length > 0;
@@ -1870,7 +1871,7 @@ test("rolling keeps your place and brings the new result on screen", async (t) =
   await page.goto(`${base}/index.html?scroll#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
 
-  const button = page.locator('.btn:text-is("⚡ Generate full briefing")');
+  const button = page.locator('.btn:text-is("Generate full briefing")');
   await button.scrollIntoViewIfNeeded();
   await page.waitForTimeout(150);
   const before = await page.evaluate(() => window.scrollY);
@@ -1910,7 +1911,7 @@ test("sheet and combat rolls land in the solo Case Notes when Solo is on", async
   // roll a skill on the character sheet
   await page.getByRole("button", { name: /Firearms/ }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.getByRole("button", { name: "Roll", exact: true }).first().click();
   await page.waitForTimeout(250);
   await page.keyboard.press("Escape");
   await page.waitForTimeout(150);
@@ -1924,7 +1925,7 @@ test("sheet and combat rolls land in the solo Case Notes when Solo is on", async
   await page.evaluate(() => localStorage.setItem("brp:solo", JSON.stringify({ panel: "scene", scratchpad: "", log: [], hypotheses: [], humanityChecks: {}, promoGainChecks: {}, promoLoseChecks: {} })));
   await page.goto(`${base}/index.html?solonotes2#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  await page.click('.btn:text-is("🎲 Scene Check (D8)")');
+  await page.click('.btn:text-is("Scene Check (D8)")');
   await page.waitForTimeout(250);
   notes = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad || "");
   assert.equal(notes.trim(), "", "oracle rolls only reach the notes via pin or auto-pin");
@@ -1938,7 +1939,7 @@ test("sheet and combat rolls land in the solo Case Notes when Solo is on", async
   await page.waitForTimeout(250);
   await page.getByRole("button", { name: /Firearms/ }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.getByRole("button", { name: "Roll", exact: true }).first().click();
   await page.waitForTimeout(250);
   await page.keyboard.press("Escape");
   const off = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad || "");
@@ -1984,7 +1985,7 @@ test("cards explain when to press them, and a roll says what comes next", async 
   await page.evaluate(() => { Math.random = () => 0.999; });
   await page.getByRole("button", { name: /Firearms/ }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.getByRole("button", { name: "Roll", exact: true }).first().click();
   await page.waitForTimeout(250);
   const next = await page.$eval(".roll-next", (n) => n.textContent);
   assert.match(next, /You succeed/, next.slice(0, 120));
@@ -1998,7 +1999,7 @@ test("cards explain when to press them, and a roll says what comes next", async 
   await page.evaluate(() => { Math.random = () => 0; });
   await page.getByRole("button", { name: /Stamina/ }).first().click();
   await page.waitForTimeout(200);
-  await page.getByRole("button", { name: "⚄ Roll" }).first().click();
+  await page.getByRole("button", { name: "Roll", exact: true }).first().click();
   await page.waitForTimeout(250);
   assert.match(await page.$eval(".roll-next", (n) => n.textContent), /Failed/);
   await page.keyboard.press("Escape");
@@ -2017,7 +2018,7 @@ test("a first-timer is walked from a cold launch to a playable character", async
 
   // 1 — one press does the whole cold start: Solo Mode on, and off to the wizard
   //     because there is no character yet. Nothing to read first.
-  await page.click('.start .btn:text-is("▶ Just start playing")');
+  await page.click('.start .btn:text-is("Just start playing")');
   await page.waitForTimeout(400);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:settings")).solo), true,
     "the one-press start turns Solo Mode on for you");
@@ -2132,7 +2133,7 @@ test("the tutorial opens on a no-jargon explanation of what you actually do", as
   }
 
   // It hands off to the rest of the tutorial.
-  await page.click('.btn:text-is("Next: set the app up →")');
+  await page.click('.btn:text-is("Next: set the app up")');
   await page.waitForTimeout(250);
   assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Setup");
 });
@@ -2151,7 +2152,8 @@ test("the solo Case tab rolls every case-creation table the book names", async (
   await page.waitForTimeout(300);
   await page.evaluate(() => document.querySelectorAll("details").forEach((d) => (d.open = true)));
 
-  const labels = await page.$$eval(".panel .btn", (els) => els.map((e) => e.textContent));
+  const labels = await page.$$eval(".panel .btn", (els) => els.map((e) => e.textContent.trim()));
+  const rollables = await page.$$eval(".panel .btn", (els) => els.filter((e) => e.querySelector(".i--dice, .i--bolt")).map((e) => e.textContent.trim()));
   const has = (re) => labels.some((l) => re.test(l));
   // Solo Mode's own briefing tables
   for (const re of [/Assignment/, /Relevance/, /Complication/, /Personal Hook/, /Origin Seed/]) {
@@ -2167,7 +2169,6 @@ test("the solo Case tab rolls every case-creation table the book names", async (
   }
 
   // Every one of them must actually produce a result in its own card.
-  const rollables = labels.filter((l) => /^[\u{1F3B2}\u26A1]/u.test(l));
   assert.ok(rollables.length >= 19, `expected the full set of rolls, got ${rollables.length}`);
   for (const label of rollables) {
     await page.locator(`.panel .btn:text-is("${label}")`).first().click();
@@ -2175,7 +2176,7 @@ test("the solo Case tab rolls every case-creation table the book names", async (
     // Opening a case asks for a name before it can finish; a dialog is a result.
     if (await page.$(".modal")) { await page.keyboard.press("Escape"); await page.waitForTimeout(120); continue; }
     const shown = await page.evaluate((lbl) => {
-      const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent === lbl);
+      const b = [...document.querySelectorAll(".panel .btn")].find((x) => x.textContent.trim() === lbl);
       const host = b.closest(".card") || b.closest(".panel");
       const slots = host.querySelectorAll(":scope > .result-slot");
       return slots.length ? slots[slots.length - 1].textContent : "";
@@ -2204,7 +2205,7 @@ test("a vehicle chase runs on the vehicle's own stats [§3.12]", async (t) => {
   await page.waitForTimeout(300);
   await page.click('.chips .chip:text-is("Ground vehicle")');
   await page.waitForTimeout(120);
-  await page.click('.btn:text-is("▶ Start the chase")');
+  await page.click('.btn:text-is("Start the chase")');
   await page.waitForTimeout(250);
 
   await page.selectOption('select[aria-label="Prey vehicle"]', "ground_car");
@@ -2216,7 +2217,7 @@ test("a vehicle chase runs on the vehicle's own stats [§3.12]", async (t) => {
   assert.match(stats[1], /Maneuverability B · Hull 4\/4 · Armor C/, stats[1]);
 
   // A Driving roll uses the vehicle's Maneuverability die, not the default.
-  await page.locator('.chase-veh').nth(1).locator('.btn:text-is("🎲 Driving")').click();
+  await page.locator('.chase-veh').nth(1).locator('.btn:text-is("Driving")').click();
   await page.waitForTimeout(250);
   assert.match(await page.$eval(".modal", (n) => n.textContent), /Maneuverability d10/, "Spinner is Maneuverability B = d10");
   await page.keyboard.press("Escape");
@@ -2224,13 +2225,13 @@ test("a vehicle chase runs on the vehicle's own stats [§3.12]", async (t) => {
 
   // Vehicle weapons exist and their damage lands on the other side's Hull.
   await page.evaluate(() => { Math.random = () => 0.999; });
-  await page.locator('.chase-veh').nth(0).locator('.btn:text-is("⚔ Vehicle weapon")').click();
+  await page.locator('.chase-veh').nth(0).locator('.btn:text-is("Vehicle weapon")').click();
   await page.waitForTimeout(200);
   const weapons = await page.$$eval(".picker__row--btn", (n) => n.map((x) => x.textContent));
   assert.ok(weapons.some((w) => /Autocannon/.test(w)), weapons.join(" | "));
   await page.click(".picker__row--btn");
   await page.waitForTimeout(200);
-  await page.click('.modal .btn:text-is("⚄ Roll")');
+  await page.click('.modal .btn:text-is("Roll")');
   await page.waitForTimeout(200);
   await page.click('.modal .btn:text-is("Apply result")');
   await page.waitForTimeout(300);
@@ -2245,7 +2246,7 @@ test("a placed explosive resolves at a chosen Blast Power [Ch08]", async (t) => 
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?blast#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(300);
-  await page.click('.btn:text-is("⚔ Roll an attack")');
+  await page.click('.btn:text-is("Roll an attack")');
   await page.waitForTimeout(250);
   await page.evaluate(() => document.querySelectorAll(".modal details").forEach((d) => (d.open = true)));
   await page.waitForTimeout(120);
@@ -2259,7 +2260,7 @@ test("a placed explosive resolves at a chosen Blast Power [Ch08]", async (t) => 
   await page.click(".picker__row--btn");            // Blast Power A
   await page.waitForTimeout(250);
   assert.match(await page.$eval(".modal", (n) => n.textContent), /Dmg 4 · Crit d12/, "the attack uses the chosen rating");
-  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.click('.modal .btn:text-is("Attack")');
   await page.waitForTimeout(250);
   const res = await page.$eval(".modal", (n) => n.textContent);
   assert.ok(/Damage to target: \d+/.test(res) || /Failure/.test(res), res.slice(0, 120));
@@ -2301,7 +2302,7 @@ test("a Broken combatant is still a target [§3.7]", async (t) => {
   assert.ok(await page.getByRole("button", { name: /initiative card for Street Thug/ }).count(), "initiative is a named control");
 
   // [1] the Broken thug is offered as a target.
-  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.locator(".combatant").first().locator('.btn:text-is("Attack")').click();
   await page.waitForTimeout(250);
   await page.click('.list__row:has-text("PK-D 5223 Blaster")');
   await page.waitForTimeout(250);
@@ -2409,7 +2410,7 @@ test("a chase keeps a wrecked vehicle, and Engaged is caught", async (t) => {
   await page.waitForTimeout(350);
   const chase = await page.$eval(".chase, .card:has(.chase-veh)", (n) => n.textContent).catch(async () => page.$eval("body", (n) => n.textContent));
   assert.match(chase, /Wrecked/, "the wreck stays on screen, not in a toast that fades");
-  const driving = page.locator('.chase-veh').first().locator('.btn:text-is("🎲 Driving")');
+  const driving = page.locator('.chase-veh').first().locator('.btn:text-is("Driving")');
   assert.equal(await driving.isDisabled(), true, "you cannot drive a wreck");
   assert.match(chase, /Caught/, "at Engaged the chase says caught");
   assert.ok(await page.getByRole("button", { name: /Free attack/ }).count(), "and offers the free attack the rule grants");
@@ -2572,11 +2573,11 @@ test("a tracker skill roll renders its result (no undefined character)", async (
   });
   await page.reload({ waitUntil: "load" });
   await page.waitForTimeout(300);
-  await page.locator(".combatant").first().locator('.btn:text-is("🎲 Skill")').click();
+  await page.locator(".combatant").first().locator('.btn:text-is("Skill")').click();
   await page.waitForTimeout(250);
   await page.click('.list__row:has-text("Observation")');
   await page.waitForTimeout(250);
-  await page.click('.modal .btn:text-is("⚄ Roll")');
+  await page.click('.modal .btn:text-is("Roll")');
   await page.waitForTimeout(300);
   const res = await page.$eval(".modal", (n) => n.textContent);
   assert.match(res, /Success|Failure/, `the roll result renders: ${res.slice(0, 120)}`);
@@ -2739,11 +2740,11 @@ test("an attack logs who it was aimed at", async (t) => {
   });
   await page.goto(`${base}/index.html?tgtlog2#combat`, { waitUntil: "load" });
   await page.waitForTimeout(350);
-  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.locator(".combatant").first().locator('.btn:text-is("Attack")').click();
   await page.waitForTimeout(250);
   await page.click('.list__row:has-text("PK-D 5223 Blaster")');
   await page.waitForTimeout(250);
-  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.click('.modal .btn:text-is("Attack")');
   await page.waitForTimeout(300);
   const entry = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:rolllog"))[0]);
   assert.match(entry.label, /→ Street Thug/, `the log names the target: ${entry.label}`);
@@ -2884,7 +2885,7 @@ test("a chase NPC rolls its own dice, and is never pushed", async (t) => {
   });
   await page.goto(`${base}/index.html?npcdrive2#combat`, { waitUntil: "load" });
   await page.waitForTimeout(350);
-  await page.locator(".chase-veh").nth(1).locator('.btn:text-is("🎲 Driving")').click();
+  await page.locator(".chase-veh").nth(1).locator('.btn:text-is("Driving")').click();
   await page.waitForTimeout(300);
   assert.equal(await page.$$eval(".modal", (n) => n.length), 0, "an NPC roll opens no player dialog");
   const slot = await page.$$eval(".result-slot", (n) => n.map((x) => x.textContent).join(" | "));
@@ -2913,11 +2914,11 @@ test("the forced critical injury has a button", async (t) => {
   await page.goto(`${base}/index.html?forced2#combat`, { waitUntil: "load" });
   await page.waitForTimeout(300);
   await page.evaluate(() => { Math.random = () => 0.99; });
-  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.locator(".combatant").first().locator('.btn:text-is("Attack")').click();
   await page.waitForTimeout(250);
   await page.click('.list__row:has-text("PK-D 5223 Blaster")');
   await page.waitForTimeout(250);
-  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.click('.modal .btn:text-is("Attack")');
   await page.waitForTimeout(250);
   await page.locator('.modal .btn:has-text("Apply")').first().click();
   await page.waitForTimeout(250);
@@ -2963,7 +2964,7 @@ test("an NPC gear choice arms them from one of its own options", async (t) => {
   assert.equal(out.armor, null);
   await page.goto(`${base}/index.html?gearpick#combat`, { waitUntil: "load" });
   await page.waitForTimeout(300);
-  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.locator(".combatant").first().locator('.btn:text-is("Attack")').click();
   await page.waitForTimeout(250);
   const armed = await page.$eval(".modal", (n) => n.textContent);
   assert.ok(!/PK-D 5223 Blaster/.test(armed.split("All Ranged Weapons")[0]),
@@ -2988,7 +2989,7 @@ test("a push that can change nothing is not offered", async (t) => {
   await page.evaluate(() => { Math.random = () => 0; });   // every die shows a 1
   await page.getByRole("button", { name: /Roll Stamina/ }).first().click();
   await page.waitForTimeout(200);
-  await page.click('.modal .btn:text-is("⚄ Roll")');
+  await page.click('.modal .btn:text-is("Roll")');
   await page.waitForTimeout(250);
   const txt = await page.$eval(".modal", (n) => n.textContent);
   assert.match(txt, /Failure/, txt.slice(0, 80));
@@ -3091,7 +3092,7 @@ test("a Premium purchase costs the Shift it advertises", async (t) => {
   const rollBtn = page.locator('.modal .btn:has-text("Roll Connections")');
   if (await rollBtn.count()) {
     await rollBtn.click(); await page.waitForTimeout(200);
-    await page.click('.modal .btn:text-is("⚄ Roll")'); await page.waitForTimeout(250);
+    await page.click('.modal .btn:text-is("Roll")'); await page.waitForTimeout(250);
     const done = page.locator('.modal .btn:has-text("Apply result"), .modal .btn:text-is("Done")');
     if (await done.count()) { await done.first().click(); await page.waitForTimeout(300); }
   }
@@ -3118,19 +3119,19 @@ test("full auto splits its extra successes instead of double-spending them", asy
   await page.goto(`${base}/index.html?spill2#combat`, { waitUntil: "load" });
   await page.waitForTimeout(300);
   await page.evaluate(() => { Math.random = () => 0.99; });
-  await page.locator(".combatant").first().locator('.btn:text-is("⚔ Attack")').click();
+  await page.locator(".combatant").first().locator('.btn:text-is("Attack")').click();
   await page.waitForTimeout(250);
   await page.click('.list__row:has-text("Ender Assault Rifle")');
   await page.waitForTimeout(250);
   await page.locator('.modal .picker__row:has-text("Full Auto") input, .modal input[type=checkbox]').last().check();
   await page.waitForTimeout(150);
-  await page.click('.modal .btn:text-is("⚄ Attack")');
+  await page.click('.modal .btn:text-is("Attack")');
   await page.waitForTimeout(300);
   const before = await page.$eval(".modal", (n) => n.textContent);
   const m = before.match(/Apply (\d+) dmg/);
   assert.ok(m, before.slice(0, 200));
   const dmgBefore = Number(m[1]);
-  await page.locator('.modal .btn:has-text("1 dmg →")').first().click();
+  await page.locator('.modal .btn:has-text("1 dmg")').first().click();
   await page.waitForTimeout(300);
   const after = await page.$eval(".modal", (n) => n.textContent);
   const m2 = after.match(/Apply (\d+) dmg/);
@@ -3226,4 +3227,43 @@ test("dice wear their type: shape class, size tag, and a spoken label", async (t
   });
   assert.deepEqual(out[0], { cls: "die die--d10 die--crit", tag: "d10", label: "d10 rolled 10, two successes" });
   assert.deepEqual(out[1], { cls: "die die--d6 die--bane", tag: "d6", label: "d6 rolled 1, a 1" });
+});
+
+test("no label glyph reaches the screen as text — every one is an SVG icon [UX icons]", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const { ICON_GLYPHS } = await import("../src/core.js");
+  const glyphs = Object.keys(ICON_GLYPHS);
+  const found = [];
+  const surfaces = [...ROUTES.map((r) => [r, null]),
+    ...["play", "case", "shift", "scene", "board", "leads", "wrap", "notes"].map((p) => ["solo", p]),
+    ...["prep", "play", "fight", "wrap", "notes"].map((p) => ["gm", p])];
+  for (const [route, panel] of surfaces) {
+    if (panel) await page.evaluate(([r, p]) => {
+      const key = r === "solo" ? "brp:solo" : "brp:gm";
+      const st = JSON.parse(localStorage.getItem(key) || "{}"); st.panel = p; localStorage.setItem(key, JSON.stringify(st));
+    }, [route, panel]);
+    await page.goto(`${base}/index.html?glyph=${route}-${panel}#${route}`, { waitUntil: "load" });
+    await page.waitForTimeout(150);
+    const hits = await page.evaluate((gs) => {
+      const out = [];
+      const w = document.createTreeWalker(document.getElementById("screen"), NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (n.parentElement.closest("textarea, option, script, style")) continue;
+        // A label glyph leads or trails a label; "D8 → D10" mid-sentence is prose.
+        const toks = n.textContent.trim().split(/\s+/);
+        for (const tok of [toks[0], toks[toks.length - 1]]) if (tok && gs.includes(tok.replace(/\uFE0F/g, ""))) out.push(`${tok} in "${n.textContent.trim().slice(0, 40)}"`);
+      }
+      return out;
+    }, glyphs);
+    for (const h of hits) found.push(`${route}${panel ? "/" + panel : ""}: ${h}`);
+  }
+  assert.deepEqual(found, [], `glyphs rendered as text:\n${found.join("\n")}`);
+  assert.ok(await page.$("#icon-sprite symbol#i-dice"), "the sprite is mounted");
+  // Only an icon trims its word; plain children keep their own spacing.
+  const spacing = await page.evaluate(async () => {
+    const { el } = await import("/src/core.js");
+    return [el("span", {}, "Blast Power A", " — ", "Damage 4").textContent, el("span", {}, "🎲 Roll it").textContent,
+      el("button", { "aria-label": "🎲 Roll it" }).getAttribute("aria-label"), el("option", {}, "⚄ Firearms").textContent];
+  });
+  assert.deepEqual(spacing, ["Blast Power A — Damage 4", " Roll it", "Roll it", "Firearms"]);
 });

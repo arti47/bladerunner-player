@@ -171,6 +171,16 @@ body::after {
 .num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .visually-hidden, .sheet .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
+/* ---- Icons (src/icons.js sprite; glyph labels become these in core.js el()) */
+.i { width: 1.15em; height: 1.15em; flex: 0 0 auto; display: inline-block; vertical-align: -.2em;
+  fill: none; stroke: currentColor; overflow: visible; }
+.btn .i, .chip .i, .tag .i, .pip .i, .badge .i, .segnav__pill .i { width: 1.1em; height: 1.1em; }
+.i--next { width: 1em; height: 1em; }
+.nav__icon .i { width: 22px; height: 22px; }
+.sheet__portrait--empty .i { width: 34px; height: 34px; }
+.pip--health .i--heart { color: var(--health); }
+.pip--resolve .i--resolve { color: var(--resolve); }
+
 /* ---- Eyebrow: the one uppercase micro-label ------------------------------- */
 .eyebrow, .card__eyebrow, .sheet__section, .step-eyebrow, .roll-eyebrow, .result-slot__title {
   font-family: var(--font-display); font-weight: 600;

@@ -13,7 +13,7 @@ import { Store, Combat, RollLog } from "./store.js";
 import { maxHealth, maxResolve, reclampVitals } from "./derived.js";
 import { archetype } from "./rules.js";
 import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, modal, showToast, confirmModal, appendToNotes } from "./ui.js";
-import { rollDie, uid, titleCase, clear } from "./core.js";
+import { rollDie, uid, titleCase, clear, stripGlyphs } from "./core.js";
 import { lookupRange } from "./rules.js";
 import { navigate } from "./router.js";
 
@@ -119,7 +119,7 @@ export function renderGm(mount, rerender) {
     if (key) {
       st.results = st.results || {};
       const list = resultList(key);
-      list.push({ id: uid(), title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn?.textContent || null });
+      list.push({ id: uid(), title: title || label, html: renderToHtml(render), pinLine, ts: Date.now(), btnLabel: activeBtn ? stripGlyphs(activeBtn.textContent) : null });
       while (list.length > RESULT_HISTORY) list.shift();   // keep the last few to compare
       st.results[key] = list;
       writeGmState(st);
@@ -177,7 +177,7 @@ export function renderGm(mount, rerender) {
         title: r.title, html: r.html, pinLine: r.pinLine, stamp: r.ts,
         onPin: pinNote,
         onReroll: i === list.length - 1 ? () => {
-          const again = [...cardEl.querySelectorAll(".btn")].find((b) => b.textContent === r.btnLabel);
+          const again = [...cardEl.querySelectorAll(".btn")].find((b) => stripGlyphs(b.textContent) === stripGlyphs(r.btnLabel || ""));
           if (again) again.click();
           else showToast("Roll it again from the buttons above.", { kind: "warn" });
         } : null,

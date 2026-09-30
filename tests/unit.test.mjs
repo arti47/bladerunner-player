@@ -922,3 +922,17 @@ test("no hardcoded colour on the app bar; texture and motion honour the user [UX
   for (const f of fs.readdirSync(new URL("../fonts/", import.meta.url)).filter((x) => x.endsWith(".woff2")))
     assert.ok(sw.includes(`./fonts/${f}`), `${f} is in the offline app shell`);
 });
+
+test("every label glyph maps to a drawn icon, and every icon is reachable from a glyph [UX icons]", async () => {
+  const { ICON_GLYPHS } = core;
+  const src = fs.readFileSync(new URL("../src/icons.js", import.meta.url), "utf8");
+  const ICON_NAMES = [...src.slice(src.indexOf("const S = {"), src.indexOf("\n};")).matchAll(/^\s{2}"?([a-z-]+)"?:/gm)].map((m) => m[1]);
+  const wanted = new Set(Object.values(ICON_GLYPHS));
+  assert.deepEqual([...wanted].filter((n) => !ICON_NAMES.includes(n)), [], "glyphs pointing at a missing symbol");
+  assert.deepEqual(ICON_NAMES.filter((n) => !wanted.has(n)), [], "symbols no glyph can reach");
+  // spoken names never read the glyph; ★ is meaning, so it is said in words
+  assert.equal(core.stripGlyphs("🎲 Roll the timer"), "Roll the timer");
+  assert.equal(core.stripGlyphs("Open the tutorial →"), "Open the tutorial");
+  assert.equal(core.stripGlyphs("increase Firearms ★"), "increase Firearms (key)");
+  assert.equal(core.stripGlyphs("D→C 5"), "D→C 5", "a glyph inside a word is typography, not an icon");
+});
