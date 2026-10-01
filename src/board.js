@@ -162,7 +162,10 @@ export function rollPrompt() {
 function drawLinks(grid, b) {
   grid.querySelector(".board__lines")?.remove();
   const cols = grid.querySelectorAll(".board__group");
-  if (cols.length < 2 || cols[0].offsetLeft === cols[1].offsetLeft) return;
+  if (cols.length < 2) return;
+  // One column (a phone): the string still runs, looping out along the right
+  // edge from the suspect down to the clue instead of across a gap. [round 5]
+  const stacked = cols[0].offsetLeft === cols[1].offsetLeft;
   const g = grid.getBoundingClientRect();
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
@@ -177,10 +180,16 @@ function drawLinks(grid, b) {
     const s = at(box.kind === "suspect" ? box.id : other), c = at(box.kind === "suspect" ? other : box.id);
     if (!s || !c) continue;
     const sr = s.getBoundingClientRect(), cr = c.getBoundingClientRect();
-    const x1 = sr.right - g.left, y1 = sr.top + Math.min(24, sr.height / 2) - g.top, x2 = cr.left - g.left, y2 = cr.top + Math.min(24, cr.height / 2) - g.top;
+    const y1 = sr.top + Math.min(24, sr.height / 2) - g.top, y2 = cr.top + Math.min(24, cr.height / 2) - g.top;
     const path = document.createElementNS(NS, "path");
-    const mid = (x1 + x2) / 2;
-    path.setAttribute("d", `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`);
+    if (stacked) {
+      const x1 = sr.right - g.left - 4, x2 = cr.right - g.left - 4;
+      const out = Math.min(g.width - 1, Math.max(x1, x2) + 6 + (drawn.size % 4) * 3);   // nest the loops
+      path.setAttribute("d", `M${x1},${y1} C${out},${y1} ${out},${y2} ${x2},${y2}`);
+    } else {
+      const x1 = sr.right - g.left, x2 = cr.left - g.left, mid = (x1 + x2) / 2;
+      path.setAttribute("d", `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`);
+    }
     path.setAttribute("class", "board__line" + (b.solvedId && (box.id === b.solvedId || other === b.solvedId) ? " board__line--solved" : ""));
     svg.append(path);
   }

@@ -2,6 +2,7 @@
 // Accessible: focus trap, Escape, aria-modal, focus restore.
 import { el, $, $$, clear, appendToNotes, icon } from "./core.js";
 import { Settings } from "./settings.js";
+import { emptyScene } from "./art.js";
 
 let modalHost = null;
 function host() {
@@ -349,7 +350,7 @@ export function rollLogCard({ entries = [], onPin, onDelete, onClear, open = tru
   if (head) details.append(head);
   const list = el("div", { class: "rolllog__list" });
   if (!entries.length) {
-    list.append(el("p", { class: "muted rolllog__empty empty empty--dice" }, `No rolls yet. ${emptyHint}`.trim()));
+    list.append(emptyScene("dice", "empty-scene--sm"), el("p", { class: "muted rolllog__empty empty empty--dice" }, `No rolls yet. ${emptyHint}`.trim()));
   } else {
     for (const e of [...entries].reverse()) {
       const time = new Date(e.ts || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

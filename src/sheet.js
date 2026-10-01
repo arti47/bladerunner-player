@@ -3,7 +3,7 @@
 // attributes/skills/specialties display, faithful inventory (no encumbrance),
 // flavor + notes + portrait. All mutations persist through Store immediately.
 import { el, clear, titleCase, rollDie, uid, icon } from "./core.js";
-import { emblem, natureMark, portraitPlaceholder, badgeNumber, barcode } from "./art.js";
+import { emblem, natureMark, portraitPlaceholder, badgeNumber, barcode, vitalWave, dieShape, levelMeter, weaponArt, emptyScene } from "./art.js";
 import * as D from "../data.js";
 import * as R from "./rules.js";
 import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress, downtimeLimitFor, applyInvestigationShift, applyDowntimeShift } from "./derived.js";
@@ -214,7 +214,7 @@ function sheetPrefs(patch) {
 function sheetHeader(ch, arch, y, commit) {
   const portrait = ch.identity.portraitUrl
     ? el("img", { class: "sheet__portrait", src: ch.identity.portraitUrl, alt: `Portrait of ${ch.name}` })
-    : portraitPlaceholder(ch.name, "sheet__portrait");
+    : portraitPlaceholder(ch.name, "sheet__portrait", ch.archetype);
   const fileInput = el("input", { type: "file", accept: "image/*", class: "visually-hidden", id: "portrait-file",
     "aria-label": "Upload a portrait" });
   fileInput.addEventListener("change", () => {
@@ -282,10 +282,14 @@ function vitalTrack(label, key, value, max, tone, commit, charId) {
     const changed = prev == null ? "" : i > value && i <= prev ? " dot--lost" : i <= value && i > prev ? " dot--gained" : "";
     pips.append(el("span", { class: `dot dot--${tone}` + (i <= value ? " dot--full" : "") + changed }));
   }
+  // The change itself rises off the number once (round 5).
+  const float = prev != null && prev !== value
+    ? el("span", { class: "float-num float-num--" + (value < prev ? "loss" : "gain"), "aria-hidden": "true" }, `${value < prev ? "\u2212" : "+"}${Math.abs(value - prev)}`) : null;
   return el("div", { class: "track" },
     el("div", { class: "track__top" },
-      el("span", { class: "track__label" }, label),
+      el("span", { class: "track__label" }, label), float,
       el("span", { class: `track__num track__num--${tone}` }, `${value} / ${max}`)),
+    vitalWave(key, value, max),
     pips,
     el("div", { class: "stepper__ctrl" },
       el("button", { class: "btn btn--sm", "aria-label": `decrease ${label}`, onClick: () => commit((c) => { c.state[key] = Math.max(0, c.state[key] - 1); }) }, "−"),
@@ -338,7 +342,7 @@ function attributesBlock(ch) {
     const lv = ch.attributes[a.key];
     grid.append(el("div", { class: "stat", title: a.blurb },
       el("span", { class: "stat__name" }, a.name),
-      el("span", { class: "stat__lv" }, lv),
+      el("span", { class: "stat__shape" }, dieShape(D.LEVEL_DIE[lv]), el("span", { class: "stat__lv" }, lv)),
       el("span", { class: "stat__die muted" }, `d${D.LEVEL_DIE[lv]} · ${D.ATTR_LEVEL_DESC[lv]}`)));
   }
   return el("div", { class: "sheet__sub" }, sectionTitle("Attributes"), grid);
@@ -365,6 +369,7 @@ function skillsSection(ch, arch, rerender) {
       onClick: () => { if (pressedLong) { pressedLong = false; return; } openSkillRoll(ch, s.key, rerender, { quick: true }); } },
       el("span", { class: "skill__name" }, s.name, isKey ? el("span", { class: "skill__key", title: "Key skill" }, " ★") : null),
       el("span", { class: "skill__attr muted" }, R.attrDisplay(s.attr)),
+      levelMeter(lv, [...D.LEVELS].reverse(), s.name),
       el("span", { class: "skill__lv", title: D.SKILL_LEVEL_DESC[lv] }, `${lv} · d${D.LEVEL_DIE[lv]}`, el("span", { class: "skill__die-cta muted" }, " ⚄")));
     onLongPress(skillBtn, () => openSkillRoll(ch, s.key, rerender));
     list.append(el("div", { class: "skill-row" }, skillBtn,
@@ -382,7 +387,7 @@ function skillsSection(ch, arch, rerender) {
 function specialtiesSection(ch) {
   const card = el("div", { class: "card" }, sectionTitle("Specialties"));
   const specs = (ch.specialties || []).map((s) => R.specialty(typeof s === "string" ? s : s?.key)).filter(Boolean);
-  if (!specs.length) { card.append(el("p", { class: "muted empty empty--star" }, "None yet — press Learn specialty below (costs Promotion Points, one Shift at the Training Grounds).")); return card; }
+  if (!specs.length) { card.append(emptyScene("star", "empty-scene--sm"), el("p", { class: "muted empty empty--star" }, "None yet — press Learn specialty below (costs Promotion Points, one Shift at the Training Grounds).")); return card; }
   for (const sp of specs)
     card.append(el("div", { class: "ability" }, el("div", { class: "ability__name" }, sp.name), el("div", { class: "muted ability__text" }, sp.text)));
   return card;
@@ -392,11 +397,12 @@ function specialtiesSection(ch) {
 function inventorySection(ch, commit, rerender) {
   const items = ch.inventory.items || [];
   const list = el("div", { class: "inv" });
-  if (!items.length) list.append(el("p", { class: "muted empty empty--cart" }, "No items."));
+  if (!items.length) list.append(emptyScene("inventory", "empty-scene--sm"), el("p", { class: "muted empty empty--cart" }, "No items."));
   items.forEach((it, i) => {
     list.append(el("div", { class: "inv__row" },
       el("button", { class: "inv__equip" + (it.equipped ? " inv__equip--on" : ""), title: it.equipped ? "Equipped" : "Stowed", "aria-label": "toggle equipped",
         onClick: () => commit((c) => { c.inventory.items[i].equipped = !c.inventory.items[i].equipped; }) }, it.equipped ? "●" : "○"),
+      (() => { const w = it.key && [...D.WEAPONS, ...D.EXPLOSIVES].find((x) => x.key === it.key); return w ? weaponArt(w, "inv__art") : null; })(),
       el("span", { class: "inv__name" }, it.name, it.signature ? el("span", { class: "inv__sig", title: "Signature item" }, " ✦") : null),
       el("button", { class: "btn btn--sm btn--ghost", "aria-label": `remove ${it.name}`,
         onClick: () => {
@@ -1051,7 +1057,7 @@ function journalSection(ch, commit) {
     const text = await promptModal("Journal entry", { title: "New journal entry", okLabel: "Add" });
     if (text && text.trim()) commit((c) => { (c.journal ||= []).unshift({ id: uid(), ts: Date.now(), text: text.trim() }); });
   } }, "＋ Add entry"));
-  if (!entries.length) { card.append(el("p", { class: "muted sheet__note empty empty--pen" }, "No journal entries yet. Press Add entry, or pin a roll from the Roll Log.")); return card; }
+  if (!entries.length) { card.append(emptyScene("journal", "empty-scene--sm"), el("p", { class: "muted sheet__note empty empty--pen" }, "No journal entries yet. Press Add entry, or pin a roll from the Roll Log.")); return card; }
   // Oldest first, like the case notes and the roll log — one reading order.
   for (const e of [...entries].sort((a, z) => (a.ts || 0) - (z.ts || 0))) {
     card.append(el("div", { class: "journal__entry" },

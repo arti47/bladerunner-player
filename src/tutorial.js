@@ -13,7 +13,7 @@ import { segmentNav } from "./ui.js";
 import { Settings } from "./settings.js";
 import { navigate } from "./router.js";
 import { SOLO_SEQUENCE } from "../data-solo.js";
-import { dicePoolDiagram, pushDiagram, loopDiagram, rangeBands } from "./art.js";
+import { dicePoolDiagram, pushDiagram, loopDiagram, rangeBands, spotArt } from "./art.js";
 
 const SEGMENTS = [
   { key: "basics", label: "What is this?" },
@@ -38,6 +38,8 @@ export function renderTutorial(mount, rerender) {
   );
   const host = el("div", { class: "panel" });
   ({ basics: panelBasics, setup: panelSetup, solo: panelSolo, board: panelBoard, table: panelTable, reference: panelReference }[panel])(host, rerender);
+  // Round 5: a small drawing beside each card's title (decorative).
+  for (const t of host.querySelectorAll(".card:not(.tut__hint) > .card__title")) t.before(spotArt(t.textContent, "tut__spot"));
   body.append(host);
   mount.append(body);
 }
@@ -316,8 +318,10 @@ function steps(title, sub, rows, actions, figure) {
   if (figure) card.append(figure);
   const list = el("ol", { class: "tut__steps" });
   for (const [label, text] of rows) {
-    list.append(el("li", { class: "tut__step" },
-      el("span", { class: "tut__label" }, label),
+    // A leading step number becomes a neon numeral; the label's text is unchanged.
+    const m = String(label).match(/^(\d+)(\s*[.·]\s*)(.*)$/);
+    list.append(el("li", { class: "tut__step" + (m ? " tut__step--num" : "") },
+      el("span", { class: "tut__label" }, ...(m ? [el("span", { class: "tut__num" }, m[1]), el("span", { class: "tut__sep" }, m[2]), m[3]] : [label])),
       el("span", { class: "tut__text", html: text })));
   }
   card.append(list);

@@ -667,6 +667,7 @@ export const HOME_TABLE = [
 ];
 
 export const TIME_UNITS = { round: "5–10 seconds (combat/chase)", shift: "5–10 hours (investigation); 4 per day" };
+export const SHIFTS_PER_DAY = 4;   // Core Ch04: four Shifts make a day (TIME_UNITS.shift)
 
 export const META = {
   game: "Blade Runner RPG",

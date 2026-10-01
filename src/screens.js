@@ -18,6 +18,10 @@ function screen(title, ...blocks) {
 }
 
 // ---- HOME -----------------------------------------------------------------
+// One sprite icon per Rules Library section, so the long list reads at a glance (round 5).
+const RULE_ICONS = { Glossary: "book", Skills: "dice", Specialties: "star", Conditions: "warn", Weapons: "attack", "Armor & Gear": "shield",
+  Augmentations: "sparkle", Combat: "target", Chases: "cab", Vehicles: "cab", "Critical Injuries": "skull", Stress: "resolve", Recovery: "bed",
+  "Years on the Force": "badge", Advancement: "up", "Creation Tables": "pen", Archetypes: "person", NPCs: "people", "Solo Mode": "solo" };
 export function renderHome(mount) {
   clear(mount);
   const chars = Store.list();
@@ -107,7 +111,7 @@ function tile(title, sub, onClick, iconName) {
 function heroCard(ch) {
   const face = ch.identity?.portraitUrl
     ? el("img", { class: "hero__portrait", src: ch.identity.portraitUrl, alt: "" })
-    : portraitPlaceholder(ch.name, "hero__portrait");
+    : portraitPlaceholder(ch.name, "hero__portrait", ch.archetype);
   let caseOpen = null;
   try { caseOpen = JSON.parse(localStorage.getItem("brp:solo") || "{}").caseOpen || null; } catch { /* storage best-effort */ }
   return el("div", { class: "card card--hero hero" },
@@ -148,7 +152,7 @@ export function renderCharacters(mount) {
   for (const ch of [...chars].sort((a, b) => (b.id === activeId) - (a.id === activeId))) {
     const face = ch.identity?.portraitUrl
       ? el("img", { class: "char-row__face", src: ch.identity.portraitUrl, alt: "" })
-      : portraitPlaceholder(ch.name, "char-row__face");
+      : portraitPlaceholder(ch.name, "char-row__face", ch.archetype);
     list.append(el("button", { class: "list__row char-row" + (ch.id === activeId ? " char-row--active" : ""), "aria-current": ch.id === activeId ? "true" : null,
       onClick: () => { Store.setActiveId(ch.id); navigate("sheet"); } },
       face,
@@ -207,10 +211,11 @@ export function renderRules(mount) {
     if (!hits.length) { results.append(el("p", { class: "muted" }, "No matches.")); return; }
     for (const [c, items] of Object.entries(byCat)) {
       const group = el("details", { class: "rules__group", open: query || cat ? true : c === "Glossary" });
-      group.append(el("summary", {}, `${c} (${items.length})`));
+      group.append(el("summary", {}, el("span", { class: "rules__icon" }, icon(RULE_ICONS[c] || "book")), `${c} (${items.length})`));
       for (const it of items) {
         const row = el("div", { class: "rules__item" + (selected === it ? " rules__item--on" : ""), tabindex: "0",
           onClick: () => { selected = it; paintDetail(it); results.querySelectorAll(".rules__item--on").forEach((n) => n.classList.remove("rules__item--on")); row.classList.add("rules__item--on"); } },
+          it.cat === "Glossary" ? el("span", { class: "rules__mono", "aria-hidden": "true" }, it.name.replace(/[^A-Za-z]/g, "").slice(0, 2)) : null,
           el("div", { class: "rules__name" }, ...marked(it.name, query)),
           el("div", { class: "rules__desc muted" }, ...[body(it, query)].flat()));
         row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.click(); } });

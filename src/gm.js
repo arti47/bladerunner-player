@@ -161,7 +161,7 @@ export function renderGm(mount, rerender) {
   lastPanelKey = st.panel;
   ({ prep: panelPrep, play: panelPlay, fight: panelFight, wrap: panelWrap, notes: panelNotes }[st.panel] || panelPrep)(panel);
   cardHeads(panel);
-  panel.querySelector(".card")?.append(sceneArt(st.panel, "card__art"));
+  panel.querySelector(".card:not(.rolllog)")?.append(sceneArt(st.panel, "card__art"));
   paintResults(panel);
   mount.append(panel);
 

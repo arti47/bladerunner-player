@@ -16,6 +16,7 @@ import { reclampVitals, isBrokenByDamage } from "./derived.js";
 import { Settings } from "./settings.js";
 import * as H from "../data-house.js";
 import { Board } from "./board.js";
+import { weaponArt } from "./art.js";
 import { navigate } from "./router.js";
 
 const dsize = (lvl) => D.LEVEL_DIE[lvl];
@@ -226,8 +227,9 @@ function tumble(fresh) {
     fresh.forEach(([n, d], i) => {
       if (!n.classList.contains("die--rolling")) return;
       const face = n.querySelector(".die__face");
-      if (t < 360 + i * 90) { rolling++; face.textContent = scramble(d.size); return; }
+      if (t < 360 + i * 90) { rolling++; const f = scramble(d.size); face.textContent = f; n.dataset.face = String(f); return; }
       face.textContent = d.face;
+      n.dataset.face = String(d.face);
       n.classList.remove("die--rolling");
       n.classList.add("die--landed");
     });
@@ -549,7 +551,8 @@ export function openWeaponPicker(ch, onDone) {
       if (armedWeapons.length) {
         body.append(el("div", { class: "card__eyebrow" }, "Armed & Ready (Equipped)"));
         for (const w of armedWeapons) {
-          list.append(el("button", { class: "list__row list__row--armed", onClick: () => { close(); openAttackRoll(ch, w, onDone); } },
+          list.append(el("button", { class: "list__row list__row--armed list__row--weapon", onClick: () => { close(); openAttackRoll(ch, w, onDone); } },
+            weaponArt(w),
             el("span", { class: "list__main" }, w.name, el("span", { class: "badge", style: "margin-left: .5rem; font-size: 0.75em; background: var(--cyan); color: var(--bg);" }, "● Armed")),
             el("span", { class: "list__sub muted" }, weaponLine(w))));
         }
@@ -557,7 +560,8 @@ export function openWeaponPicker(ch, onDone) {
       if (inventoryWeapons.length) {
         body.append(el("div", { class: "card__eyebrow", style: "margin-top: 0.75rem;" }, "Stowed Inventory Weapons"));
         for (const w of inventoryWeapons) {
-          list.append(el("button", { class: "list__row", onClick: () => { close(); openAttackRoll(ch, w, onDone); } },
+          list.append(el("button", { class: "list__row list__row--weapon", onClick: () => { close(); openAttackRoll(ch, w, onDone); } },
+            weaponArt(w),
             el("span", { class: "list__main" }, w.name),
             el("span", { class: "list__sub muted" }, weaponLine(w))));
         }
@@ -567,7 +571,8 @@ export function openWeaponPicker(ch, onDone) {
       const group = (label, wList) => {
         const box = el("details", { class: "rules__group", open: !armedWeapons.length && label === "Ranged" });
         box.append(el("summary", {}, label));
-        for (const w of wList) box.append(el("button", { class: "list__row", onClick: () => { close(); openAttackRoll(ch, w, onDone); } },
+        for (const w of wList) box.append(el("button", { class: "list__row list__row--weapon", onClick: () => { close(); openAttackRoll(ch, w, onDone); } },
+          weaponArt(w),
           el("span", { class: "list__main" }, w.name),
           el("span", { class: "list__sub muted" }, weaponLine(w))));
         return box;
@@ -1067,12 +1072,13 @@ export function rollCombatAttack(c, commit) {
 
 function weaponPickRow(w, c, rc, commit, close, isArmed = false) {
   const badge = isArmed ? el("span", { class: "badge", style: "margin-left: .5rem; font-size: 0.75em; background: var(--cyan); color: var(--bg);" }, "● Armed") : null;
-  return el("button", { class: "list__row" + (isArmed ? " list__row--armed" : ""), onClick: () => {
+  return el("button", { class: "list__row list__row--weapon" + (isArmed ? " list__row--armed" : ""), onClick: () => {
     close();
     const melee = D.WEAPONS_MELEE.some((x) => x.key === w.key);
     if (melee) openOpposedMelee(c, rc, w, commit);
     else openRangedAttack(c, rc, w, commit);
   } },
+    weaponArt(w),
     el("span", { class: "list__main" }, w.name, badge),
     el("span", { class: "list__sub muted" }, weaponLine(w)));
 }

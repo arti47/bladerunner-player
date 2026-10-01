@@ -9,7 +9,7 @@ import { showToast } from "./ui.js";
 import { Settings } from "./settings.js";
 import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
 import { navigate } from "./router.js";
-import { emblem, natureMark, portraitPlaceholder } from "./art.js";
+import { emblem, natureMark, portraitPlaceholder, yearsTimeline, dieShape } from "./art.js";
 
 const d3 = () => Math.ceil(rollDie(6) / 2);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -268,6 +268,7 @@ function stepYears(body, rerender) {
     body.append(el("div", { class: "notice" }, "All Replicants are Rookies (only one year since the N-9 models were approved)."));
   }
   body.append(el("p", { class: "muted" }, "More experience means higher skills, more specialties and points — but fewer attribute increases."));
+  body.append(yearsTimeline(D.YEARS_ON_FORCE, draft.years));
   for (const y of D.YEARS_ON_FORCE) {
     const disabled = draft.nature === "replicant" && y.key !== "rookie";
     const sub = `+${y.attrIncreases} attr · +${y.skillIncreases} skill · ${y.specialties} spec · Promotion D${y.startingPromotionDie} · Chinyen ${y.chinyenMod >= 0 ? "+" + y.chinyenMod : y.chinyenMod}`;
@@ -287,8 +288,10 @@ function stepAttributes(body, rerender) {
   body.append(el("p", { class: "muted" }, `Start at C. Spend exactly ${budget} increase${budget === 1 ? "" : "s"} (one step each). Lower one attribute to D to gain an extra.` + (arch.keyAttr ? ` Key: ${R.attrDisplay(arch.keyAttr)} must be B+.` : " No archetype — choose your own focus.")));
   body.append(budgetMeter(used, budget));
   for (const a of D.ATTRIBUTES) {
-    body.append(stepper(a.name + (a.key === arch.keyAttr ? " ★" : ""), draft.attributes[a.key],
-      (dir) => { draft.attributes[a.key] = R.stepLevel(draft.attributes[a.key], dir); rerender(); }, `d${D.LEVEL_DIE[draft.attributes[a.key]]}`));
+    const row = stepper(a.name + (a.key === arch.keyAttr ? " ★" : ""), draft.attributes[a.key],
+      (dir) => { draft.attributes[a.key] = R.stepLevel(draft.attributes[a.key], dir); rerender(); }, `d${D.LEVEL_DIE[draft.attributes[a.key]]}`);
+    row.querySelector(".stepper__val").prepend(dieShape(D.LEVEL_DIE[draft.attributes[a.key]], "stepper__shape"));   // round 5
+    body.append(row);
   }
   const tmp = normalizeCharacter({ ...draft, id: "tmp" });
   body.append(el("div", { class: "derived" },
@@ -412,7 +415,7 @@ function stepReview(body) {
     el("div", { class: "idcard__strip", "aria-hidden": "true" },
       el("span", { class: "idcard__org" }, "LAPD · Identification"), el("span", { class: "idcard__no" }, "BR-····")),
     el("div", { class: "review-id__row" },
-      portraitPlaceholder(draft.identity.name || "?", "review-id__face"),
+      portraitPlaceholder(draft.identity.name || "?", "review-id__face", draft.archetype),
       el("div", {},
         el("div", { class: "card__title" }, draft.identity.name || "Unnamed Blade Runner"),
         el("div", { class: "muted" }, natureMark(draft.nature), emblem(draft.archetype), `${titleCase(draft.nature)} · ${arch.name} · ${y.name}`))),

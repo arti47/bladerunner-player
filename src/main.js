@@ -32,6 +32,17 @@ function boot() {
   // Atmosphere: a rain layer behind everything, a skyline in the app bar.
   if (!document.getElementById("rain")) document.body.prepend(Object.assign(document.createElement("div"), { id: "rain", ariaHidden: "true" }));
   document.querySelector(".appbar")?.append(skyline("appbar__skyline"));
+  // Round 5: a faint skyline along the floor of the page that drifts as you scroll (dark only, CSS).
+  if (!document.getElementById("skyfloor")) {
+    const floor = Object.assign(document.createElement("div"), { id: "skyfloor", ariaHidden: "true" });
+    floor.append(skyline("skyfloor__art"), skyline("skyfloor__art skyfloor__art--far"));
+    document.body.prepend(floor);
+    let queued = false;
+    addEventListener("scroll", () => {
+      if (queued) return; queued = true;
+      requestAnimationFrame(() => { queued = false; document.documentElement.style.setProperty("--sky-y", String(Math.min(scrollY, 4000))); });
+    }, { passive: true });
+  }
   bindOfflineChip();
   startRouter();
   bindGlobalKeys();

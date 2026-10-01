@@ -4280,7 +4280,7 @@ test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, r
   // Shift: the countdown dial, labelled from the data.
   await go("solo", "shift");
   assert.match(await p.$eval(".dial", (d) => d.getAttribute("aria-label")), /D10, step 3 of \d+/);
-  assert.ok(await p.$(".card .card__head ~ .card__art, .card > .card__art"), "the panel drawing is still there");
+  assert.ok(await p.$(".shift-clock .sclock"), "the Shift card carries its clock (round 5 — in place of the drawing)");
   // FAB: a panel with a sticky next-step bar has no quick-roll button over it.
   assert.equal(await p.locator("#quick-roll").isVisible(), false, "no FAB over a next-step bar");
 
@@ -4395,4 +4395,134 @@ test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, r
   assert.ok((await d.$eval(".play-card", (c) => c.getBoundingClientRect().width)) <= 720);
   assert.equal(await d.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
   await dctx.close();
+});
+
+// UX round 5 (owner audit, 2026-10-01): defects stay fixed; the new drawings
+// (portraits, signals, dice, meters, tokens, weapons, clocks, dials, tutorial and
+// rules art, folders, timeline, atmosphere, empties) render and stay decorative.
+test("round 5: portraits, vitals signals, dice/meters/tokens, weapons, notes paper, floats, pips, clocks, dials, tutorial/rules art, folders, timeline, skyline, empties, board strings", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const p = await ctx.newPage();
+  await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  const errs = []; p.on("pageerror", (e) => errs.push(e.message));
+  let n = 0;
+  const go = async (route, panel) => {
+    if (panel) await p.evaluate((pn) => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = pn; localStorage.setItem("brp:solo", JSON.stringify(s)); }, panel);
+    await p.goto(`${base}/index.html?r5${++n}#${route}`, { waitUntil: "load" }); await p.waitForTimeout(400);
+  };
+  await p.goto(`${base}/index.html#home`, { waitUntil: "load" });
+  await p.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Rachael Voss", nature: "human", archetype: "inspector", years: "veteran", attributes: { STR: "C", AGI: "B", INT: "A", EMP: "B" } });
+    ch.skills.firearms = "B"; ch.journal = [];
+    ch.inventory.items = [{ key: "pkd_44", name: "PK-D 5223 Blaster (.44 Special)", equipped: true }];
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "leads", introSeen: true, shiftNo: 3, timerDie: "D10", scratchpad: "=== CASE #1 ===\n• [Clue] A sleeve",
+      caseOpen: { no: 1, title: "Neon", assignment: "A body", opened: Date.now(), openStats: { pp: 0, humanity: 0 } },
+      hypotheses: [{ id: "h1", text: "The bartender", die: "D8" }] }));
+    localStorage.setItem("brp:cases", JSON.stringify({ files: [{ id: "f1", no: 7, title: "Old", culprit: "Roy", shifts: 2, pp: 3, humanity: 0 }, { id: "f2", no: 8, title: "Cold", culprit: "unsolved", shifts: 1, pp: 0, humanity: 0 }], nextNo: 9 }));
+    localStorage.setItem("brp:board", JSON.stringify({ boxes: [
+      { id: "s1", n: 1, kind: "suspect", name: "Mika Tanaka — Engineer", detail: "", links: ["c2"] },
+      { id: "c2", n: 2, kind: "clue", name: "Torn sleeve", detail: "", links: ["s1"] }], nextN: 3, checks: 0, solvedId: null }));
+  });
+
+  // Portraits: generated, stable, initials in a corner
+  const parts = await p.evaluate(async () => {
+    const A = await import("/src/art.js");
+    const a = A.portraitPlaceholder("Ada Voss", "", "inspector").dataset, b = A.portraitPlaceholder("Ada Voss", "", "inspector").dataset;
+    return { same: JSON.stringify(a) === JSON.stringify(b), keys: Object.keys(a).sort().join(",") };
+  });
+  assert.ok(parts.same, "the same name draws the same face");
+  assert.equal(parts.keys, "coat,detail,hair,hat");
+
+  // Sheet
+  await go("sheet");
+  const gap = await p.evaluate(() => document.querySelector(".sheet__head").getBoundingClientRect().top - document.querySelector(".solo-return, .sheet > .btn").getBoundingClientRect().bottom);
+  assert.ok(gap < 30, `no blank band above the ID card (${gap}px)`);
+  const ini = await p.$eval(".sheet__portrait .portrait-ph__initials", (e) => { const r = e.getBoundingClientRect(), f = e.parentElement.getBoundingClientRect(); return { right: f.right - r.right, low: r.top > f.top + f.height / 2 }; });
+  assert.ok(ini.right < 8 && ini.low, `initials sit in the corner: ${JSON.stringify(ini)}`);
+  assert.equal(await p.$$eval(".track .wave", (w) => w.length), 2, "Health and Resolve each draw a signal");
+  assert.equal(await p.$$eval(".stat__shape .die-shape", (d) => d.length), 4);
+  assert.equal(await p.$$eval(".skill-row .lvmeter", (m) => m.length), 13);
+  assert.equal(await p.$eval(".skill-row:has([aria-label='Roll Firearms']) .lvmeter", (m) => m.querySelectorAll(".lvmeter__seg--on").length), 3, "B is three steps up from D");
+  assert.equal(await p.$eval(".res-grid .counter__val", (v) => getComputedStyle(v).borderRadius), "50%");
+  assert.ok(await p.$(".inv__row .weapon-art--pistol"), "the blaster is drawn in the inventory");
+  assert.ok(await p.$(".empty-scene--sm") , "an empty journal has a scene");
+  await p.getByRole("button", { name: "decrease Health" }).click(); await p.waitForTimeout(150);
+  assert.match(await p.$eval(".float-num--loss", (f) => f.textContent), /^−1$/, "the loss rises off the track");
+  await p.evaluate(() => window.scrollTo(0, 0));
+  // Wave flat at zero
+  await p.evaluate(async () => { const { Store } = await import("/src/store.js"); const c = Store.getActive(); c.state.health = 0; Store.save(c); });
+  await go("sheet");
+  assert.ok(await p.$(".wave--health.wave--flat"), "no pulse at zero Health");
+  // Weapons in the picker
+  await p.evaluate(async () => { const { Store } = await import("/src/store.js"); const c = Store.getActive(); c.state.health = 4; Store.save(c); });
+  await go("sheet");
+  await p.getByRole("button", { name: /Roll an attack/ }).first().click(); await p.waitForTimeout(250);
+  const kinds = await p.$$eval(".modal .weapon-art", (w) => [...new Set(w.map((x) => [...x.classList].find((c) => c.startsWith("weapon-art--"))))]);
+  assert.ok(kinds.includes("weapon-art--pistol") && kinds.includes("weapon-art--rifle") && kinds.includes("weapon-art--blade"), `weapon kinds drawn: ${kinds}`);
+  await p.keyboard.press("Escape");
+  // d6 pips
+  await p.evaluate(() => { Math.random = () => 0.4; });
+  await p.getByRole("button", { name: "Roll options for Stamina" }).click(); await p.waitForTimeout(150);
+  await p.locator(".modal").getByRole("button", { name: "Roll", exact: true }).click(); await p.waitForTimeout(900);
+  const pip = await p.$eval(".modal .die--d6", (d) => ({ face: d.dataset.face, bg: getComputedStyle(d, "::before").backgroundImage, faceOpacity: getComputedStyle(d.querySelector(".die__face")).opacity }));
+  assert.ok(/radial-gradient/.test(pip.bg) && pip.faceOpacity === "0" && /^[1-6]$/.test(pip.face), `d6 shows pips: ${JSON.stringify(pip)}`);
+  await p.keyboard.press("Escape");
+
+  // Solo: clock, dial, notes paper, folders, board strings
+  await go("solo", "leads");
+  assert.ok(await p.$(".solo-status .sclock--xs"), "the HUD carries a Shift clock");
+  assert.match(await p.$eval(".hyp-row .dial--sm", (d) => d.getAttribute("aria-label")), /Rating of The bartender at D8/);
+  await go("solo", "shift");
+  assert.ok(await p.$(".shift-clock .sclock--lg"));
+  await go("solo", "notes");
+  assert.match(await p.$eval(".notes-read", (r) => getComputedStyle(r).fontFamily), /Mono/i, "notes are typed");
+  assert.ok(await p.$(".notes-read__head"));
+  await go("solo", "case");
+  await p.locator(".fold__summary").first().click().catch(() => {});
+  const folders = await p.$$eval(".casefile", (f) => f.map((x) => getComputedStyle(x, "::before").content));
+  assert.ok(folders.length === 2 && folders.every((c) => c === '""'), `each filed case wears a folder tab: ${folders}`);
+  await go("solo", "board");
+  await p.waitForTimeout(300);
+  assert.ok(await p.$$eval(".board__lines .board__line", (l) => l.length) >= 1, "one-column board still draws the string");
+
+  // Tutorial and Rules
+  await go("tutorial");
+  assert.ok(await p.$$eval(".tut__spot", (s) => s.length) >= 3, "tutorial cards carry spot drawings");
+  await p.evaluate(() => localStorage.setItem("brp:tutorial", "solo")); await go("tutorial");
+  assert.equal(await p.$eval(".tut__num", (x) => x.textContent), "1");
+  assert.match(await p.$eval(".tut__step--num .tut__label", (x) => x.textContent), /^1[.·]?\s*[·.]?\s*\S/, "the label's text is unchanged");
+  await go("rules");
+  assert.ok(await p.$("summary .rules__icon .i"), "sections have icons");
+  assert.equal(await p.$eval(".rules__mono", (m) => m.textContent), "Ba");
+
+  // Wizard
+  await go("wizard");
+  await p.getByRole("button", { name: /Roll me a whole Blade Runner/i }).click(); await p.waitForTimeout(300);
+  // The rolled draft is saved; open it on the Years (2) and Attributes (3) steps.
+  await p.evaluate(() => { const d = JSON.parse(localStorage.getItem("brp:wizard") || "{}"); d.step = 2; localStorage.setItem("brp:wizard", JSON.stringify(d)); });
+  await go("wizard");
+  assert.ok(await p.$(".ytl .ytl__stop--on"), "the chosen service length is lit");
+  await p.evaluate(() => { const d = JSON.parse(localStorage.getItem("brp:wizard") || "{}"); d.step = 3; localStorage.setItem("brp:wizard", JSON.stringify(d)); });
+  await go("wizard");
+  assert.equal(await p.$$eval(".stepper__shape", (s) => s.length), 4, "each attribute shows its die");
+
+  // Atmosphere: skyline floor in dark, not in light; Home grid has no hole
+  await go("home");
+  assert.equal(await p.$eval("#skyfloor", (f) => getComputedStyle(f).display), "block");
+  const tiles = await p.$$eval(".home-grid > .tile", (t) => t.map((x) => Math.round(x.getBoundingClientRect().right)));
+  assert.ok(Math.max(...tiles) >= 370, "the last row reaches the edge");
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:settings")); s.theme = "light"; localStorage.setItem("brp:settings", JSON.stringify(s)); });
+  await go("home");
+  assert.equal(await p.$eval("#skyfloor", (f) => getComputedStyle(f).display), "none");
+  assert.match(await p.evaluate(() => getComputedStyle(document.body).backgroundImage), /svg/, "light theme has paper grain");
+  assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
+  assert.deepEqual(errs, []);
+  await ctx.close();
 });

@@ -127,11 +127,15 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
   const broken = c.health <= 0;
   const dying = (c.criticalInjuries || []).some((i) => i.lethal && !i.instantKill && !i.stabilized) && !c.dead;
   // Health that dropped since the last paint flashes once (round 3).
-  const hit = lastHealth.has(c.id) && c.health < lastHealth.get(c.id);
+  const was = lastHealth.get(c.id);
+  const hit = lastHealth.has(c.id) && c.health < was;
   lastHealth.set(c.id, c.health);
   const card = el("div", { class: "card combatant" + (isTurn ? " combatant--turn" : "") + (turnIsNew ? " combatant--turn-new" : "")
     + (broken || dying || c.dead ? " combatant--broken" : "") + (dying ? " combatant--dying" : "") + (hit ? " combatant--hit" : "") + (open ? "" : " combatant--closed"),
     dataset: { cid: c.id } });
+  // The change itself rises off the row once (round 5): "−2" lost, "+1" healed.
+  if (was != null && was !== c.health) card.append(el("span", { class: "float-num float-num--" + (c.health < was ? "loss" : "gain"), "aria-hidden": "true" },
+    `${c.health < was ? "\u2212" : "+"}${Math.abs(c.health - was)}`));
   const armor = armorFor(c);
   // A one-line summary: card, name, a Health bar, and what state they are in.
   const bar = el("span", { class: "hbar", role: "img", "aria-label": `Health ${c.health} of ${c.maxHealth}` });

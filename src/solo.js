@@ -29,7 +29,7 @@ import { Board, renderBoardPanel } from "./board.js";
 import { renderPlayPanel } from "./play.js";
 import { Chase } from "./chase.js";
 import { Settings } from "./settings.js";
-import { timerLadder, stamp, avatar, sceneArt, emptyScene, countdownDial } from "./art.js";
+import { timerLadder, stamp, avatar, sceneArt, emptyScene, countdownDial, stepDial, shiftClock } from "./art.js";
 
 const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo state,
                                  // so starting a fresh case cannot wipe your record
@@ -463,7 +463,7 @@ export function renderSolo(mount, rerender) {
     stats.append(
       cell(`♥ ${ch.state.health}/${maxHealth(ch)}`, ch.state.health <= 0 ? "warn" : ""),
       cell(`◈ ${ch.state.resolve}/${maxResolve(ch)}`, ch.state.resolve <= 0 ? "warn" : ""),
-      cell(`Shift ${st.shiftNo || 1}`),
+      el("span", { class: "solo-status__cell solo-status__shift" }, shiftClock(st.shiftNo || 1, D.SHIFTS_PER_DAY, "sclock--xs"), `Shift ${st.shiftNo || 1}`),
       cell(`${used}/${limit} to Downtime`, atLimit ? "warn" : ""),
       cell(`⏱ ${st.timerDie}`),
     );
@@ -531,7 +531,8 @@ export function renderSolo(mount, rerender) {
   ({ play: panelPlay, case: panelCase, shift: panelShift, scene: panelScene, board: panelBoard, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
   cardHeads(panel);
   // A faint drawing for the panel, in its first card's corner (round 3).
-  panel.querySelector(".card")?.append(sceneArt(st.panel, "card__art"));
+  // (Shift's first card carries its clock instead — round 5.)
+  if (st.panel !== "shift") panel.querySelector(".card:not(.rolllog)")?.append(sceneArt(st.panel, "card__art"));
   paintResults(panel);
   // Desktop (≥1280px): the case notes ride alongside every other panel (round 4).
   if (st.panel !== "notes" && window.matchMedia?.("(min-width: 1280px)").matches) {
@@ -914,6 +915,7 @@ export function renderSolo(mount, rerender) {
     if (ch && (ch.state.shiftsSinceDowntime || 0) >= downtimeLimitFor(ch)) {
       head.append(el("p", { class: "roll-result--warn" }, "At the Downtime limit — another investigation Shift costs you 1 stress."));
     }
+    head.append(el("div", { class: "shift-clock" }, shiftClock(st.shiftNo || 1, D.SHIFTS_PER_DAY, "sclock--lg")));
     head.append(el("div", { class: "btn-row" }, btn(ch ? "Open sheet →" : "Create a character →", () => navigate(ch ? "sheet" : "wizard"), "sm ghost")));
     head.append(procedureCard());
     root.append(head);
@@ -1123,7 +1125,7 @@ export function renderSolo(mount, rerender) {
     const chip = doneChip("review");
     if (chip) review.append(el("div", { class: "chips" }, chip));
     const hypList = el("div", { class: "hyp-list" });
-    if (!st.hypotheses.length) hypList.append(el("p", { class: "muted" }, "No active hypotheses."));
+    if (!st.hypotheses.length) hypList.append(emptyScene("leads", "empty-scene--sm"), el("p", { class: "muted" }, "No active hypotheses."));
     // A lead that names someone on the board wears their avatar.
     const people = (() => { try { return Board.get().boxes.filter((b) => b.kind === "suspect").map((b) => b.name.split(" — ")[0]).filter(Boolean); } catch { return []; } })();
     st.hypotheses.forEach((h, i) => {
@@ -1131,7 +1133,7 @@ export function renderSolo(mount, rerender) {
       // Any add/upgrade/downgrade counts as this Shift's review (soft marker).
       const stepHyp = (dir) => { const idx = S.ESCALATION_STEPS.indexOf(h.die) + dir; if (idx >= 0 && idx < S.ESCALATION_STEPS.length) { h.die = S.ESCALATION_STEPS[idx]; setFlag("review"); writeSoloState(st); rerender(); } };
       hypList.append(el("div", { class: "hyp-row" },
-        el("div", { class: "hyp-row__main" }, who ? avatar(who, "hyp-row__avatar") : null, el("strong", { class: "hyp-row__die" }, `[${h.die}]`), el("span", {}, h.text)),
+        el("div", { class: "hyp-row__main" }, who ? avatar(who, "hyp-row__avatar") : null, el("strong", { class: "hyp-row__die" }, stepDial(S.ESCALATION_STEPS, h.die, `Rating of ${h.text}`, "dial--sm")), el("span", {}, h.text)),
         el("div", { class: "btn-row hyp-row__acts" }, btn("🎲 Check", () => hypothesisCheck(h), "sm"),
           named(btn("▲", () => stepHyp(1), "sm ghost"), `Upgrade ${h.text}`), named(btn("▼", () => stepHyp(-1), "sm ghost"), `Downgrade ${h.text}`),
           named(btn("✕", () => {
