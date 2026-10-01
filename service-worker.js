@@ -1,7 +1,7 @@
 // service-worker.js — network-first, caches the app shell + all data files.
 // Bump CACHE_VERSION on ANY shipped-file change (CLAUDE.md §10.6) — that bump is
 // what makes an installed app see a new deploy and offer the update toast.
-const CACHE_VERSION = "brp-v82";
+const CACHE_VERSION = "brp-v83";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -20,6 +20,7 @@ const APP_SHELL = [
   "./data-npcs.js",
   "./data-solo.js",
   "./data-house.js",
+  "./data-meanings.js",
   "./data-gm.js",
   "./src/main.js",
   "./src/update.js",
@@ -44,6 +45,7 @@ const APP_SHELL = [
   "./src/gm.js",
   "./src/tutorial.js",
   "./src/quick.js",
+  "./src/meanings.js",
   "./src/sync.js",
   "./firebase-config.js",
 ];

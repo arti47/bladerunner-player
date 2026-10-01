@@ -19,6 +19,7 @@ import { el, uid, rollDie } from "./core.js";
 import { modal, showToast, confirmModal, promptModal, rowMenu, undoToast } from "./ui.js";
 import { rollColumn, rollGrouped, lookupRange } from "./rules.js";
 import { avatar, emptyScene } from "./art.js";
+import { rollMeaning } from "./meanings.js";
 
 const BOARD_KEY = "brp:board";
 const EMPTY = { boxes: [], nextN: 1, checks: 0, solvedId: null };
@@ -300,6 +301,7 @@ export function renderBoardPanel(root, ctx) {
           box.kind === "suspect" ? el("span", { class: "board__count", title: "connections" }, `🔗 ${links.length}`) : null),
         meter,
         box.detail ? el("p", { class: "muted small board__detail" }, box.detail) : null,
+        box.prompt ? el("p", { class: "small board__prompt" }, el("span", { class: "tag tag--sm" }, "Prompt"), ` ${box.prompt}`) : null,
         links.length ? el("p", { class: "muted small board__links" }, "Connected: ", ...links.map((l) => el("span", { class: "tag tag--sm board__link" }, label(l)))) : null,
         // Connect is what you do most; the rest sit behind one ⋯.
         el("div", { class: "btn-row board__acts" },
@@ -339,10 +341,14 @@ export function renderBoardPanel(root, ctx) {
     if (!(await guardFull())) return;
     const rolled = kind === "clue" ? rollClue() : rollSuspect();
     const box = addBox(b, kind, rolled.name, rolled.detail);
+    // The official table names it; a meaning-table prompt (house aid, §3.19)
+    // gives you something to read into it — Objects for a clue, Characters for a suspect.
+    const hint = rollMeaning(kind === "clue" ? "objects" : "characters");
+    box.prompt = `${hint.label}: ${hint.text}`;
     Board.save(b);
     show({ label: kind === "clue" ? "Board clue" : "Board suspect", text: `${label(box)} · ${box.name}`,
       pin: noteLine(box, ` — ${box.detail}`), title: `New ${kind} — ${label(box)}`,
-      render: (bd) => bd.append(el("h3", { class: "roll-result" }, box.name), el("p", { class: "muted" }, box.detail)) });
+      render: (bd) => bd.append(el("h3", { class: "roll-result" }, box.name), el("p", { class: "muted" }, box.detail), el("p", { class: "small board__prompt" }, el("span", { class: "tag tag--sm" }, "Prompt"), ` ${box.prompt}`)) });
   }
 
   async function addTyped(kind) {

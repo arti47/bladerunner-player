@@ -9,6 +9,7 @@ import { navigate } from "./router.js";
 import { Settings } from "./settings.js";
 import * as D from "../data.js";
 import * as R from "./rules.js";
+import { meaningTables, openMeaningRoll } from "./meanings.js";
 
 // A skill's marks: ★ for an archetype key skill, a dot for any skill trained
 // above the baseline — so the list says which rolls are your strong ones.
@@ -28,6 +29,11 @@ function pickSkill(ch) {
       body.append(el("button", { class: "picker__row picker__row--btn quick__row", onClick: () => { close(); openSkillRoll(ch, s.key, null, { quick: true }); } },
         el("span", { class: "palette__icon" }, icon("dice")), el("strong", {}, s.name), skillMarks(ch, s)));
     }
+    // House aid (§3.19): two words to interpret, from anywhere.
+    body.append(el("div", { class: "palette__head" }, "Meaning tables — house aid"));
+    for (const t of meaningTables())
+      body.append(el("button", { class: "picker__row picker__row--btn quick__row", onClick: () => { close(); openMeaningRoll(t.key); } },
+        el("span", { class: "palette__icon" }, icon("sparkle")), el("strong", {}, t.label), el("span", { class: "muted palette__hint" }, `${t.a} × ${t.b}`)));
   } });
 }
 
@@ -86,6 +92,7 @@ function openPalette() {
   const items = [];
   for (const [label, route, ic] of go) items.push({ id: `screen:${route}`, label, hint: "screen", ic, fn: () => navigate(route) });
   if (Settings.solo()) for (const [key, label, ic] of SOLO_TABS) items.push({ id: `solo:${key}`, label: `Solo · ${label}`, hint: "tab", ic, fn: () => openSolo(key) });
+  for (const t of meaningTables()) items.push({ id: `meaning:${t.key}`, label: `Meaning · ${t.label}`, hint: "house aid", ic: "sparkle", fn: () => openMeaningRoll(t.key) });
   if (ch && !ch.state?.dead) for (const s of D.SKILLS) items.push({ id: `roll:${s.key}`, label: `Roll ${s.name}`, skill: s, ic: "dice", fn: () => openSkillRoll(ch, s.key, null, { quick: true }) });
   modal({ title: "Go to…", search: true, render(body, close) {
     const row = (it, recent = false) => el("button", { class: "picker__row picker__row--btn palette__row" + (recent ? " palette__row--recent" : ""), onClick: () => { remember(it.id); close(); it.fn(); } },

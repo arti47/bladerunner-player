@@ -1761,7 +1761,7 @@ test("GM panels follow the arc of a session", async (t) => {
     await page.waitForTimeout(120);
     return page.$$eval(".panel .sheet__section", (els) => els.map((e) => e.textContent.trim()));
   };
-  assert.deepEqual(await cardsOn("Prep"), ["Build the case", "Main NPC Generator", "Clues & the finale"]);
+  assert.deepEqual(await cardsOn("Prep"), ["Build the case", "Main NPC Generator", "Clues & the finale", "Meaning tables"]);   // + the house aid (§3.19)
   assert.deepEqual(await cardsOn("Play"), ["Live Party Panel", "Scene dressing"]);
   assert.deepEqual(await cardsOn("Fight"), ["Drop-in Combatant Generator"]);
   assert.deepEqual(await cardsOn("Wrap"), ["Session Awards", "Consequences & downtime"]);
@@ -4166,7 +4166,7 @@ test("round 3 play & dice: destination cards, tap-to-roll, options by button, ci
   await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(150);
   assert.equal(await p.locator("#quick-roll").isVisible(), true);
   await p.click("#quick-roll"); await p.waitForTimeout(200);
-  assert.equal(await p.$$eval(".modal .picker__row--btn", (n) => n.length), 13, "every skill in the quick-roll list");
+  assert.equal(await p.$$eval(".modal .picker__row--btn:has(.i--dice)", (n) => n.length), 13, "every skill in the quick-roll list");
   await p.locator(".modal .picker__row--btn", { hasText: "Insight" }).click(); await p.waitForTimeout(300);
   assert.ok(await p.$(".modal .roll-outcome"), "and it rolls");
   await p.keyboard.press("Escape");
@@ -4523,6 +4523,80 @@ test("round 5: portraits, vitals signals, dice/meters/tokens, weapons, notes pap
   assert.equal(await p.$eval("#skyfloor", (f) => getComputedStyle(f).display), "none");
   assert.match(await p.evaluate(() => getComputedStyle(document.body).backgroundImage), /svg/, "light theme has paper grain");
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
+// Meaning tables (house aid, owner request 2026-10-01): rollable from Solo ▸ Scene,
+// GM ▸ Prep, Ctrl+K and the quick-roll button; ▶ Play offers an idea; rolled Case
+// Board boxes carry a prompt. Every surface says House aid.
+test("meaning tables: Scene and GM cards, Ctrl+K and quick roll, Play idea, Board prompt", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const p = await ctx.newPage();
+  await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  const errs = []; p.on("pageerror", (e) => errs.push(e.message));
+  let n = 0;
+  const go = async (route, panel, extra) => {
+    if (panel) await p.evaluate(([pn, ex]) => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = pn; Object.assign(s, ex || {}); localStorage.setItem("brp:solo", JSON.stringify(s)); }, [panel, extra]);
+    await p.goto(`${base}/index.html?mt${++n}#${route}`, { waitUntil: "load" }); await p.waitForTimeout(350);
+  };
+  await p.goto(`${base}/index.html#home`, { waitUntil: "load" });
+  await p.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    Store.setActiveId(Store.save(normalizeCharacter({ name: "Kaz", nature: "human", archetype: "analyst", years: "seasoned" })).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ introSeen: true, scratchpad: "", hypotheses: [],
+      caseOpen: { no: 1, title: "Neon", assignment: "A body", opened: Date.now(), openStats: { pp: 0, humanity: 0 } } }));
+  });
+  const M = await p.evaluate(async () => (await import("/data-meanings.js")).MEANINGS);
+  const isPair = (key, text) => { const [a, b] = text.split(" + "); return M[key].colA.includes(a) && M[key].colB.includes(b); };
+
+  // Solo ▸ Scene: six buttons in a house-aid card; a roll lands inline.
+  await go("solo", "scene");
+  const cardEl = p.locator(".card", { has: p.locator(".sheet__section", { hasText: "Meaning tables" }) });
+  assert.match(await cardEl.textContent(), /House aid/);
+  assert.deepEqual((await cardEl.locator(".roll-grid .btn").allTextContents()).map((x) => x.trim()), ["Actions", "Descriptors", "Characters", "Locations", "Objects", "Events"]);
+  await cardEl.getByRole("button", { name: "Actions", exact: true }).click(); await p.waitForTimeout(250);
+  const out = await cardEl.locator(".result-slot .roll-result").first().textContent();
+  assert.ok(isPair("actions", out.trim()), `an Actions pair from the table: ${out}`);
+
+  // GM ▸ Prep carries the same card.
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:gm") || "{}"); s.panel = "prep"; s.introSeen = true; localStorage.setItem("brp:gm", JSON.stringify(s)); });
+  await go("gm");
+  assert.ok(await p.locator(".sheet__section", { hasText: "Meaning tables" }).count());
+
+  // Ctrl+K → Meaning · Events → a dialog; Pin writes into the case notes.
+  await go("home");
+  await p.keyboard.press("Control+k"); await p.waitForTimeout(200);
+  await p.fill(".modal .picker-search", "Meaning · Events");
+  await p.locator(".modal .palette__row:not([hidden])").first().click(); await p.waitForTimeout(250);
+  const ev = (await p.$eval(".modal .roll-result", (e) => e.textContent)).trim();
+  assert.ok(isPair("events", ev), ev);
+  await p.locator(".modal").getByRole("button", { name: /Pin to case notes/ }).click(); await p.waitForTimeout(150);
+  assert.match(await p.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad), /\[Meaning · Events\] /);
+  await p.keyboard.press("Escape"); await p.waitForTimeout(150);
+  // Quick roll lists the six tables under a house-aid heading.
+  await p.click("#quick-roll"); await p.waitForTimeout(200);
+  assert.match(await p.$eval(".modal", (m) => m.textContent), /Meaning tables — house aid/);
+  assert.equal(await p.$$eval(".modal .quick__row:has(.i--sparkle)", (r) => r.length), 6);
+  await p.keyboard.press("Escape");
+
+  // ▶ Play: an idea on the card and in the notes.
+  await go("solo", "play", { play: { caseNo: 1, stage: "plan", options: ["Neon-lit Bar", "Dark Lab", "Rain-soaked Dock"] } });
+  await p.getByRole("button", { name: /Give me an idea/ }).click(); await p.waitForTimeout(250);
+  const idea = await p.$eval(".play__idea", (e) => e.textContent);
+  assert.match(idea, /House aid\s*Locations: \S/);
+  assert.match(await p.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad), /\[Idea · Locations\] /);
+
+  // Case Board: a rolled clue keeps its official name and gains an Objects prompt.
+  await go("solo", "board");
+  await p.getByRole("button", { name: /＋ Clue — rolled from the tables/ }).click(); await p.waitForTimeout(250);
+  const board = await p.evaluate(() => JSON.parse(localStorage.getItem("brp:board")).boxes[0]);
+  assert.match(board.prompt, /^Objects: .+ \+ .+/);
+  assert.ok(await p.$(".board__box .board__prompt"));
   assert.deepEqual(errs, []);
   await ctx.close();
 });

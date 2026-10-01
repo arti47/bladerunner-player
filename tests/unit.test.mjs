@@ -938,3 +938,28 @@ test("every label glyph maps to a drawn icon, and every icon is reachable from a
   assert.equal(core.stripGlyphs("increase Firearms ★"), "increase Firearms (key)");
   assert.equal(core.stripGlyphs("D→C 5"), "D→C 5", "a glyph inside a word is typography, not an icon");
 });
+
+// Meaning tables (house aid, §3.19): six tables, two D100 columns each, every
+// word unique within its column, and the file says what it is.
+test("meaning tables: 6 × 2 × D100, unique, labelled a house aid", async () => {
+  const M = await import("../data-meanings.js");
+  const fs = await import("node:fs");
+  assert.equal(M.HOUSE_AID, true);
+  assert.equal(M.MEANING_DIE, 100);
+  assert.deepEqual(Object.keys(M.MEANINGS), ["actions", "descriptors", "characters", "locations", "objects", "events"]);
+  for (const [k, t] of Object.entries(M.MEANINGS)) {
+    assert.ok(t.label && t.a && t.b, `${k} names its columns`);
+    for (const col of ["colA", "colB"]) {
+      assert.equal(t[col].length, M.MEANING_DIE, `${k}.${col} covers the whole D100`);
+      const lc = t[col].map((w) => w.toLowerCase().trim());
+      assert.equal(new Set(lc).size, lc.length, `${k}.${col} has no repeats`);
+      assert.ok(lc.every((w) => w.length > 0));
+    }
+  }
+  const src = fs.readFileSync(new URL("../data-meanings.js", import.meta.url), "utf8");
+  assert.match(src, /HOUSE AID, NOT CANON/);
+  assert.match(src, /original/i);
+  // Still quarantined: the canonical data files and the Case Board file hold none of it.
+  for (const f of ["../data.js", "../data-solo.js", "../data-gm.js", "../data-house.js"])
+    assert.ok(!/MEANINGS|colA/.test(fs.readFileSync(new URL(f, import.meta.url), "utf8")), `${f} holds no meaning table`);
+});

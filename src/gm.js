@@ -18,6 +18,8 @@ import { lookupRange } from "./rules.js";
 import { navigate } from "./router.js";
 import { Settings } from "./settings.js";
 import { avatar, sceneArt } from "./art.js";
+import { meaningCard } from "./meanings.js";
+
 
 const GM_KEY = "brp:gm";
 const LOG_CAP = 50;
@@ -63,6 +65,11 @@ const archName = (c) => (c.archetype ? (archetype(c.archetype)?.name || c.archet
 // ---- "How to use this" — per-card guidance ---------------------------------
 // Keyed by card title: [what you press, when you press it].
 const HOW = {
+  "Meaning tables": [
+    ["House aid", "— not from the rulebook. Use it when no official table fits the question you have."],
+    ["Pick the table that fits", "Actions for what someone does, Descriptors for how a thing looks or feels, Characters for who, Locations for where, Objects for what, Events for what happens next."],
+    ["Read the two words together", "and decide what they mean here. The first idea that fits is the right one — write it down."],
+  ],
   "Build the case": [
     ["🎲 Theme first", "— it selects the Assignment table. Then Sector and Twist for the shape of the case."],
     ["⚡ Full Case Briefing", "rolls all four at once and writes them to your notes. Use it when prepping from scratch."],
@@ -320,6 +327,7 @@ export function renderGm(mount, rerender) {
             el("p", { class: "roll-center muted" }, GM.CASE_FINALE_ENVIRONMENT[e - 1])) });
       })));
     root.append(seeds);
+    root.append(meaningCard({ card, btn, grid, show }));   // house aid, §3.19
 
     root.append(el("div", { class: "btn-row next-bar" }, btn("Case built \u2014 run the session \u2192", () => { st.panel = "play"; writeGmState(st); rerender(); }, "primary")));
   }

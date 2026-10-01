@@ -79,11 +79,12 @@ compendium · Firebase multiplayer party with shared combat tracker · GM screen
 - **Power/spell automation: expected ABSENT** (Blade Runner is not a magic system), but
   confirm during Stage A — if the game has any comparable automatable subsystem, record it
   in §3.9 and decide at the checkpoint.
-- **House aids: ONE, added by owner request (2026-07-29).** The **Case Board** (§3.17,
-  `data-house.js` + `src/board.js`) is the only non-canon subsystem in the app. It is
-  quarantined in its own data file and its own Solo tab, labelled "House aid" in the UI,
-  and never touches the official economy. Anything else non-canon follows the same
-  pattern or does not ship (§10.8).
+- **House aids: TWO, both by owner request.** The **Case Board** (§3.17, 2026-07-29,
+  `data-house.js` + `src/board.js`) and the **Meaning Tables** (§3.19, 2026-10-01,
+  `data-meanings.js` + `src/meanings.js`) are the only non-canon subsystems in the app.
+  Each is quarantined in its own data file, labelled "House aid" wherever it appears, and
+  never touches the official economy. Anything else non-canon follows the same pattern or
+  does not ship (§10.8).
 
 ---
 
@@ -408,6 +409,21 @@ briefing to the notes. Home's first-run card is now a single
 character, and otherwise opens this panel; the manual three-step setup is demoted behind a
 collapsed "I'd rather set it up myself".
 
+**3.19 Meaning Tables — HOUSE AID, not canon** (`data-meanings.js` + `src/meanings.js`,
+owner request 2026-10-01). The GM-emulator "meaning table" *procedure* — roll on two
+columns and read the pair as a prompt — with **original words written for this app and
+approved by the owner** (no supplement word list, no film names/places/corporations/
+characters, §12). Six tables, each two columns rolled on a **D100** (`MEANING_DIE`):
+Actions (Verb × Subject) · Descriptors (Manner × Quality) · Characters (Role × Motive) ·
+Locations (Place × Feature) · Objects (Item × Condition) · Events (Event × Fallout) — 1,200
+words. It sits **beside** the official Solo Mode Cipher, never replacing it. Reach: a
+house-aid card on **Solo ▸ Scene** and **GM ▸ Prep** (results inline with Reroll/Pin);
+every table in **Ctrl+K** and the **quick-roll** sheet (a small dialog with Reroll and Pin
+to case notes; logged as `source: "solo"`); **▶ Play** offers *✦ Give me an idea* (Locations
+when choosing where to go; Actions at a place, Characters once there is a suspect), shown
+on the card and written to the notes; a **rolled Case Board box** keeps its official name
+and gains a `prompt` line (Objects for a clue, Characters for a suspect). Awards nothing.
+
 ---
 
 ## 4. Stage B — The Checkpoint (one user sign-off)
@@ -662,6 +678,7 @@ reads an undefined custom property or if any text role drops below WCAG AA.
 | `data-solo.js` | Official Solo Mode tables (PRESENT for this project) |
 | `data.js` addition | `GLOSSARY` — plain-language definitions of the vocabulary the UI uses (see §14 2026-07-29 newcomer row). |
 | `data-house.js` | **HOUSE AIDS — not canon.** The Case Board procedure (§3.17). Quarantined so every canonical data file stays pure book. |
+| `data-meanings.js` | **HOUSE AID — not canon.** The Meaning Tables (§3.19): six tables × two D100 columns of original words. Quarantined like `data-house.js`. |
 | `data-gm.js` | GM reference: Case File Generator + disciplinary actions (project-specific) |
 | `firebase-config.js` | Placeholder config + `FIREBASE_ENABLED` flag |
 | `database.rules.json` | RTDB security rules (player/GM roles, ownership + role validation) |
@@ -673,6 +690,7 @@ reads an undefined custom property or if any text role drops below WCAG AA.
 | `src/play.js` | **Guided play** (§3.18): the one-question-at-a-time loop that drives the official machinery for someone who has read nothing |
 | `src/board.js` | Case Board (house aid, §3.17): the `Board` store (`brp:board`), the pure board operations, and the Solo ▸ Board panel |
 | `src/quick.js` | Quick-roll button + Ctrl+K palette (UX round 3) |
+| `src/meanings.js` | Meaning Tables — house aid (§3.19): the roll, the shared card, the anywhere dialog |
 | `tests/reachability.test.mjs` | The reachability lens (§11.2): drives the real app and reports every finding per run. `tests/harness.mjs` holds the browser discovery + static server it shares. |
 | `.claude/agents/solo-rpg-playtester.md` | **Playtest agent** (owner-supplied, installed 2026-09-08). Plays a full solo session through the real UI — building its own Playwright driver — and reports where play stalls rather than whether the code is correct. AUDIT mode (seeded, ≥3 seeds, CI-gateable) and PLAY mode (one beat at a time, written up as a session). Complements the §11.2 lenses: they ask "is this reachable", it asks "can a person play a session". |
 | `tests/` + `package.json` | Dev-only headless regression harness (`npm test`; `update.test.mjs` runs the service worker for real); dev-only `playwright-core`; `node_modules` gitignored; not in the SW app shell |
@@ -711,6 +729,7 @@ One module per responsibility; explicit `import`/`export`, nothing smuggled thro
 | `router.js` | Bottom-nav routing + conditional tab gating; preserves scroll on in-screen re-renders. |
 | `main.js` | Entry point / boot. |
 | `update.js` | PWA update flow: spot a new deploy, offer the toast, apply it and reload. |
+| `meanings.js` | Meaning Tables — **house aid** (§3.19). `rollMeaning(key)`, `meaningTables()`, the card Solo ▸ Scene and GM ▸ Prep share (`meaningCard`), and `openMeaningRoll` for Ctrl+K / quick roll. Holds no state; words live in `data-meanings.js`. |
 | `quick.js` | The quick-roll button (roll any skill from any screen) and the Ctrl+K command palette (every screen, Solo tab and skill roll). Holds no rules and no state. |
 
 *(`power-automation.js` omitted unless Stage A finds a §3.9 subsystem.)*
@@ -773,7 +792,7 @@ sheet's More expander), `brp:solo.introSeen` / `brp:gm.introSeen` (the first-vis
 one-liner), and `brp:settings.guidance` (§5.1).
 
 **Case Board state** (local-only, house aid, §3.17) lives under `brp:board` via `board.js`
-`Board`: `{ boxes[{ id, n, kind:"clue"|"suspect", name, detail, links[boxId] }], nextN,
+`Board`: `{ boxes[{ id, n, kind:"clue"|"suspect", name, detail, prompt?, links[boxId] }], nextN,
 checks, solvedId|null }`. `links` is kept symmetric on both boxes, `checks` is the bank of
 earned Discovery Checks, and `solvedId` is set by a clincher. Solo's "Start a fresh case"
 calls `Board.clear()` (see §3.15 for everything that action clears). Not mirrored to
@@ -1063,6 +1082,9 @@ content · first-run/empty states · failure messaging · performance envelope.
   boxes are filled from the user's own Solo Mode tables. The credit line is stated in
   `data-house.js` and shown in the app. A regression check fails if any long word list
   appears in `data-house.js`.
+- **Meaning Tables (added 2026-10-01):** words written for this app, not taken from any
+  supplement; a unit check pins them to their own file so no canonical data file or the Case
+  Board file ever carries them.
 - Repo visibility: the plan called for a **private** repo (the app derives from licensed
   rulebooks the user owns). The owner chose **public** instead (free Pages from a branch).
   Mitigation that keeps this defensible: the repo holds **no rulebook prose or art** — only
@@ -1181,3 +1203,4 @@ static files. No build step and no Actions workflow — `git push` to `main` *is
 | 2026-10-01 | **UX round 4 — one batch.** Defects: FAB over content and dialogs (now hides on scroll-down, on a `.next-bar` panel and under a dialog); toast ran off a 390px screen (`width: max-content` with a 460px cap); chase vehicle `<select>` ~150px tall (root cause: `.roll-select { flex: 1 1 200px }` inside the column-flex `.chase-veh`, so the basis became height); "Round 2" wrapping; Play's "Shift 3" in both crumbs and chip; board tools wrapping into three rows; active character not first; HUD row 2 with no separators; palette/quick-roll rows with no icons or key marks. Graphics: dice tray, countdown dial, case-closed stamp slam, place drawings on destination cards, mugshot suspects + evidence-tag clues, ID shimmer, neon title flicker, terminal toasts, Home skyline, watermark moved into the card head. UX: notes quick-add, Undo for leads and journal entries, sticky mini-vitals, palette recents. Layout: desktop Solo notes column (≥1280), Play capped at 720px, wizard review as an ID card. Also: a filed case whose culprit was left blank ("Never established") now stamps COLD, not SOLVED (`isSolved()` shared by the archive and the slam). | Owner: round-4 UX audit, "then one batch" | `npm test` → **226 pass / 0 fail / 0 skipped**. Two existing checks moved: the round-3 FAB check scrolls to the top first (the FAB now steps aside on scroll-down), and the R6 board-box Remove exposed a real stacking fault — an open ⋯ on a suspect was painted over by the clue column (`.board__group { z-index: 1 }` both) — now the group/box holding an open menu is raised. New smoke check covers every item above at 390px plus the desktop notes column at 1366px; the board-guide check now opens ⋯ first. Sweep: 84 renders, zero errors, zero overflow. | brp-v80 |
 | 2026-10-01 | **Quick-roll button returns on its own.** After scrolling down the FAB stayed hidden until you scrolled back up, which strands it on a page you cannot scroll up much. It now also comes back after 2 s without scrolling (`FAB_IDLE_MS` in `quick.js`). | Owner: "Yes add" | `npm test` → **226 pass / 0 fail / 0 skipped**. The round-4 check now asserts away on scroll-down, back after 2.3 s idle, away again on the next scroll-down, back on scroll-up. | brp-v81 |
 | 2026-10-01 | **UX round 5 — audit + one batch (visuals).** Audit of 40 screens found 7 defects: a ~70px blank band above the sheet's ID card (the hidden mini-vitals bar was `position: sticky` and kept its layout height), the panel drawing colliding with the Roll Log's count, the drawing reading as a pasted box on light paper, an empty cell beside Settings on Home, portrait initials across the face, ragged wrapped button rows, and no strings on a one-column Case Board. All fixed. Built (owner choices): generated noir portraits; ECG/waveform vitals; die-shape attributes, grade meters, stamped tokens, weapon silhouettes; case-file notes; floating change numbers; d6 pips, bounce and crit sparks; Shift clock (new `SHIFTS_PER_DAY = 4` in `data.js`, from TIME_UNITS — §10.2); lead dials; tutorial spot art + neon numerals; Rules section icons + glossary monograms; folder-stack case files; wizard timeline + die chips; skyline floor, passing Spinner light, light paper grain; five empty scenes; board strings on a phone. Text content unchanged. Meaning tables (owner request) drafted separately for review — not in this change. | Owner: round-5 UX audit | `npm test` → **227 pass / 0 fail / 0 skipped**. Two existing checks moved: round 4 now finds the Shift clock where the Shift drawing was, and `--sky-y` gets a CSS default (the custom-property check caught it). Sweep 84 renders, zero errors, zero overflow. New smoke check covers every item (portrait stability, initials in the corner, no band above the ID card, two signals and flat at 0, 4 die shapes, 13 meters with B = 3 lit, round tokens, inventory/picker weapon kinds, journal scene, a −1 float, d6 pips on a real roll, HUD/Shift clocks, a lead dial's label, typed notes, two folder tabs, a phone board string, tutorial spots + numeral with label text intact, rules icons + monogram, wizard timeline + 4 die chips, skyline floor dark-only, paper grain, no Home hole, no overflow, no errors). | brp-v82 |
+| 2026-10-01 | **Meaning Tables — the second house aid (owner request; words owner-approved).** New `data-meanings.js` (6 tables × 2 columns × D100 = 1,200 original, setting-neutral neo-noir words, `HOUSE_AID`, `MEANING_DIE`) and `src/meanings.js` (`rollMeaning`, `meaningTables`, `meaningCard`, `openMeaningRoll`), both in the SW shell. Reach, as the owner chose: a house-aid card on Solo ▸ Scene and GM ▸ Prep; every table in Ctrl+K and the quick-roll sheet (dialog with Reroll and Pin to case notes, logged to the roll log); ▶ Play's *✦ Give me an idea* (Locations / Actions / Characters by moment, shown on the card and written to the notes); and rolled Case Board boxes keep their official name and gain a meaning-table `prompt` (Objects / Characters). The official Cipher is untouched. §1, §3.19, §6, §6.1, §7 (box `prompt`), §12 updated. | Owner: "I am thinking of generating a meanings table… specific for this game" → 7 answers → "good to go" | `npm test` → **229 pass / 0 fail / 0 skipped** (the GM panel-order check now expects the Meaning tables card on Prep). New unit check: six tables, both columns exactly D100 with no repeats, the file labelled HOUSE AID / original, and no canonical file or `data-house.js` holding any of it. New smoke check: the Scene card's six buttons and an inline Actions pair drawn from the table, the GM Prep card, Ctrl+K → Events dialog + Pin into the notes, quick roll's six rows under a house-aid heading, a Play idea on the card and in the notes, a rolled Board clue carrying an Objects prompt. The round-3 quick-roll check now counts skill rows by their dice icon. | brp-v83 |

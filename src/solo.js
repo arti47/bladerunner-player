@@ -27,6 +27,7 @@ import { openSkillRoll, openWeaponPicker, openOpposedSkillRoll } from "./roller.
 import { navigate } from "./router.js";
 import { Board, renderBoardPanel } from "./board.js";
 import { renderPlayPanel } from "./play.js";
+import { meaningCard } from "./meanings.js";
 import { Chase } from "./chase.js";
 import { Settings } from "./settings.js";
 import { timerLadder, stamp, avatar, sceneArt, emptyScene, countdownDial, stepDial, shiftClock } from "./art.js";
@@ -95,6 +96,11 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 // Keyed by card title. Each line is [what you press, when you press it and what
 // you do with the result]. Procedure only — no rules numbers live here (§10.2).
 const HOW = {
+  "Meaning tables": [
+    ["House aid", "— not from the rulebook. Use it when no official table fits the question you have."],
+    ["Pick the table that fits", "Actions for what someone does, Descriptors for how a thing looks or feels, Characters for who, Locations for where, Objects for what, Events for what happens next."],
+    ["Read the two words together", "and decide what they mean here. The first idea that fits is the right one — write it down."],
+  ],
   "Your solo Blade Runner": [
     ["Skip this card", "if you already have a Blade Runner. It is for a brand-new solo character."],
     ["🎲 Origin Seed", "rolls why this detective works alone. Write it into the sheet's Notes — it is the hook the oracle keeps coming back to."],
@@ -1012,6 +1018,8 @@ export function renderSolo(mount, rerender) {
       el("p", { class: "muted roll-note" }, S.QUESTION_ODDS_NOTE),
       rollHere()));
 
+    // House aid (§3.19): two words to interpret when no official table fits.
+    const meanCard = () => meaningCard({ card, btn, grid, show });
     // Step 4b - what you find.
     root.append(stepCard(4, "Gather clues", "Assemble a clue: what it means, and the evidence itself.",
       grid(btn("🎲 Meaning (D8)", () => { const r = rollDie(8); const t = S.CLUE_MEANING[r - 1]; show({ label: "Clue Meaning", text: t, pin: `[Meaning] ${t}`, title: `Clue Meaning — ${r} (D8)`, render: (b) => b.append(el("p", { class: "roll-prose" }, t)) }); }),
@@ -1051,6 +1059,7 @@ export function renderSolo(mount, rerender) {
         btn("🎲 NPC is the prey (D8)", () => rollNpcChase("prey"))),
       el("div", { class: "btn-row" }, btn("Combat Tracker \u2192", () => navigate("combat"), "sm ghost"))));
 
+    root.append(meanCard());
     root.append(el("div", { class: "btn-row next-bar" }, btn("Scenes done \u2014 review the leads \u2192", () => { st.panel = "leads"; writeSoloState(st); rerender(); }, "primary")));
   }
 

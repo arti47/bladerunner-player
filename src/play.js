@@ -23,6 +23,7 @@ import { rollClue, rollSuspect, Board, addBox, connect, byId, isFull } from "./b
 import { skillPool, pushPoolPublic, poolIsPushable } from "./roller.js";
 import * as H from "../data-house.js";
 import { placeArt } from "./art.js";
+import { rollMeaning } from "./meanings.js";
 
 // The four things a detective does at a place, in the player's words, each
 // mapped to the skill the book would have you roll.
@@ -78,6 +79,9 @@ export function renderPlayPanel(root, ctx) {
     for (const line of [].concat(prose || [])) {
       if (line) c.append(el("p", { class: "play__prose" }, line));
     }
+    // A meaning-table idea rolled on this card (house aid, §3.19).
+    if (p.idea && p.idea.stage === (p.stage || "plan"))
+      c.append(el("p", { class: "play__idea" }, el("span", { class: "tag tag--sm play__idea-tag" }, "House aid"), ` ${p.idea.label}: `, el("strong", {}, p.idea.text)));
     // Numbered choices: press 1–4 on a keyboard, or tap.
     const row = el("div", { class: "play__choices" });
     choices.filter(Boolean).forEach(([label, fn, variant, place], i) => {
@@ -163,6 +167,7 @@ export function renderPlayPanel(root, ctx) {
       choices: [
         ...opts.map((o) => [`📍 ${o}`, () => goTo(o), "dest", o]),
         ["✎ Somewhere else", askPlace, "sm ghost"],
+        ["✦ Give me an idea", () => idea("locations"), "sm ghost"],
         ["🎲 Different options", () => set({ options: null }), "sm ghost"],
       ],
       footer: "Travelling there takes a Shift — about half a day.",
@@ -196,6 +201,7 @@ export function renderPlayPanel(root, ctx) {
         ...ACTIONS.map((a) => [a.verb, () => doAction(a), found >= ACTIONS_PER_LOCATION ? "sm ghost" : "dest"]),
         suspects.length ? [`🎯 I think ${suspects[0].name} did it`, () => set({ stage: "accuse" }), "sm"] : null,
         ["🚕 Go somewhere else", nextShift, found >= ACTIONS_PER_LOCATION ? "primary" : "sm ghost"],
+        ["✦ Give me an idea", () => idea(suspects.length ? "characters" : "actions"), "sm ghost"],
       ],
       footer: `Health ${ch.state.health}/${maxHealth(ch)} · Resolve ${ch.state.resolve}/${maxResolve(ch)}${suspects.length ? ` · ${suspects.length} name${suspects.length === 1 ? "" : "s"} so far` : ""}`,
     });
@@ -258,6 +264,14 @@ export function renderPlayPanel(root, ctx) {
   }
 
   // ---- the moves ----------------------------------------------------------
+
+  // Two words from a meaning table when you are stuck (house aid, §3.19): shown
+  // on this card and written into the notes like everything else you find.
+  function idea(key) {
+    const r = rollMeaning(key);
+    say(`• [Idea · ${r.label}] ${r.text}`);
+    set({ idea: { stage: p.stage || "plan", label: r.label, text: r.text } });
+  }
 
   // Dispatch hands you the case BEFORE you name it — naming a case you have not
   // been told about is not a thing anyone can do. [playtest journal, finding 3]
