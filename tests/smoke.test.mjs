@@ -4336,6 +4336,10 @@ test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, r
   assert.equal(await p.locator("#quick-roll").isVisible(), true);
   await p.evaluate(() => window.scrollTo(0, 2200)); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), true, "away while scrolling down");
+  await p.waitForTimeout(2300);
+  assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), false, "back on its own after 2s without scrolling");
+  await p.evaluate(() => window.scrollTo(0, 2600)); await p.waitForTimeout(150);
+  assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), true, "away again scrolling down");
   await p.evaluate(() => window.scrollTo(0, 1000)); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), false, "back scrolling up");
   // Quick roll marks key skills.

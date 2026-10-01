@@ -35,10 +35,15 @@ function pickSkill(ch) {
 // character, except the wizard (which is building one). It steps aside while
 // you scroll down (back on the way up), on a panel with its own sticky
 // next-step bar, and under a dialog (CSS).
-let lastY = 0;
+// After FAB_IDLE_MS without scrolling it comes back on its own, so a page you
+// cannot scroll up much never strands it (owner, 2026-10-01).
+const FAB_IDLE_MS = 2000;
+let lastY = 0, idle = 0;
 function bindFabScroll(fab) {
   addEventListener("scroll", () => {
     const y = scrollY;
+    clearTimeout(idle);
+    idle = setTimeout(() => fab.classList.remove("fab--away"), FAB_IDLE_MS);
     if (Math.abs(y - lastY) < 8) return;
     fab.classList.toggle("fab--away", y > lastY && y > 80);
     lastY = y;
