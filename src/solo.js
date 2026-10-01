@@ -292,7 +292,21 @@ export function renderSolo(mount, rerender) {
   // ---- a case has a beginning, a middle and an end -------------------------
   // Opening records what the case IS and the character's points at the time, so
   // closing it can report what the case cost and paid.
+  // One open case at a time (owner ruling, 2026-09-30). Every way of opening a
+  // case — the Case tab, ▶ Play, the four official methods — asks here first, and
+  // the answer is to close the open one properly (it is filed), not to lose it.
+  async function ensureNoOpenCase() {
+    if (!st.caseOpen) return true;
+    const c = st.caseOpen;
+    const ok = await confirmModal(`Case #${c.no} — ${c.title} is still open. Close it first — you'll say who did it and how it ended, and it is filed — then start the new one.`,
+      { title: "A case is already open", okLabel: "Close it first", cancelLabel: "Keep working it" });
+    if (!ok) return false;
+    await closeCase();
+    return !st.caseOpen;
+  }
   function openCase({ title, assignment }) {
+    // Last line of defence: never overwrite an open case.
+    if (st.caseOpen) { showToast(`Case #${st.caseOpen.no} is still open — close it first.`, { kind: "warn" }); return false; }
     const ch = Store.getActive();
     st.caseOpen = {
       no: Cases.nextNo(),
@@ -309,7 +323,10 @@ export function renderSolo(mount, rerender) {
     st.shiftFlags = {};
     st.pendingEvent = null;
     st.hypotheses = [];
+    // ▶ Play follows the case: its step state belongs to the case it was playing.
+    st.play = null;
     writeSoloState(st);
+    return true;
   }
 
   // Closing writes a case file that survives everything, so a campaign leaves a
@@ -348,6 +365,7 @@ export function renderSolo(mount, rerender) {
     Cases.add(file);
     st.scratchpad = appendToNotes(st.scratchpad, caseSummary(file));
     st.caseOpen = null;
+    st.play = null;   // Play starts over, wherever the case was closed from
     writeSoloState(st);
     record("Case closed", `#${file.no} ${file.title}`, `[Case closed] #${file.no} ${file.title} — ${file.culprit}`);
     showToast(`Case #${file.no} closed and filed. ${shifts} Shift${shifts === 1 ? "" : "s"}.`);
@@ -645,7 +663,8 @@ export function renderSolo(mount, rerender) {
       const row = el("div", { class: "solo-method" },
         el("div", {}, el("strong", {}, m.name), " — ", el("span", { class: "muted" }, m.text)));
       if (m.key === "gut") {
-        row.append(btn("✍ Seed a note", () => {
+        row.append(btn("✍ Seed a note", async () => {
+          if (!(await ensureNoOpenCase())) return;
           addNote(`=== NEW CASE — ${new Date().toLocaleDateString()} (trust your gut) ===\n• The case as you see it: \n\n`);
           showToast("Case note added.");
         }, "sm ghost"));
@@ -657,7 +676,7 @@ export function renderSolo(mount, rerender) {
         if (!filed.length) {
           row.append(el("p", { class: "muted small" }, "No closed cases yet — this way in opens up once you have filed one."));
         } else {
-          row.append(btn("✍ Seed from an old case", () => pickThread(filed), "sm ghost"));
+          row.append(btn("✍ Seed from an old case", async () => { if (await ensureNoOpenCase()) pickThread(filed); }, "sm ghost"));
         }
       }
       methods.append(row);
@@ -831,6 +850,7 @@ export function renderSolo(mount, rerender) {
 
     // Roll the briefing (or not) and open the case in one move.
     async function openBriefedCase(withBriefing) {
+      if (!(await ensureNoOpenCase())) return;
       let assignment = st.coreAssignment || "", block = null;
       if (withBriefing) {
         const a = rollAssignment(), r = pick(S.CASE_BRIEFING.relevance), cx = pick(S.CASE_BRIEFING.complication), h = pick(S.CASE_BRIEFING.hook);
@@ -848,7 +868,7 @@ export function renderSolo(mount, rerender) {
         { title: "Name the case", value: suggested, okLabel: "Open the case" });
       if (title === null) return;
       if (block) st.scratchpad = appendToNotes(st.scratchpad, block);
-      openCase({ title: (title || suggested || "Untitled case").trim(), assignment });
+      if (!openCase({ title: (title || suggested || "Untitled case").trim(), assignment })) return;
       st.panel = "shift";
       writeSoloState(st);
       showToast(`Case #${st.caseOpen.no} open. Pick a location, then roll the countdown.`);
@@ -1027,7 +1047,7 @@ export function renderSolo(mount, rerender) {
     renderPlayPanel(root, {
       card, btn, st, rerender, navigate,
       save: () => writeSoloState(st),
-      openCase, closeCase, applyPoints, addNote, pin: pinNote, pinNote,
+      openCase, closeCase, ensureNoOpenCase, applyPoints, addNote, pin: pinNote, pinNote,
       rollBriefing, rollMainNpc,
       endShift: () => {
         const ch = Store.getActive();

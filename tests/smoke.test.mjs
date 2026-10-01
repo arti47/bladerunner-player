@@ -1265,6 +1265,109 @@ test("a solo case can be opened, resumed, closed, and filed", async (t) => {
   assert.equal((await cases()).files.length, 1, "Start a fresh case never deletes your case files");
 });
 
+// ▶ Play and the Case tab are two doors onto ONE case (owner report,
+// 2026-09-30: "when I start a case in play tab, I can also start another case
+// in the other tab… they don't know that a case already exists"). Play's step
+// state belongs to the case it was playing, and every way of opening a case
+// asks to close the open one first — it is filed, never overwritten.
+test("Play and the Case tab share one case — opening a second asks to close the first", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  let n = 0;
+  const go = async (panel) => {
+    if (panel) await page.evaluate((p) => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = p; localStorage.setItem("brp:solo", JSON.stringify(s)); }, panel);
+    await page.goto(`${base}/index.html?link${++n}#solo`, { waitUntil: "load" }); await page.waitForTimeout(300);
+  };
+  const solo = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  const cases = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:cases") || '{"files":[]}'));
+  const choices = () => page.$$eval(".play__choices .btn", (e) => e.map((x) => [...x.childNodes].filter((n) => !n.classList?.contains("play__num")).map((n) => n.textContent).join("").trim()));
+  const closeFlow = async (culprit, how) => {
+    await page.fill(".modal input", culprit);
+    await page.locator(".modal").getByRole("button", { name: /^(Next|OK)$/ }).click();
+    await page.waitForTimeout(250);
+    await page.fill(".modal input, .modal textarea", how);
+    await page.locator(".modal").getByRole("button", { name: /Close the case|^OK$/ }).click();
+    await page.waitForTimeout(350);
+  };
+
+  await page.goto(`${base}/index.html?link0#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: false }));
+    localStorage.removeItem("brp:cases");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Kaz", nature: "human", archetype: "analyst", years: "seasoned", attributes: { STR: "C", AGI: "C", INT: "A", EMP: "B" } });
+    Store.setActiveId(Store.save(ch).id);
+    // Dispatch's offer left standing on the Play tab, no case open yet.
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "play", hypotheses: [], log: [], scratchpad: "", results: {}, shiftNo: 1, shiftFlags: {},
+      play: { stage: "briefed", caseNo: null, briefing: { assignment: "Stale offer", relevance: "r", complication: "c", hook: "h" } } }));
+  });
+  await go();
+  assert.ok((await choices()).some((c) => /Take the case/.test(c)), "the offer is on screen");
+
+  // 1. Open a case from the Case tab.
+  await go("case");
+  await page.getByRole("button", { name: /Open a blank case/ }).first().click();
+  await page.waitForTimeout(250);
+  await page.fill(".modal input, .modal textarea", "Case Tab Case");
+  await page.locator(".modal").getByRole("button", { name: /Open the case|^OK$/ }).click();
+  await page.waitForTimeout(350);
+  assert.equal((await solo()).caseOpen.no, 1);
+
+  // 2. Play knows: the stale offer is gone and the card is on case #1.
+  await go("play");
+  const ch1 = await choices();
+  assert.ok(!ch1.some((c) => /Take the case|Get me a case/.test(c)), `Play must not offer another case: ${ch1}`);
+  assert.match(await page.$eval(".panel .card", (e) => e.textContent), /Case #1/);
+
+  // 3. Any other opener on the Case tab asks first — and "Keep working it" keeps it.
+  await go("case");
+  await page.locator(".fold__summary").first().click();
+  await page.getByRole("button", { name: /Seed a note/ }).click();
+  await page.waitForTimeout(250);
+  assert.match(await page.$eval(".modal", (e) => e.textContent), /A case is already open[\s\S]*Case #1 — Case Tab Case/);
+  await page.locator(".modal").getByRole("button", { name: "Keep working it" }).click();
+  await page.waitForTimeout(250);
+  let st = await solo();
+  assert.equal(st.caseOpen?.no, 1, "declining leaves the case open");
+  assert.ok(!/NEW CASE/.test(st.scratchpad), "and seeds nothing");
+
+  // 4. "Close it first" files the open case, then opens the new one.
+  await page.getByRole("button", { name: /Seed a note/ }).click();
+  await page.waitForTimeout(250);
+  await page.locator(".modal").getByRole("button", { name: "Close it first" }).click();
+  await page.waitForTimeout(250);
+  await closeFlow("The fixer", "Arrested.");
+  st = await solo();
+  assert.equal(st.caseOpen, null);
+  assert.equal((await cases()).files[0]?.title, "Case Tab Case", "the first case is filed, not lost");
+  assert.match(st.scratchpad, /NEW CASE/);
+
+  // 5. A case opened in Play shows on the Case tab; the openCase guard refuses a
+  //    direct overwrite even if something skips the dialog.
+  await go("play");
+  assert.deepEqual(await choices(), ["Get me a case"], "Play starts over after a close elsewhere");
+  await page.getByRole("button", { name: /Get me a case/ }).click();
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /Take the case/ }).first().click();
+  await page.waitForTimeout(250);
+  await page.fill(".modal input", "Play Case");
+  await page.locator(".modal").getByRole("button", { name: /Take the case|^OK$/ }).click();
+  await page.waitForTimeout(350);
+  st = await solo();
+  assert.equal(st.caseOpen.title, "Play Case");
+  assert.equal(st.play.caseNo, st.caseOpen.no, "Play's state is tied to that case");
+  await go("case");
+  assert.match(await page.$eval(".panel .card", (e) => e.textContent.replace(/\s+/g, " ")), /Case #2 — Play Case/);
+
+  // 6. Closing on the Case tab resets Play.
+  await page.getByRole("button", { name: "Close the case", exact: true }).click();
+  await page.waitForTimeout(250);
+  await closeFlow("Nobody", "Went cold.");
+  await go("play");
+  assert.deepEqual(await choices(), ["Get me a case"]);
+  assert.equal((await cases()).files.length, 2);
+});
+
 // The solo-flow audit found eight seams; these pin the fixes. The loop must not
 // need the bottom nav, must not make the player the app's clipboard, and must
 // show vitals where damage actually lands.

@@ -53,9 +53,15 @@ function bindChoiceKeys() {
 
 export function renderPlayPanel(root, ctx) {
   bindChoiceKeys();
-  const { card, btn, st, save, rerender, openCase, closeCase, rollBriefing, rollMainNpc, addNote, pinNote, applyPoints, navigate } = ctx;
+  const { card, btn, st, save, rerender, openCase, closeCase, ensureNoOpenCase, rollBriefing, rollMainNpc, addNote, pinNote, applyPoints, navigate } = ctx;
   const ch = Store.getActive();
-  const p = (st.play ||= blank());
+  // Play's step state belongs to ONE case. If the case on file is not the one
+  // this state was playing (opened or closed from another tab), start over on it.
+  // State saved before this link existed has no caseNo: it belongs to the case
+  // that is open, unless it is a Dispatch offer (only ever made with no case).
+  if (st.play && st.play.caseNo === undefined) st.play.caseNo = st.play.stage === "briefed" ? null : (st.caseOpen?.no ?? null);
+  if (st.play && (st.play.caseNo ?? null) !== (st.caseOpen?.no ?? null)) st.play = null;
+  const p = (st.play ||= { ...blank(), caseNo: st.caseOpen?.no ?? null });
 
   // ---- the one card on screen -------------------------------------------
   // title: where you are. prose: what just happened. choices: what you can do.
@@ -84,7 +90,8 @@ export function renderPlayPanel(root, ctx) {
     root.append(c);
   }
 
-  const set = (patch) => { Object.assign(p, patch); save(); rerender(); };
+  // Always writes to the CURRENT step state — opening or closing a case replaces it.
+  const set = (patch) => { Object.assign(st.play ||= { ...blank(), caseNo: st.caseOpen?.no ?? null }, patch); save(); rerender(); };
   const say = (text) => { addNote(text); };
 
   // ---- no character: make one, no questions asked -------------------------
@@ -250,7 +257,8 @@ export function renderPlayPanel(root, ctx) {
 
   // Dispatch hands you the case BEFORE you name it — naming a case you have not
   // been told about is not a thing anyone can do. [playtest journal, finding 3]
-  function startCase() {
+  async function startCase() {
+    if (!(await ensureNoOpenCase())) return;
     // Rolled, but kept out of the notes until the case is actually taken — a
     // cancelled name prompt used to leave a briefing for a case that never was.
     const b = rollBriefing({ write: false });
@@ -279,8 +287,9 @@ export function renderPlayPanel(root, ctx) {
     if (title === null) return;
     // Write the briefing only once the case is real.
     say(`=== CASE BRIEFING — ${new Date().toLocaleDateString()} (Solo) ===\n• Assignment: ${b.assignment}\n• Relevance: ${b.relevance}\n• Complication: ${b.complication}\n• Personal Hook: ${b.hook}`);
-    openCase({ title: (title || "Untitled case").trim(), assignment: b.assignment });
-    set({ ...blank(), stage: "plan", leadHint: `Why it matters: ${b.relevance} Already going wrong: ${b.complication}` });
+    if (!(await ensureNoOpenCase())) return;
+    if (!openCase({ title: (title || "Untitled case").trim(), assignment: b.assignment })) return;
+    set({ ...blank(), caseNo: st.caseOpen.no, stage: "plan", leadHint: `Why it matters: ${b.relevance} Already going wrong: ${b.complication}` });
     showToast("Case open. Pick somewhere to start.");
   }
 
