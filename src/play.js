@@ -22,6 +22,7 @@ import { maxHealth, maxResolve } from "./derived.js";
 import { rollClue, rollSuspect, Board, addBox, connect, byId, isFull } from "./board.js";
 import { skillPool, pushPoolPublic, poolIsPushable } from "./roller.js";
 import * as H from "../data-house.js";
+import { placeArt } from "./art.js";
 
 // The four things a detective does at a place, in the player's words, each
 // mapped to the skill the book would have you roll.
@@ -70,17 +71,20 @@ export function renderPlayPanel(root, ctx) {
     c.classList.add("play-card");
     if (eyebrow) c.prepend(el("div", { class: "roll-eyebrow step-eyebrow" }, eyebrow));
     // Where you are in the case, as a file reference.
-    const crumbs = [st.caseOpen ? `Case #${st.caseOpen.no}` : null, st.caseOpen ? `Shift ${st.shiftNo || 1}` : null, p.location || null].filter(Boolean);
+    // A crumb the eyebrow already says ("Shift 3", the place) is not repeated.
+    const crumbs = [st.caseOpen ? `Case #${st.caseOpen.no}` : null, st.caseOpen ? `Shift ${st.shiftNo || 1}` : null, p.location || null]
+      .filter((x) => x && !(eyebrow && String(eyebrow).startsWith(x)));
     if (crumbs.length) c.prepend(el("div", { class: "play__crumbs", "aria-label": "Where you are" }, crumbs.join(" · ")));
     for (const line of [].concat(prose || [])) {
       if (line) c.append(el("p", { class: "play__prose" }, line));
     }
     // Numbered choices: press 1–4 on a keyboard, or tap.
     const row = el("div", { class: "play__choices" });
-    choices.filter(Boolean).forEach(([label, fn, variant], i) => {
+    choices.filter(Boolean).forEach(([label, fn, variant, place], i) => {
       // Each choice is a destination card (round 3), not an amber button — the
       // card itself is the focus, so no choice should shout over the others.
       const b = btn(label, fn, variant || "dest");
+      if (place) b.prepend(placeArt(place));   // round 4: what kind of place it is
       if (i < 9) b.prepend(el("span", { class: "play__num", "aria-hidden": "true" }, String(i + 1)));
       b.append(el("span", { class: "play__chev", "aria-hidden": "true" }, "→"));
       row.append(b);
@@ -157,7 +161,7 @@ export function renderPlayPanel(root, ctx) {
             ? "Follow what you turned up, or try a different corner of the case."
             : "Pick somewhere to start. There is no wrong answer — the case fills in around wherever you look."],
       choices: [
-        ...opts.map((o) => [`📍 ${o}`, () => goTo(o), "dest"]),
+        ...opts.map((o) => [`📍 ${o}`, () => goTo(o), "dest", o]),
         ["✎ Somewhere else", askPlace, "sm ghost"],
         ["🎲 Different options", () => set({ options: null }), "sm ghost"],
       ],

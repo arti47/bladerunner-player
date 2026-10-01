@@ -1832,6 +1832,7 @@ test("the Case Board tutorial walks the whole feature, with live numbers [house 
   });
   await page.goto(`${base}/index.html?tut3#solo`, { waitUntil: "load" });
   await page.waitForTimeout(250);
+  await page.click('summary[aria-label="More board tools"]');   // the guide sits behind ⋯ (round 4)
   await page.getByRole("button", { name: /Step-by-step guide/ }).click();
   await page.waitForTimeout(350);
   assert.equal(await page.evaluate(() => location.hash), "#tutorial");
@@ -4161,6 +4162,8 @@ test("round 3 play & dice: destination cards, tap-to-roll, options by button, ci
   assert.match(await p.$eval(".modal", (m) => m.textContent), /key memory/i);
   await p.keyboard.press("Escape");
   // quick-roll button: on screens with a living character, not in the wizard
+  // (round 4: it steps aside while scrolling down — back to the top brings it back)
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(150);
   assert.equal(await p.locator("#quick-roll").isVisible(), true);
   await p.click("#quick-roll"); await p.waitForTimeout(200);
   assert.equal(await p.$$eval(".modal .picker__row--btn", (n) => n.length), 13, "every skill in the quick-roll list");
@@ -4235,4 +4238,157 @@ test("round 3 identity & fights: ID card, avatars, panel art, empty scenes, init
   assert.ok(await p.$(".card .empty-scene"), "an empty fight has a drawing");
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
   await ctx.close();
+});
+
+// UX round 4 (owner audit, 2026-09-30): the defects it found stay fixed, and the
+// new graphics / UX adds are present and do what they say.
+test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, roster order, palette recents, quick-add, undo, mini-vitals, dial, stamp, ID review, desktop notes", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const p = await ctx.newPage();
+  await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  const errs = []; p.on("pageerror", (e) => errs.push(e.message));
+  let n = 0;
+  const go = async (route, panel, extra = {}) => {
+    if (panel) await p.evaluate(([pn, ex]) => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = pn; Object.assign(s, ex); localStorage.setItem("brp:solo", JSON.stringify(s)); }, [panel, extra]);
+    await p.goto(`${base}/index.html?r4${++n}#${route}`, { waitUntil: "load" }); await p.waitForTimeout(350);
+  };
+  await p.goto(`${base}/index.html#home`, { waitUntil: "load" });
+  const ids = await p.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const a = Store.save(normalizeCharacter({ name: "Aaron First", nature: "human", archetype: "analyst", years: "seasoned" })).id;
+    const ch = normalizeCharacter({ name: "Zoe Active", nature: "human", archetype: "inspector", years: "veteran", attributes: { STR: "C", AGI: "B", INT: "A", EMP: "B" } });
+    ch.journal = [{ id: "j1", ts: 1, text: "First entry" }, { id: "j2", ts: 2, text: "Second entry" }];
+    const z = Store.save(ch).id; Store.setActiveId(z);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "play", introSeen: true, shiftNo: 3, timerDie: "D10", scratchpad: "• [Clue] A sleeve",
+      caseOpen: { no: 4, title: "Neon Orchid", assignment: "A body in a bar", opened: Date.now(), openStats: { pp: 0, humanity: 0 } },
+      hypotheses: [{ id: "h1", text: "The bartender", die: "D8" }, { id: "h2", text: "The courier", die: "D6" }],
+      play: { caseNo: 4, stage: "plan", options: ["Neon-lit Bar", "Rain-soaked Dock", "Dark Lab"] } }));
+    return { a, z };
+  });
+
+  // Play: a crumb never repeats the eyebrow; each place wears its drawing.
+  await go("solo");
+  assert.equal(await p.$eval(".play__crumbs", (e) => e.textContent), "Case #4", "Shift 3 is the chip, not a crumb as well");
+  assert.deepEqual(await p.$$eval(".play__choices .place-art", (s) => s.map((x) => [...x.classList].find((c) => c.startsWith("place-art--")))),
+    ["place-art--bar", "place-art--dock", "place-art--clinic"]);
+
+  // Shift: the countdown dial, labelled from the data.
+  await go("solo", "shift");
+  assert.match(await p.$eval(".dial", (d) => d.getAttribute("aria-label")), /D10, step 3 of \d+/);
+  assert.ok(await p.$(".card .card__head ~ .card__art, .card > .card__art"), "the panel drawing is still there");
+  // FAB: a panel with a sticky next-step bar has no quick-roll button over it.
+  assert.equal(await p.locator("#quick-roll").isVisible(), false, "no FAB over a next-step bar");
+
+  // Notes: quick-add a line.
+  await go("solo", "notes");
+  await p.fill(".notes-quick .input", "Follow the courier");
+  await p.keyboard.press("Enter"); await p.waitForTimeout(200);
+  assert.match(await p.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).scratchpad), /• Follow the courier\s*$/);
+
+  // Leads: remove, then Undo puts it back in place.
+  await go("solo", "leads");
+  await p.getByRole("button", { name: "Remove The bartender" }).click(); await p.waitForTimeout(200);
+  assert.deepEqual(await p.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).hypotheses.map((h) => h.id)), ["h2"]);
+  await p.locator(".toast__btn", { hasText: "Undo" }).click(); await p.waitForTimeout(250);
+  assert.deepEqual(await p.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).hypotheses.map((h) => h.id)), ["h1", "h2"]);
+
+  // Board: Connect + Prompt in one row; the guide and the wipe behind ⋯.
+  await go("solo", "board");
+  assert.deepEqual(await p.$$eval(".board__tools > .btn", (b) => b.map((x) => x.textContent.trim())), ["Connect two boxes", "Prompt (Cipher)"]);
+  const boxes = await p.$$eval(".board__tools > *", (b) => b.map((x) => { const r = x.getBoundingClientRect(); return [r.top, r.bottom]; }));
+  assert.ok(Math.max(...boxes.map((x) => x[0])) < Math.min(...boxes.map((x) => x[1])), `one row: ${JSON.stringify(boxes)}`);
+  assert.ok(await p.$('summary[aria-label="More board tools"]'));
+
+  // Chase: the vehicle select is one line tall, and the Round label does not wrap.
+  await p.evaluate(() => localStorage.setItem("brp:chase", JSON.stringify({ active: true, env: "ground", round: 2, distIdx: 2, vehicles: {}, hull: {}, log: [] })));
+  await go("combat");
+  const sel = await p.$eval('select[aria-label="Prey vehicle"]', (s) => s.getBoundingClientRect().height);
+  assert.ok(sel < 64, `vehicle select height ${sel}`);
+  const round = await p.$$eval(".combat__round", (r) => r.map((x) => x.getBoundingClientRect().height));
+  assert.ok(round.every((h) => h < 40), `Round labels on one line: ${round}`);
+
+  // Toast: never wider than the screen.
+  await p.evaluate(async () => { (await import("/src/ui.js")).showToast("A very long message that would once have run straight off the side of a phone screen, as it did on the wizard review."); });
+  await p.waitForTimeout(300);
+  const tr = await p.$eval(".toast", (e) => { const r = e.getBoundingClientRect(); return [r.left, r.right]; });
+  assert.ok(tr[0] >= 0 && tr[1] <= 390, `toast inside the viewport: ${tr}`);
+
+  // Characters: the active one first.
+  await go("characters");
+  assert.match(await p.$eval(".char-row", (r) => r.textContent), /Zoe Active/);
+
+  // Sheet: scroll past Vitals and the mini bar shows; journal removal undoes.
+  await go("sheet");
+  assert.equal(await p.$eval(".sheet-mini", (m) => m.classList.contains("sheet-mini--on")), false);
+  await p.evaluate(() => window.scrollTo(0, 1500)); await p.waitForTimeout(400);
+  assert.equal(await p.$eval(".sheet-mini", (m) => m.classList.contains("sheet-mini--on")), true, "mini-vitals after scrolling");
+  assert.match(await p.$eval(".sheet-mini", (m) => m.textContent), /\d+\/\d+.*\d+\/\d+/);
+  await p.locator(".journal__entry", { hasText: "First entry" }).getByRole("button", { name: "delete entry" }).click(); await p.waitForTimeout(200);
+  await p.locator(".toast__btn", { hasText: "Undo" }).click(); await p.waitForTimeout(250);
+  assert.deepEqual(await p.evaluate(async () => (await import("/src/store.js")).Store.getActive().journal.map((j) => j.id)), ["j1", "j2"]);
+
+  // FAB: steps aside scrolling down, comes back scrolling up.
+  assert.equal(await p.locator("#quick-roll").isVisible(), true);
+  await p.evaluate(() => window.scrollTo(0, 2200)); await p.waitForTimeout(150);
+  assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), true, "away while scrolling down");
+  await p.evaluate(() => window.scrollTo(0, 1000)); await p.waitForTimeout(150);
+  assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), false, "back scrolling up");
+  // Quick roll marks key skills.
+  await p.click("#quick-roll"); await p.waitForTimeout(200);
+  assert.ok(await p.locator(".modal .quick__row", { hasText: "Observation" }).locator(".palette__key").count(), "a key skill is starred");
+  await p.keyboard.press("Escape"); await p.waitForTimeout(150);
+
+  // Palette: a pick is remembered under Recent.
+  await p.keyboard.press("Control+k"); await p.waitForTimeout(200);
+  await p.fill(".modal .picker-search", "Rules Library");
+  await p.locator(".modal .palette__row:not([hidden])").first().click(); await p.waitForTimeout(300);
+  await p.keyboard.press("Control+k"); await p.waitForTimeout(200);
+  assert.equal(await p.$eval(".modal .palette__head", (h) => h.textContent), "Recent");
+  assert.match(await p.$eval(".modal .palette__row--recent", (r) => r.textContent), /Rules Library/);
+  assert.ok(await p.$(".modal .palette__row .palette__icon .i"), "rows carry icons");
+  await p.keyboard.press("Escape");
+
+  // Closing a case slams a stamp.
+  await go("solo", "case");
+  await p.getByRole("button", { name: "Close the case", exact: true }).click(); await p.waitForTimeout(200);
+  await p.fill(".modal input", "The bartender");
+  await p.locator(".modal").getByRole("button", { name: /^(Next|OK)$/ }).click(); await p.waitForTimeout(200);
+  await p.fill(".modal input, .modal textarea", "Arrested.");
+  await p.locator(".modal").getByRole("button", { name: /Close the case|^OK$/ }).click(); await p.waitForTimeout(250);
+  assert.equal(await p.$eval(".stamp-slam", (s) => s.textContent), "SOLVED");
+  assert.equal(await p.$eval(".stamp-slam", (s) => getComputedStyle(s).pointerEvents), "none");
+
+  // Wizard review is an ID card; Home with nobody shows the skyline.
+  await go("wizard");
+  await p.getByRole("button", { name: /Roll me a whole Blade Runner/i }).click(); await p.waitForTimeout(300);
+  assert.ok(await p.$(".review-id .idcard__strip"), "the review is the ID card to be issued");
+  await p.evaluate(async () => { const { Store } = await import("/src/store.js"); for (const c of Store.list()) Store.remove(c.id); });
+  await go("home");
+  assert.ok(await p.$(".start .home-sky"), "the first-run card shows the city");
+  assert.equal(await p.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+
+  // Desktop: the notes ride beside Solo panels, and Play is a readable width.
+  const dctx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+  const d = await dctx.newPage();
+  await d.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  await d.goto(`${base}/index.html#home`, { waitUntil: "load" });
+  await d.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    Store.setActiveId(Store.save(normalizeCharacter({ name: "Desk", nature: "human", archetype: "analyst", years: "seasoned" })).id);
+    localStorage.setItem("brp:solo", JSON.stringify({ panel: "play", introSeen: true, scratchpad: "• [Clue] Desk note" }));
+  });
+  await d.goto(`${base}/index.html?d1#solo`, { waitUntil: "load" }); await d.waitForTimeout(350);
+  assert.match(await d.$eval(".solo-aside", (a) => a.textContent), /Desk note/);
+  assert.ok((await d.$eval(".play-card", (c) => c.getBoundingClientRect().width)) <= 720);
+  assert.equal(await d.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0);
+  await dctx.close();
 });

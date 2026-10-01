@@ -1578,3 +1578,146 @@ body:has(.fab:not([hidden])) .screen-host { padding-bottom: 88px; }
 @media (min-width: 900px) { .nav__btn--active::after { left: 0; right: auto; top: 22%; bottom: 22%; width: 2px; height: auto; } }
 @keyframes nav-in { from { opacity: 0; transform: scaleX(.3); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .panel--enter::after, .nav__btn--active::after { animation: none; } .panel--enter::after { display: none; } }
+
+/* ==== UX round 4 ============================================================ */
+/* Defects */
+.toast { max-width: min(460px, 100%); }
+.toast__msg { overflow-wrap: anywhere; }
+.chase-veh > .roll-select { flex: 0 0 auto; max-width: none; width: 100%; }
+.combat__round { white-space: nowrap; flex: 0 0 auto; }
+.solo-status__stats > * + *::before { content: "·"; margin-right: var(--sp-2); color: var(--line-strong); text-decoration: none; display: inline-block; }
+/* The FAB steps aside: scrolling down, a panel with its own next-step bar, or a dialog. */
+.fab { transition: transform var(--dur) var(--ease), opacity var(--dur); }
+.fab--away { transform: translateY(calc(100% + var(--sp-6, 32px))); opacity: 0; pointer-events: none; }
+body:has(.next-bar) .fab, body:has(.modal-overlay) .fab { display: none; }
+body:has(.next-bar) .screen-host { padding-bottom: 0; }
+
+/* Panel watermark: in the card head, behind its right side. */
+.card__art { top: var(--sp-2); bottom: auto; right: calc(var(--sp-2) + 36px); width: 64px; height: 64px; opacity: .09; }
+
+/* Board: tools row + ⋯ */
+.board__tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.board__tools > .rowmenu { margin-left: auto; }
+
+/* Board cards: suspects as mugshots, clues as evidence tags. */
+.board__box--suspect .board__avatar { width: 40px; height: 48px; border-radius: 3px; padding-bottom: 4px;
+  background: repeating-linear-gradient(0deg, transparent 0 7px, color-mix(in srgb, var(--magenta) 30%, transparent) 7px 8px), var(--panel-2);
+  border: 1px solid color-mix(in srgb, var(--magenta) 45%, var(--line-strong)); }
+.board__box--clue { background: linear-gradient(225deg, color-mix(in srgb, var(--magenta) 22%, var(--bg-2)) 0 12px, color-mix(in srgb, var(--magenta) 55%, var(--line-strong)) 12px 13px, transparent 13px), var(--panel); }
+.board__box--clue::after { content: ""; position: absolute; top: 9px; right: 20px; width: 7px; height: 7px; border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--magenta) 70%, var(--line-strong)); background: var(--bg); pointer-events: none; }
+
+/* Dice tray */
+.modal .dice { padding: var(--sp-4) var(--sp-3); border-radius: var(--r-lg); position: relative;
+  background:
+    radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 70%),
+    repeating-linear-gradient(60deg, color-mix(in srgb, var(--line) 55%, transparent) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-60deg, color-mix(in srgb, var(--line) 55%, transparent) 0 1px, transparent 1px 14px),
+    var(--bg);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, .45), inset 0 0 0 1px var(--line-strong); }
+.modal .dice .die { filter: drop-shadow(0 6px 4px rgba(0, 0, 0, .45)); }
+
+/* Countdown dial */
+.timer-row { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.timer-row .timer-display { margin: 0; }
+.dial { position: relative; width: 96px; height: 78px; flex: 0 0 auto; }
+.dial__svg { width: 100%; height: 100%; fill: none; stroke-linecap: round; }
+.dial__seg { stroke: var(--line-strong); stroke-width: 5; }
+.dial__seg--past { stroke: color-mix(in srgb, var(--amber) 45%, var(--line-strong)); }
+.dial__seg--now { stroke: var(--amber); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--amber) 70%, transparent)); }
+.dial__needle { stroke: var(--text); stroke-width: 2; transition: all var(--dur) var(--ease); }
+.dial__hub { fill: var(--text); stroke: none; }
+.dial__die { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--amber); }
+
+/* Place drawings on destination cards */
+.btn--dest .place-art { width: 40px; height: 40px; flex: 0 0 auto; color: var(--cyan); opacity: .85; order: -1; }
+.btn--dest:has(.place-art) .play__num { order: -2; }
+
+/* Case-closed stamp slam */
+.stamp-slam { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; pointer-events: none; }
+.stamp-slam__mark { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.5rem, 14vw, 5rem); letter-spacing: .12em;
+  padding: .1em .35em; border: 6px double currentColor; border-radius: 10px; transform: rotate(-9deg);
+  background: color-mix(in srgb, var(--bg) 55%, transparent); animation: slam 1.5s var(--ease) both; }
+.stamp-slam--ok .stamp-slam__mark { color: var(--ok); }
+.stamp-slam--resolve .stamp-slam__mark { color: var(--resolve); }
+@keyframes slam { 0% { transform: rotate(-9deg) scale(2.6); opacity: 0; } 18% { transform: rotate(-9deg) scale(.94); opacity: 1; }
+  26% { transform: rotate(-9deg) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: rotate(-9deg) scale(1); } }
+
+/* ID card shimmer */
+.sheet__head--id::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--cyan) 10%, transparent) 45%, color-mix(in srgb, var(--amber) 8%, transparent) 55%, transparent 65%);
+  background-size: 250% 100%; background-position: 120% 0; animation: id-shimmer 7s ease-in-out 1.2s infinite; mix-blend-mode: screen; }
+@keyframes id-shimmer { 0%, 70% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+.sheet__head--id { position: relative; }
+
+/* Neon title flicker (dark only, once, after the glow) */
+:root[data-theme="dark"] .screen__title { animation: title-glow 1.1s var(--ease) both, neon-flicker 1.6s steps(1) 1.2s 1; }
+@keyframes neon-flicker { 0%, 100% { opacity: 1; } 8% { opacity: .55; } 12% { opacity: 1; } 40% { opacity: .75; } 43% { opacity: 1; } }
+
+/* Terminal toasts: mono text typed in, a cursor that blinks out */
+.toast__msg { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.toast--in .toast__msg { animation: type-in 480ms steps(28, end) both; }
+.toast--in:not(.toast--action) .toast__msg::after { content: "▌"; margin-left: 2px; color: var(--cyan); animation: cursor-blink .5s steps(1) 4 both; }
+@keyframes type-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes cursor-blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 0; } }
+
+/* Home: a skyline over the first-run card */
+.home-sky { display: block; width: calc(100% + 2 * var(--sp-4)); height: auto; margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3);
+  color: var(--cyan); border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--magenta) 14%, transparent), color-mix(in srgb, var(--amber) 8%, transparent)); }
+
+/* Notes quick-add */
+.notes-quick { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
+.notes-quick .input { flex: 1 1 auto; min-width: 0; }
+
+/* Sheet: sticky mini-vitals once the Vitals card is off screen */
+.sheet-mini { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  margin: 0 calc(-1 * var(--sp-4)) var(--sp-2); padding: var(--sp-1) var(--sp-4);
+  background: color-mix(in srgb, var(--bg) 92%, transparent); border-bottom: 1px solid var(--line-strong);
+  font-family: var(--font-mono); font-size: var(--fs-sm); transform: translateY(-110%); opacity: 0; pointer-events: none;
+  transition: transform var(--dur) var(--ease), opacity var(--dur); }
+.sheet-mini--on { transform: none; opacity: 1; pointer-events: auto; }
+.sheet-mini__name { font-family: var(--font-display); font-weight: 700; color: var(--text); margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 6rem; }
+.sheet-mini__v { white-space: nowrap; }
+.sheet-mini__v--health { color: var(--health); } .sheet-mini__v--resolve { color: var(--resolve); }
+
+/* Palette + quick roll: icons and key marks */
+.palette__row, .quick__row { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; column-gap: var(--sp-2); }
+.palette__icon { display: inline-flex; color: var(--cyan); }
+.palette__icon .i { width: 18px; height: 18px; }
+.palette__key { color: var(--amber); }
+.palette__head { font-family: var(--font-display); font-size: var(--fs-2xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: var(--sp-2) 0 var(--sp-1); }
+
+/* Palette: while searching, one flat list */
+.modal:has(.picker-search:not(:placeholder-shown)) .palette__head { display: none; }
+.palette__trained { color: var(--cyan); }
+/* Wizard review: the ID card to be issued */
+.review-id .idcard__org { flex: 1; }
+.review-id__row { display: flex; align-items: center; gap: var(--sp-3); }
+.review-id__face { width: 64px; height: 64px; flex: 0 0 auto; border-radius: var(--r-md); }
+
+/* Desktop */
+@media (min-width: 900px) { .play-card { max-width: 720px; } .panel:has(> .play-card) { columns: 1; } }
+@media (min-width: 1280px) {
+  .solo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-4); align-items: start; }
+  .solo-aside { position: sticky; top: var(--sp-4); max-height: calc(100vh - 2 * var(--sp-4)); overflow: auto; }
+  .solo-aside .notes-read { max-height: 60vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet__head--id::after, .toast--in .toast__msg, .toast--in .toast__msg::after, .stamp-slam__mark { animation: none; }
+  :root[data-theme="dark"] .screen__title { animation: none; }
+  .fab, .sheet-mini { transition: none; }
+}
+.modal:has(.picker-search:not(:placeholder-shown)) .palette__row--recent { display: none; }
+.timer-row { flex-wrap: nowrap; }
+.timer-row .timer-display { flex: 1 1 auto; min-width: 0; gap: var(--sp-2); flex-wrap: wrap; }
+.timer-row .dial { width: 84px; height: 68px; }
+.btn--dest:has(.place-art) .i--place { display: none; }
+.board__tools { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; margin-top: var(--sp-2); }
+.board__tools > .btn { min-width: 0; white-space: normal; line-height: 1.2; }
+.board__tools > .rowmenu { margin-left: 0; }
+.notes-quick .btn { white-space: nowrap; flex: 0 0 auto; }
+.board__tools { align-items: center; }
+/* An open ⋯ menu on a board box paints above the other column and the boxes after it. */
+.board__group:has(.rowmenu[open]) { z-index: 3; }
+.board__box:has(.rowmenu[open]) { z-index: 2; }

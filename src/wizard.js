@@ -9,7 +9,7 @@ import { showToast } from "./ui.js";
 import { Settings } from "./settings.js";
 import { SOLO_NO_ARCHETYPE } from "../data-solo.js";
 import { navigate } from "./router.js";
-import { emblem, natureMark } from "./art.js";
+import { emblem, natureMark, portraitPlaceholder } from "./art.js";
 
 const d3 = () => Math.ceil(rollDie(6) / 2);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -406,9 +406,16 @@ function stepIdentity(body, rerender) {
 function stepReview(body) {
   const arch = R.archetype(draft.archetype), y = R.years(draft.years);
   const tmp = normalizeCharacter({ ...draft, id: "tmp" });
-  body.append(el("div", { class: "card" },
-    el("div", { class: "card__title" }, draft.identity.name || "Unnamed Blade Runner"),
-    el("div", { class: "muted" }, `${titleCase(draft.nature)} · ${arch.name} · ${y.name}`),
+  // Round 4: the review is the ID card about to be issued — the same strip and
+  // framed face the sheet wears, the number still blank.
+  body.append(el("div", { class: "card sheet__head--id review-id" },
+    el("div", { class: "idcard__strip", "aria-hidden": "true" },
+      el("span", { class: "idcard__org" }, "LAPD · Identification"), el("span", { class: "idcard__no" }, "BR-····")),
+    el("div", { class: "review-id__row" },
+      portraitPlaceholder(draft.identity.name || "?", "review-id__face"),
+      el("div", {},
+        el("div", { class: "card__title" }, draft.identity.name || "Unnamed Blade Runner"),
+        el("div", { class: "muted" }, natureMark(draft.nature), emblem(draft.archetype), `${titleCase(draft.nature)} · ${arch.name} · ${y.name}`))),
     el("div", { class: "pips" },
       el("span", { class: "pip pip--health" }, `Health ${maxHealth(tmp)}`),
       el("span", { class: "pip pip--resolve" }, `Resolve ${maxResolve(tmp)}`)),

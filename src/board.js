@@ -223,19 +223,21 @@ export function renderBoardPanel(root, ctx) {
     spoken(btn("🎲 ＋ Suspect", () => addRolled("suspect"), "sm"), "＋ Suspect — rolled from the tables"),
     spoken(btn("✍ ＋ Suspect", () => addTyped("suspect"), "sm ghost"), "＋ Suspect — written by you"),
   ));
-  boardCard.append(el("div", { class: "btn-row" },
+  // The two tools you use; the guide and the wipe sit behind ⋯ (round 4).
+  boardCard.append(el("div", { class: "board__tools" },
     btn("🔗 Connect two boxes", () => connectFlow(), "sm ghost"),   // wrapped: btn passes the click event on
     btn("🎲 Prompt (Cipher)", () => {
       const words = rollPrompt();
       show({ label: "Board prompt", text: words, pin: `[Board] Prompt: ${words}`, title: "Two words to interpret",
         render: (bd) => bd.append(el("h3", { class: "roll-result roll-result--big" }, words)) });
     }, "sm ghost"),
-    ctx.openGuide ? btn("📖 Step-by-step guide", () => ctx.openGuide(), "sm ghost") : null,
-    b.boxes.length ? btn("✕ Clear the board", async () => {
-      if (await confirmModal("Wipe every clue, suspect and connection from the board? Your case notes are not touched.", { title: "Clear the board", danger: true, okLabel: "Wipe the board" })) {
-        Board.clear(); showToast("Board cleared."); rerender();
-      }
-    }, "sm ghost") : null,
+    rowMenu("More board tools", [
+      ctx.openGuide ? { label: "📖 Step-by-step guide", onClick: () => ctx.openGuide() } : null,
+      b.boxes.length ? { label: "✕ Clear the board", danger: true, onClick: async () => {
+        if (await confirmModal("Wipe every clue, suspect and connection from the board? Your case notes are not touched.", { title: "Clear the board", danger: true, okLabel: "Wipe the board" })) {
+          Board.clear(); showToast("Board cleared."); rerender();
+        }
+      } } : null]),
   ));
   root.append(boardCard);
 

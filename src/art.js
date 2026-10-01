@@ -232,3 +232,63 @@ const EMPTIES = {
 export function emptyScene(kind, cls = "") {
   return svg("0 0 120 100", `<g ${STROKE}>${EMPTIES[kind] || EMPTIES.case}</g>`, `art empty-scene ${cls}`.trim());
 }
+
+// ---- Places (round 4) --------------------------------------------------------------------
+// A small drawing on each destination card, chosen by the place word the
+// Location table rolled ("Neon-lit Bar" → the bar sign). Words the table does
+// not use (a place typed by the player) fall back to the street.
+const PLACES = {
+  street:   `<path d="M6 42h36"/><path d="M14 42V12h8"/><path d="M22 12c3 0 4 2 4 4"/><path d="M23 17h6" opacity=".7"/><path d="M30 42l4-18M40 42l-2-18" opacity=".45"/>`,
+  building: `<rect x="12" y="8" width="18" height="34"/><path d="M30 18h8v24h-8"/><path d="M17 14h3M22 14h3M17 21h3M22 21h3M17 28h3M22 28h3"/><path d="M18 42v-6h6v6"/>`,
+  bar:      `<path d="M14 10h20l-10 13z"/><path d="M24 23v13M17 36h14"/><path d="M29 14l5-6" opacity=".7"/><circle cx="36" cy="7" r="1.6"/>`,
+  clinic:   `<rect x="8" y="12" width="32" height="28" rx="3"/><path d="M24 18v16M16 26h16"/><path d="M18 12V8h12v4"/>`,
+  dock:     `<path d="M6 30h36"/><path d="M12 30V14l18-6v22"/><path d="M30 8l8 8" /><path d="M38 16v6"/><path d="M6 38c4-3 8 3 12 0s8 3 12 0 8 3 12 0" opacity=".6"/>`,
+  factory:  `<path d="M6 42V22l10 6v-6l10 6v-6l10 6V10h6v32z"/><path d="M12 36h4M22 36h4M32 36h4" opacity=".7"/>`,
+  tower:    `<path d="M18 42V12l6-6 6 6v30"/><path d="M12 42V24h6M30 24h6v18"/><path d="M22 18h4M22 25h4M22 32h4"/><path d="M8 42h32"/>`,
+  shop:     `<path d="M8 18h32l-3-8H11z"/><path d="M8 18c0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0 0 3 4 3 4 0"/><path d="M11 22v20h26V22"/><path d="M20 42v-10h8v10"/>`,
+  rooftop:  `<path d="M6 30h36"/><path d="M10 30V42M38 30V42"/><path d="M28 30V20h8v10"/><path d="M32 20v-6" /><circle cx="14" cy="12" r="3" opacity=".6"/><path d="M18 22h4" opacity=".6"/>`,
+  transit:  `<rect x="12" y="8" width="24" height="26" rx="5"/><path d="M12 22h24"/><circle cx="18" cy="28" r="1.6"/><circle cx="30" cy="28" r="1.6"/><path d="M16 34l-4 8M32 34l4 8M14 38h20"/>`,
+  tunnel:   `<path d="M6 42V26a18 18 0 0 1 36 0v16"/><path d="M14 42V28a10 10 0 0 1 20 0v14" opacity=".6"/><path d="M24 34v8" stroke-dasharray="2 3"/>`,
+  ruin:     `<path d="M8 42h32"/><path d="M12 42V18l6 4 4-8v28"/><path d="M28 42V24l4 3 4-5v20" opacity=".7"/><path d="M16 34l-4-2M34 34l2 3" opacity=".5"/>`,
+};
+const PLACE_WORDS = [
+  ["bar", /\b(bar|nightclub|club|casino|arcade|restaurant)\b/i],
+  ["clinic", /\b(clinic|hospital|lab)\b/i],
+  ["dock", /\bdock\b/i],
+  ["factory", /\b(factory|warehouse|construction|garage|facility)\b/i],
+  ["tower", /\b(bank|office|headquarters|municipal|library|monument|data center)\b/i],
+  ["shop", /\b(shop|bazaar)\b/i],
+  ["rooftop", /\brooftop\b/i],
+  ["transit", /\b(transit|viaduct)\b/i],
+  ["tunnel", /\btunnel\b/i],
+  ["ruin", /\bruin\b/i],
+  ["building", /\b(apartment|home|hotel|safehouse|lobby)\b/i],
+];
+function placeKind(name) { return (PLACE_WORDS.find(([, re]) => re.test(name || "")) || ["street"])[0]; }
+export function placeArt(name, cls = "") {
+  const kind = placeKind(name);
+  const s = svg("0 0 48 48", `<g ${STROKE}>${PLACES[kind]}</g>`, `art place-art place-art--${kind} ${cls}`.trim());
+  return s;
+}
+
+// ---- Countdown dial (round 4) ----------------------------------------------------------
+// The escalation ladder bent into a dial: one arc per step, the current one lit,
+// a needle on it. The ladder list stays beside it for reading.
+export function countdownDial(steps, current) {
+  const at = Math.max(0, steps.indexOf(current));
+  const n = steps.length, cx = 40, cy = 40, r = 30, start = -210, sweep = 240, gap = 4;
+  const seg = (sweep - gap * (n - 1)) / n;
+  const pt = (deg, rr = r) => { const a = (deg * Math.PI) / 180; return [cx + rr * Math.cos(a), cy + rr * Math.sin(a)]; };
+  let arcs = "";
+  for (let i = 0; i < n; i++) {
+    const a0 = start + i * (seg + gap), a1 = a0 + seg;
+    const [x0, y0] = pt(a0), [x1, y1] = pt(a1);
+    arcs += `<path d="M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)}" class="dial__seg${i < at ? " dial__seg--past" : i === at ? " dial__seg--now" : ""}"/>`;
+  }
+  const mid = start + at * (seg + gap) + seg / 2;
+  const [nx, ny] = pt(mid, r - 10);
+  const inner = `${arcs}<line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" class="dial__needle"/><circle cx="${cx}" cy="${cy}" r="3" class="dial__hub"/>`;
+  const wrap = el("div", { class: "dial", role: "img", "aria-label": `Countdown timer at ${current}, step ${at + 1} of ${n}` });
+  wrap.append(svg("0 0 80 64", inner, "dial__svg"), el("span", { class: "dial__die", "aria-hidden": "true" }, current));
+  return wrap;
+}

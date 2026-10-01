@@ -183,7 +183,7 @@ export function introLine(text, onDismiss) {
 // Case notes: a rendered read view by default (pinned rolls as tagged entries,
 // case headers as headings), with Edit switching to the plain textarea. The
 // stored text is exactly what it was — this is presentation only.
-export function notesView({ value = "", onSave, rows = 10, placeholder = "", savedToast = "Notes saved." } = {}) {
+export function notesView({ value = "", onSave, rows = 10, placeholder = "", savedToast = "Notes saved.", quickAdd = false } = {}) {
   const box = el("div", { class: "notes" });
   const paintRead = () => {
     box.replaceChildren();
@@ -200,7 +200,22 @@ export function notesView({ value = "", onSave, rows = 10, placeholder = "", sav
         el("span", { class: "tag tag--sm notes-read__tag" }, m[1]), el("span", { class: "notes-read__text" }, m[2])));
       else read.append(el("p", { class: "notes-read__p" }, line.replace(/^[•*]\s*/, "")));
     }
-    box.append(read, el("div", { class: "btn-row" }, el("button", { class: "btn btn--sm btn--ghost", onClick: paintEdit }, "✎ Edit notes")));
+    box.append(read);
+    // Quick-add (round 4): one line, Enter, and it lands at the bottom as an entry.
+    if (quickAdd) {
+      const line = el("input", { class: "input", type: "text", placeholder: "Add a line to the notes…", "aria-label": "Add a line to the notes", enterkeyhint: "done" });
+      const add = () => {
+        const t = line.value.trim();
+        if (!t) return;
+        value = appendToNotes(value, `• ${t}`);
+        onSave?.(value);
+        paintRead();
+        box.querySelector(".notes-quick .input")?.focus();
+      };
+      line.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+      box.append(el("div", { class: "notes-quick" }, line, el("button", { class: "btn btn--sm", "aria-label": "Add the line", onClick: add }, "＋ Add")));
+    }
+    box.append(el("div", { class: "btn-row" }, el("button", { class: "btn btn--sm btn--ghost", onClick: paintEdit }, "✎ Edit notes")));
     requestAnimationFrame(() => { read.scrollTop = read.scrollHeight; });   // newest at the bottom
   };
   const paintEdit = () => {
@@ -394,6 +409,16 @@ export function feel(kind) {
 // A small, reversible removal happens at once and offers Undo for a few
 // seconds. Anything that cannot be put back (a character, a whole case) keeps
 // its confirm dialog.
+// A rubber stamp slammed over the screen when a case is filed (round 4).
+// Decorative and never in the way: no pointer events, gone in 1.5s, skipped
+// under reduced motion. The toast beside it carries the words.
+export function stampSlam(text, tone = "ok") {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const o = el("div", { class: `stamp-slam stamp-slam--${tone}`, "aria-hidden": "true" }, el("span", { class: "stamp-slam__mark" }, text));
+  document.body.append(o);
+  feel("hit");
+  setTimeout(() => o.remove(), 1600);
+}
 export function undoToast(message, onUndo) {
   return showToast(message, { timeout: 6000, action: { label: "Undo", onClick: onUndo } });
 }

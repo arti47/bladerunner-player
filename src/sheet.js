@@ -132,6 +132,8 @@ export function renderSheet(mount) {
   const wrap = el("section", { class: "screen sheet" });
 
   if (Settings.solo()) wrap.append(backToSolo());
+  const mini = miniVitals(ch);
+  wrap.append(mini);
   wrap.append(sheetHeader(ch, arch, y, commit));
   if (ch.state.dead) wrap.append(deceasedBanner(ch, commit, rerender));
   // Priority stack: what you touch every scene stays open at the top; the rest
@@ -167,6 +169,26 @@ export function renderSheet(mount) {
   paintGuidance(wrap);
 
   mount.append(wrap);
+  watchVitals(vitals, mini);
+}
+
+// Round 4: once the Vitals card scrolls away, a slim bar keeps Health and
+// Resolve in sight. Decorative copy of numbers the Vitals card states (hidden
+// from screen readers, never takes a tap).
+let vitalsObserver = null;
+function miniVitals(ch) {
+  return el("div", { class: "sheet-mini", "aria-hidden": "true" },
+    el("span", { class: "sheet-mini__name" }, ch.name),
+    el("span", { class: "sheet-mini__v sheet-mini__v--health" }, `♥ ${ch.state.health}/${maxHealth(ch)}`),
+    el("span", { class: "sheet-mini__v sheet-mini__v--resolve" }, `◈ ${ch.state.resolve}/${maxResolve(ch)}`));
+}
+function watchVitals(vitals, mini) {
+  vitalsObserver?.disconnect();
+  if (!window.IntersectionObserver) return;
+  vitalsObserver = new IntersectionObserver(([e]) => {
+    mini.classList.toggle("sheet-mini--on", !e.isIntersecting && e.boundingClientRect.bottom < 0);
+  });
+  vitalsObserver.observe(vitals);
 }
 
 // Attach the collapsed "how to use this" note to every section that has one.
@@ -1035,7 +1057,18 @@ function journalSection(ch, commit) {
     card.append(el("div", { class: "journal__entry" },
       el("div", { class: "journal__head" },
         el("span", { class: "muted journal__ts" }, new Date(e.ts).toLocaleString()),
-        el("button", { class: "btn btn--sm btn--ghost", "aria-label": "delete entry", onClick: () => commit((c) => { c.journal = (c.journal || []).filter((x) => x.id !== e.id); }) }, "✕")),
+        el("button", { class: "btn btn--sm btn--ghost", "aria-label": "delete entry", onClick: () => {
+          // Removed at once; Undo puts the entry back where it was (round 4).
+          const at = entries.indexOf(e), kept = { ...e };
+          commit((c) => { c.journal = (c.journal || []).filter((x) => x.id !== e.id); });
+          undoToast("Journal entry removed.", () => {
+            const c = Store.get(ch.id);
+            if (!c || (c.journal || []).some((x) => x.id === kept.id)) return;
+            (c.journal ||= []).splice(Math.min(at, c.journal.length), 0, kept);
+            Store.save(c);
+            if (location.hash.slice(1) === "sheet") navigate("sheet");
+          });
+        } }, "✕")),
       el("div", { class: "journal__text" }, e.text)));
   }
   return card;

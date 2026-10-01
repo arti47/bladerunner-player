@@ -435,7 +435,7 @@ export function renderGm(mount, rerender) {
       onClear: async () => { const ok = await confirmModal("Clear the entire roll log?", { title: "Clear Roll Log", danger: true }); if (ok) { st.log = []; writeGmState(st); rerender(); } },
     }));
     const c = card("GM Case Scratchpad & Notes", "Persistent notes, oldest at the top. Pinned rolls and briefings are added at the bottom.");
-    c.append(notesView({ value: st.scratchpad || "", rows: 12, placeholder: "Record campaign notes, secret twists, and NPC stats...", savedToast: "GM notes saved.",
+    c.append(notesView({ value: st.scratchpad || "", rows: 12, placeholder: "Record campaign notes, secret twists, and NPC stats...", savedToast: "GM notes saved.", quickAdd: true,
       onSave: (v) => { st.scratchpad = v; writeGmState(st); } }));
     root.append(c);
   }

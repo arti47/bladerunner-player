@@ -18,7 +18,7 @@
 import * as S from "../data-solo.js";
 import * as GM from "../data-gm.js";
 import * as D from "../data.js";
-import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, introLine, notesView, rowMenu, cardHeads, howNote, placeHow } from "./ui.js";
+import { el, sectionTitle, segmentNav, resultSlot, renderToHtml, rollLogCard, showToast, promptModal, confirmModal, appendToNotes, modal, introLine, notesView, rowMenu, cardHeads, howNote, placeHow, undoToast, stampSlam } from "./ui.js";
 import { rollDie, successesFor, uid, clear, TUTORIAL_KEY, SOLO_KEY, stripGlyphs } from "./core.js";
 import { lookupRange, rollColumn, rollGrouped } from "./rules.js";
 import { RollLog, Store, Combat } from "./store.js";
@@ -29,7 +29,7 @@ import { Board, renderBoardPanel } from "./board.js";
 import { renderPlayPanel } from "./play.js";
 import { Chase } from "./chase.js";
 import { Settings } from "./settings.js";
-import { timerLadder, stamp, avatar, sceneArt, emptyScene } from "./art.js";
+import { timerLadder, stamp, avatar, sceneArt, emptyScene, countdownDial } from "./art.js";
 
 const CASES_KEY = "brp:cases";   // closed case files — deliberately NOT solo state,
                                  // so starting a fresh case cannot wipe your record
@@ -65,6 +65,8 @@ function readSoloState() {
   } catch (e) {}
   return base;
 }
+// A filed case wears its ending: SOLVED when someone was named, COLD when not.
+const isSolved = (culprit) => !!(culprit && !/^\s*(unsolved|unknown|no one|nobody|cold|never established)\b/i.test(culprit));
 function writeSoloState(st) { try { localStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch (e) {} }
 
 // Closed case files. A campaign is a sequence of cases, so the record outlives
@@ -369,6 +371,8 @@ export function renderSolo(mount, rerender) {
     writeSoloState(st);
     record("Case closed", `#${file.no} ${file.title}`, `[Case closed] #${file.no} ${file.title} — ${file.culprit}`);
     showToast(`Case #${file.no} closed and filed. ${shifts} Shift${shifts === 1 ? "" : "s"}.`);
+    const solved = isSolved(file.culprit);
+    stampSlam(solved ? "SOLVED" : "COLD", solved ? "ok" : "resolve");
   }
 
   const caseSummary = (f) => [
@@ -529,7 +533,12 @@ export function renderSolo(mount, rerender) {
   // A faint drawing for the panel, in its first card's corner (round 3).
   panel.querySelector(".card")?.append(sceneArt(st.panel, "card__art"));
   paintResults(panel);
-  mount.append(panel);
+  // Desktop (≥1280px): the case notes ride alongside every other panel (round 4).
+  if (st.panel !== "notes" && window.matchMedia?.("(min-width: 1280px)").matches) {
+    const aside = el("aside", { class: "card solo-aside", "aria-label": "Case notes" }, sectionTitle("Case notes"),
+      notesView({ value: st.scratchpad || "", rows: 8, quickAdd: true, onSave: (v) => { st.scratchpad = v; writeSoloState(st); rerender(); } }));
+    mount.append(el("div", { class: "solo-layout" }, panel, aside));
+  } else mount.append(panel);
 
   // Results are kept per card as a short history (oldest first). Older state
   // stored a single object — read it as a one-entry list.
@@ -811,7 +820,7 @@ export function renderSolo(mount, rerender) {
       const list = el("div", { class: "casefiles" });
       for (const f of filed) {
         // A filed case wears its ending: SOLVED when someone was named, COLD when not.
-        const solved = !!(f.culprit && !/^\s*(unsolved|unknown|no one|nobody|cold)\b/i.test(f.culprit));
+        const solved = isSolved(f.culprit);
         const row = el("details", { class: "rules__group casefile" },
           el("summary", {}, `#${f.no} ${f.title} — ${f.shifts} Shift${f.shifts === 1 ? "" : "s"}, ${f.pp >= 0 ? "+" : ""}${f.pp} PP`, stamp(solved ? "SOLVED" : "COLD", solved ? "ok" : "resolve")),
           f.assignment ? el("p", { class: "muted small" }, f.assignment) : null,
@@ -918,7 +927,8 @@ export function renderSolo(mount, rerender) {
     const timerCard = stepCard(2, TIMER_CARD, S.COUNTDOWN_TIMER.note);
     const chip = doneChip("countdown");
     if (chip) timerCard.append(el("div", { class: "chips" }, chip));
-    timerCard.append(el("div", { class: "timer-display" }, el("span", { class: "timer-display__label" }, "Current Timer Die:"), el("span", { class: "timer-display__die" }, st.timerDie)));
+    timerCard.append(el("div", { class: "timer-row" }, countdownDial(S.ESCALATION_STEPS, st.timerDie),
+      el("div", { class: "timer-display" }, el("span", { class: "timer-display__label" }, "Current Timer Die:"), el("span", { class: "timer-display__die" }, st.timerDie))));
     timerCard.append(timerLadder(S.ESCALATION_STEPS, st.timerDie));
     const stepTimer = (dir) => { const i = S.ESCALATION_STEPS.indexOf(st.timerDie) + dir; if (i >= 0 && i < S.ESCALATION_STEPS.length) { st.timerDie = S.ESCALATION_STEPS[i]; writeSoloState(st); rerender(); } };
     timerCard.append(el("div", { class: "btn-row" },
@@ -1124,7 +1134,18 @@ export function renderSolo(mount, rerender) {
         el("div", { class: "hyp-row__main" }, who ? avatar(who, "hyp-row__avatar") : null, el("strong", { class: "hyp-row__die" }, `[${h.die}]`), el("span", {}, h.text)),
         el("div", { class: "btn-row hyp-row__acts" }, btn("🎲 Check", () => hypothesisCheck(h), "sm"),
           named(btn("▲", () => stepHyp(1), "sm ghost"), `Upgrade ${h.text}`), named(btn("▼", () => stepHyp(-1), "sm ghost"), `Downgrade ${h.text}`),
-          named(btn("✕", () => { st.hypotheses.splice(i, 1); writeSoloState(st); rerender(); }, "sm ghost"), `Remove ${h.text}`))));
+          named(btn("✕", () => {
+            // Removed at once; Undo puts the lead back where it was (round 4).
+            const kept = { ...h };
+            st.hypotheses.splice(i, 1); writeSoloState(st); rerender();
+            undoToast(`Removed the lead “${kept.text}”.`, () => {
+              const now = readSoloState();
+              if (now.hypotheses.some((x) => x.id === kept.id)) return;
+              now.hypotheses.splice(Math.min(i, now.hypotheses.length), 0, kept);
+              writeSoloState(now);
+              if (location.hash.slice(1) === "solo") rerender();
+            });
+          }, "sm ghost"), `Remove ${h.text}`))));
     });
     review.append(hypList, btn("＋ Add Hypothesis", async () => { const t = await promptModal("Hypothesis theory / lead", { title: "Add Hypothesis", okLabel: "Add" }); if (t && t.trim()) { st.hypotheses.push({ id: uid(), text: t.trim(), die: S.HYPOTHESIS.newRating }); setFlag("review"); writeSoloState(st); rerender(); } }, "sm"));
     root.append(review);
@@ -1270,7 +1291,7 @@ export function renderSolo(mount, rerender) {
       },
     }));
     const c = card("Solo Case Notes", "Persistent scratchpad, oldest at the top. Pinned rolls and briefings are added at the bottom.");
-    c.append(notesView({ value: st.scratchpad || "", rows: 10, placeholder: "Record clues, suspects, and timeline events...",
+    c.append(notesView({ value: st.scratchpad || "", rows: 10, placeholder: "Record clues, suspects, and timeline events...", quickAdd: true,
       onSave: (v) => { st.scratchpad = v; writeSoloState(st); } }));
     c.append(el("div", { class: "btn-row" },
       // One action, and it wipes the whole case (owner ruling): every solo tab,

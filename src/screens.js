@@ -1,7 +1,7 @@
 // screens.js — top-level screen renderers (home / characters / rules / settings)
 // + party banner. Wizard, sheet, combat, gm, solo mount from their own modules.
 import { el, clear, icon, titleCase } from "./core.js";
-import { emblem, natureMark, portraitPlaceholder, ringGauge, emptyScene } from "./art.js";
+import { emblem, natureMark, portraitPlaceholder, ringGauge, emptyScene, skyline } from "./art.js";
 import * as D from "../data.js";
 import * as S from "../data-solo.js";
 import { NPCS, NPC_BUILD } from "../data-npcs.js";
@@ -31,6 +31,7 @@ export function renderHome(mount) {
     renderPartyBanner(),
     startHereCard(chars, rerender),
     active ? heroCard(active) : el("div", { class: "card" },
+          chars.length || dismissed() ? skyline("home-sky") : null,
           el("p", {}, "No active character yet."),
           el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "Create a Blade Runner")),
     el("div", { class: "home-grid" },
@@ -70,6 +71,7 @@ function startHereCard(chars, rerender) {
       el("span", { class: "start__text muted" }, text),
       label ? el("button", { class: "btn btn--sm" + (done ? " btn--ghost" : " btn--primary"), onClick }, label) : null));
   return el("div", { class: "card card--active start" },
+    skyline("home-sky"),   // round 4: the city you are about to work in
     el("div", { class: "card__eyebrow" }, "New here?"),
     el("div", { class: "card__title" }, "Start here"),
     el("p", { class: "muted" }, "You don't need the rulebook, and you don't need to have played one of these before. One button: the app turns on what it needs, rolls you a detective if you have none, and then asks you one question at a time."),
@@ -142,7 +144,8 @@ export function renderCharacters(mount) {
   const list = el("div", { class: "list" });
   if (!chars.length) list.append(emptyScene("character", "empty-scene--center"), el("p", { class: "muted empty empty--people" }, "No characters yet. Create your first Blade Runner."));
   const activeId = Store.getActiveId();
-  for (const ch of chars) {
+  // The one you are playing leads the list (round 4).
+  for (const ch of [...chars].sort((a, b) => (b.id === activeId) - (a.id === activeId))) {
     const face = ch.identity?.portraitUrl
       ? el("img", { class: "char-row__face", src: ch.identity.portraitUrl, alt: "" })
       : portraitPlaceholder(ch.name, "char-row__face");
