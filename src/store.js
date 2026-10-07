@@ -91,6 +91,25 @@ function mirrorToCaseNotes(entry) {
   } catch { /* notes are best-effort — never break a roll */ }
 }
 
+// A Shift logged on the sheet (Investigation, Downtime, or the Shift a purchase
+// takes) is a Shift of the solo case: the case's Shift counter moves with it and
+// the once-per-Shift markers and any pending Countdown Event belong to the Shift
+// that just ended. Only for the character the case is being played with.
+export function advanceSoloShift(ch, line) {
+  try {
+    if (!Settings.solo() || !ch || Store.getActive()?.id !== ch.id) return null;
+    const st = JSON.parse(localStorage.getItem(SOLO) || "{}") || {};
+    if (!st.caseOpen) return null;
+    const closed = st.shiftNo || 1;
+    st.shiftNo = closed + 1;
+    st.shiftFlags = {};
+    st.pendingEvent = null;
+    if (line) st.scratchpad = appendToNotes(st.scratchpad, `• [Shift ${closed}] ${line}`);
+    localStorage.setItem(SOLO, JSON.stringify(st));
+    return st.shiftNo;
+  } catch { return null; }
+}
+
 // Local combat state (Phase 4). Phase 5 mirrors this to Firebase via sync.js.
 export const Combat = {
   get() {

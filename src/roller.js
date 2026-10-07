@@ -517,7 +517,9 @@ function matchWeapon(item, allWeapons) {
   return w || null;
 }
 
-export function openWeaponPicker(ch, onDone) {
+// `closeOnly`: a chase that ends at Engaged gives the pursuer a Hand-to-Hand
+// attack (data.js CHASE.caught), so only close-combat weapons are offered.
+export function openWeaponPicker(ch, onDone, { closeOnly = false } = {}) {
   if (blockIfDead(ch)) return;
   if (isBrokenByDamage(ch)) { showToast("Broken (Damage) — no actions or skill rolls.", { kind: "warn" }); return; }
   if (stressBlocksRolls(ch)) { showToast(`Critical stress (${ch.state.criticalStress.name}) — no skill rolls until you recover Resolve.`, { kind: "warn" }); return; }
@@ -538,6 +540,10 @@ export function openWeaponPicker(ch, onDone) {
     }
   }
   const unarmed = allWeapons.find((x) => x.key === "unarmed") || { key: "unarmed", name: "Unarmed Strike", type: "crushing", damage: 1, critDie: "STR" };
+  if (closeOnly) {
+    const melee = new Set((D.WEAPONS_MELEE || []).map((w) => w.key));
+    for (const list of [armedWeapons, inventoryWeapons]) list.splice(0, list.length, ...list.filter((w) => melee.has(w.key)));
+  }
   if (!armedWeapons.length && !inventoryWeapons.length) {
     armedWeapons.push({ ...unarmed, equipped: true });
   } else if (!armedWeapons.some((x) => x.key === "unarmed") && !inventoryWeapons.some((x) => x.key === "unarmed")) {
@@ -577,6 +583,7 @@ export function openWeaponPicker(ch, onDone) {
           el("span", { class: "list__sub muted" }, weaponLine(w))));
         return box;
       };
+      if (closeOnly) { body.append(group("Close combat", D.WEAPONS_MELEE)); return; }
       body.append(group("Ranged", D.WEAPONS_RANGED));
       body.append(group("Close combat", D.WEAPONS_MELEE));
       body.append(group("Thrown / explosives", D.EXPLOSIVES.filter((e) => e.thrown)));
@@ -851,6 +858,11 @@ function selfCombatMods(c, skillKey) {
 // Aiming is spent by the shot it helped, on a tracker card as on a sheet.
 function consumeCombatAiming(c, skillKey, commit) {
   if (skillKey !== "firearms" || !c?.conditions?.aiming) return;
+  // A PC's chips ARE the sheet's conditions — spend the aim there too.
+  if (c.kind === "pc" && c.charId) {
+    const pc = Store.get(c.charId);
+    if (pc?.state?.conditions?.aiming) { delete pc.state.conditions.aiming; Store.save(pc); }
+  }
   commit((s) => {
     const t = s.combatants.find((x) => x.id === c.id);
     if (t?.conditions) { t.conditions = { ...t.conditions }; delete t.conditions.aiming; }
@@ -1004,27 +1016,32 @@ export function rollCombatDeathProcedure(c, inj, mode, commit) {
           if (mode === "save") {
             if (succ >= 1) showToast(`${c.name} lingers — save again next ${inj.deathSave}.`);
             else {
+              // The sheet first: the tracker re-reads a PC from it on every render.
+              if (c.kind === "pc" && c.charId) { const pc = Store.get(c.charId); if (pc) { pc.state.dead = true; pc.state.health = 0; Store.save(pc); } }
               commit((s) => {
                 const t = s.combatants.find((x) => x.id === c.id);
                 if (t) { t.health = 0; t.dead = true; }
               });
-              if (c.kind === "pc" && c.charId) { const pc = Store.get(c.charId); if (pc) { pc.state.dead = true; pc.state.health = 0; Store.save(pc); } }
               showToast(`${c.name} dies.`, { kind: "error", timeout: 5000 });
             }
           } else if (succ >= 1) {
             let msg = "";
-            commit((s) => {
-              const t = s.combatants.find((x) => x.id === c.id);
-              const i = (t?.criticalInjuries || []).find((x) => x.id === inj.id);
-              if (!i) return;
-              if (i.deathSave === "round") { i.deathSave = "shift"; msg = "Stabilized up to a Shift interval."; }
-              else { i.stabilized = true; msg = "Stabilized — no further death saves needed."; }
-            });
             if (c.kind === "pc" && c.charId) {
               const pc = Store.get(c.charId);
               const pi = pc && (pc.state.criticalInjuries || []).find((x) => x.id === inj.id);
-              if (pi) { if (pi.deathSave === "round") pi.deathSave = "shift"; else pi.stabilized = true; Store.save(pc); }
+              if (pi) {
+                if (pi.deathSave === "round") { pi.deathSave = "shift"; msg = "Stabilized up to a Shift interval."; }
+                else { pi.stabilized = true; msg = "Stabilized — no further death saves needed."; }
+                Store.save(pc);
+              }
             }
+            commit((s) => {
+              const t = s.combatants.find((x) => x.id === c.id);
+              const i = (t?.criticalInjuries || []).find((x) => x.id === inj.id);
+              if (!i || (c.kind === "pc" && c.charId && msg)) return;   // a PC's wounds are read from the sheet
+              if (i.deathSave === "round") { i.deathSave = "shift"; msg = "Stabilized up to a Shift interval."; }
+              else { i.stabilized = true; msg = "Stabilized — no further death saves needed."; }
+            });
             showToast(msg || "Stabilized.");
           } else showToast("Stabilize failed — try again after the next death save.", { kind: "warn" });
         } }, "Done")));
@@ -1207,11 +1224,11 @@ function spillRow(attacker, primary, extra, commit, atk, paint) {
       if (st.left <= 0) return;
       st.left--;
       if (atk) { atk.spilled = (atk.spilled || 0) + 1; }
-      commit((s) => { const t = s.combatants.find((x) => x.id === o.id); if (t) t.health = Math.max(0, t.health - 1); });
       if (o.kind === "pc" && o.charId) {
         const pc = Store.get(o.charId);
         if (pc) { pc.state.health = Math.max(0, pc.state.health - 1); reclampVitals(pc); Store.save(pc); }
       }
+      commit((s) => { const t = s.combatants.find((x) => x.id === o.id); if (t) t.health = Math.max(0, t.health - 1); });
       note.textContent = `Each extra success is EITHER +1 damage to ${primary?.name || "the target"} OR 1 damage here. ${st.left} left to spend.`;
       showToast(`Spill: 1 damage to ${o.name}.`);
       if (paint) paint();      // the primary damage figure drops by the same success
@@ -1241,14 +1258,14 @@ function applyDamageRow(target, dmg, commit, st) {
   if (dmg <= 0) { box.append(el("p", { class: "muted" }, "No damage gets through.")); return box; }
   const btn = el("button", { class: "btn btn--sm btn--danger", disabled: st.applied || null, onClick: () => {
     const wasBroken = (Combat.get().combatants.find((x) => x.id === target.id)?.health ?? 1) <= 0;
-    commit((s) => {
-      const t = s.combatants.find((x) => x.id === target.id);
-      if (t) t.health = Math.max(0, t.health - dmg);
-    });
     if (target.kind === "pc" && target.charId) {
       const pc = Store.get(target.charId);
       if (pc) { pc.state.health = Math.max(0, pc.state.health - dmg); reclampVitals(pc); Store.save(pc); }
     }
+    commit((s) => {
+      const t = s.combatants.find((x) => x.id === target.id);
+      if (t) t.health = Math.max(0, t.health - dmg);
+    });
     st.applied = true;
     btn.disabled = true;
     feel("hit");

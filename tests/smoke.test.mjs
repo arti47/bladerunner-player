@@ -4600,3 +4600,120 @@ test("meaning tables: Scene and GM cards, Ctrl+K and quick roll, Play idea, Boar
   assert.deepEqual(errs, []);
   await ctx.close();
 });
+
+test("linked tabs: one Countdown per Shift, sheet Shifts move the case, Leads own ratings, the tracker reads the sheet, the chase's free attack is the pursuer's, a case is measured on its own detective", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const p = await ctx.newPage();
+  await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  const errs = []; p.on("pageerror", (e) => errs.push(e.message));
+  let n = 0;
+  const solo = () => p.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+  const patch = (o) => p.evaluate((x) => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); Object.assign(s, x); localStorage.setItem("brp:solo", JSON.stringify(s)); }, o);
+  const go = async (route, o) => { if (o) await patch(o); await p.goto(`${base}/index.html?lk${++n}#${route}`, { waitUntil: "load" }); await p.waitForTimeout(350); };
+  await p.goto(`${base}/index.html#home`, { waitUntil: "load" });
+  const ids = await p.evaluate(async () => {
+    localStorage.clear();
+    localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: false }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const other = Store.save(normalizeCharacter({ name: "Partner", nature: "human", archetype: "analyst", years: "seasoned" }));
+    const kaz = normalizeCharacter({ name: "Kaz", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
+    kaz.state.promotionPoints = 0;
+    const kid = Store.save(kaz).id; Store.setActiveId(kid);
+    localStorage.setItem("brp:solo", JSON.stringify({ introSeen: true, scratchpad: "", hypotheses: [], log: [], results: {}, shiftNo: 1, shiftFlags: {}, timerDie: "D8",
+      caseOpen: { no: 1, title: "Neon", assignment: "A body", opened: Date.now(), openStats: { pp: 0, humanity: 0 }, character: "Kaz", charId: kid },
+      panel: "play", play: { caseNo: 1, stage: "plan", options: ["Neon-lit Bar", "Dark Lab", "Rain-soaked Dock"], suspects: [] } }));
+    return { kaz: kid, other: other.id };
+  });
+
+  // 1. The Shift tab already made the check: Play does not roll it again.
+  await go("solo", { shiftFlags: { countdown: true }, pendingEvent: { name: "Ambush", examples: "Shots from a doorway.", shift: 1 } });
+  await p.locator(".play__choices .btn").first().click(); await p.waitForTimeout(250);
+  let st = await solo();
+  assert.equal(st.timerDie, "D8", "no second Countdown check this Shift");
+  assert.equal(st.play.event?.name, "Ambush", " the event the Shift tab fired is the one on the way");
+  assert.match(await p.$eval(".play-card", (e) => e.textContent), /ambush/i);
+  await p.getByRole("button", { name: /Go in/ }).click(); await p.waitForTimeout(200);
+  assert.equal((await solo()).pendingEvent, null, "going in plays the interruption out");
+
+  // 2. Play's own check marks the Shift and holds the event for the Scene tab.
+  await go("solo", { shiftFlags: {}, pendingEvent: null, timerDie: "D6", play: { caseNo: 1, shift: 1, stage: "plan", options: ["Neon-lit Bar", "Dark Lab", "Rain-soaked Dock"], suspects: [] } });
+  await p.evaluate(() => { Math.random = () => 0.99; });
+  await p.locator(".play__choices .btn").first().click(); await p.waitForTimeout(250);
+  st = await solo();
+  assert.equal(st.shiftFlags.countdown, true, "the Shift tab sees the check as done");
+  assert.ok(st.pendingEvent?.name, "a fired event waits on the Scene tab");
+  await go("solo", { panel: "scene" });
+  assert.ok(await p.$(".sheet__section:text-matches('Interruption')"), "Scene shows the interruption");
+
+  // 3. A Shift logged on the sheet is a Shift of the case; Play leaves the place.
+  await patch({ panel: "play", play: { ...(await solo()).play, stage: "here", shift: 1, location: "Neon-lit Bar" } });
+  await go("sheet");
+  await p.getByRole("button", { name: /^Investigation Shift$/ }).first().click(); await p.waitForTimeout(300);
+  st = await solo();
+  assert.equal(st.shiftNo, 2);
+  assert.deepEqual(st.shiftFlags, {});
+  assert.equal(st.pendingEvent, null);
+  assert.match(st.scratchpad, /\[Shift 1\] closed on the sheet/);
+  await go("solo");
+  assert.match(await p.$eval(".play-card", (e) => e.textContent), /Where do you go\?[\s\S]*Shift 1 ended on another tab/);
+
+  // 4. Leads own the ratings: re-rated there, dropped there.
+  await go("solo", { hypotheses: [{ id: "h1", playId: "s1", text: "Ana Ruiz did it", die: "D10" }],
+    play: { caseNo: 1, shift: 2, stage: "here", location: "Dark Lab", found: 0,
+      suspects: [{ id: "s1", name: "Ana Ruiz", detail: "d", clues: 1, die: "D8", lead: true }, { id: "s2", name: "Bo Lind", detail: "d", clues: 0, die: "D6", lead: true }] } });
+  await p.getByRole("button", { name: /I think Ana Ruiz did it/ }).click(); await p.waitForTimeout(200);
+  assert.match(await p.$eval(".play-card", (e) => e.textContent), /D10 hunch/);
+  assert.equal(await p.getByRole("button", { name: /Someone else/ }).count(), 0, "the lead dropped on Leads is gone from Play");
+
+  // 5. The tracker reads a PC from the sheet; its chips write back.
+  await p.evaluate((id) => {
+    const ch = JSON.parse(localStorage.getItem("brp:characters"))[id];
+    ch.state.health = 3; ch.state.conditions = { prone: true };
+    const all = JSON.parse(localStorage.getItem("brp:characters")); all[id] = ch; localStorage.setItem("brp:characters", JSON.stringify(all));
+    localStorage.setItem("brp:combat", JSON.stringify({ active: false, round: 1, combatants: [{ id: "c1", charId: id, kind: "pc", name: "Kaz", nature: "human", health: 7, maxHealth: 7, card: null, conditions: {} }] }));
+  }, ids.kaz);
+  await go("combat");
+  const row = p.locator(".combatant").first();
+  assert.match(await row.textContent(), /PC3\/6/, "Health and maximum as the sheet has them, not the stale 7/7");
+  assert.match(await row.locator(".chip--on").allTextContents().then((x) => x.join("|")), /Prone/);
+  await row.getByRole("button", { name: "In Cover", exact: true }).click(); await p.waitForTimeout(200);
+  const conds = await p.evaluate((id) => JSON.parse(localStorage.getItem("brp:characters"))[id].state.conditions, ids.kaz);
+  assert.equal(conds.cover, true, "a chip on the PC's row is the sheet's condition");
+  await p.evaluate(() => localStorage.removeItem("brp:combat"));
+
+  // 6. Caught: the free attack is the pursuer's — an NPC rolls its own; yours is close combat only.
+  await p.evaluate(() => localStorage.setItem("brp:chase", JSON.stringify({ active: true, env: "foot", round: 1, distIdx: 0, obstacle: null, prey: null, pursuer: null,
+    npcManeuver: null, npcRoll: null, npcSide: { prey: false, pursuer: true }, npcLevel: { prey: "Competent", pursuer: "Competent" }, vehicles: { prey: null, pursuer: null }, hull: { prey: null, pursuer: null }, log: [] })));
+  await go("combat");
+  await p.getByRole("button", { name: /The NPC's free attack/ }).click(); await p.waitForTimeout(250);
+  assert.match((await p.evaluate(() => JSON.parse(localStorage.getItem("brp:chase")).npcRoll)).label, /Hand-to-Hand/);
+  await p.evaluate(() => { const c = JSON.parse(localStorage.getItem("brp:chase")); c.npcSide = { prey: true, pursuer: false }; c.npcRoll = null; localStorage.setItem("brp:chase", JSON.stringify(c)); });
+  await go("combat");
+  await p.getByRole("button", { name: /Free attack \(Hand-to-Hand/ }).click(); await p.waitForTimeout(250);
+  const picker = await p.$eval(".modal", (m) => m.textContent);
+  assert.match(picker, /Close combat/);
+  assert.doesNotMatch(picker, /Ranged|Placed charges|Blaster/);
+  await p.keyboard.press("Escape"); await p.evaluate(() => localStorage.removeItem("brp:chase"));
+
+  // 7. Closing measures the case's own detective, whoever is active.
+  await p.evaluate(({ kaz, other }) => {
+    const all = JSON.parse(localStorage.getItem("brp:characters"));
+    all[kaz].state.promotionPoints = 2; all[other].state.promotionPoints = 9;
+    localStorage.setItem("brp:characters", JSON.stringify(all));
+  }, ids);
+  await p.evaluate(async (id) => { const { Store } = await import("/src/store.js"); Store.setActiveId(id); }, ids.other);
+  await go("solo", { panel: "wrap" });
+  await p.getByRole("button", { name: /Close the case/ }).first().click(); await p.waitForTimeout(250);
+  await p.fill(".modal input", "Ana Ruiz");
+  await p.locator(".modal").getByRole("button", { name: /^(Next|OK)$/ }).click(); await p.waitForTimeout(250);
+  await p.fill(".modal input, .modal textarea", "Arrest");
+  await p.locator(".modal").getByRole("button", { name: /Close the case|^OK$/ }).click(); await p.waitForTimeout(400);
+  const file = await p.evaluate(() => JSON.parse(localStorage.getItem("brp:cases")).files[0]);
+  assert.equal(file.pp, 2, "the case paid Kaz +2, not the partner's 9");
+  assert.equal(file.character, "Kaz");
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});

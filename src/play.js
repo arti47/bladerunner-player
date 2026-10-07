@@ -64,6 +64,26 @@ export function renderPlayPanel(root, ctx) {
   if (st.play && st.play.caseNo === undefined) st.play.caseNo = st.play.stage === "briefed" ? null : (st.caseOpen?.no ?? null);
   if (st.play && (st.play.caseNo ?? null) !== (st.caseOpen?.no ?? null)) st.play = null;
   const p = (st.play ||= { ...blank(), caseNo: st.caseOpen?.no ?? null });
+  linkToTabs();
+
+  // The other tabs drive the same case: a Shift ended on Wrap or on the sheet
+  // leaves the place you were at, and the Leads tab owns the ratings — a lead
+  // re-rated or dropped there is re-rated or dropped here.
+  function linkToTabs() {
+    const now = st.shiftNo || 1;
+    if (p.shift === undefined) p.shift = now;
+    if (p.shift !== now) {
+      if (["travel", "here", "result"].includes(p.stage))
+        Object.assign(p, { stage: "plan", options: null, location: null, found: 0, pending: null, event: null, danger: null,
+          lastNarration: `Shift ${p.shift} ended on another tab. Where next?` });
+      p.shift = now;
+    }
+    if ((p.suspects || []).length) {
+      const leads = st.hypotheses || [];
+      p.suspects = p.suspects.filter((x) => !x.lead || leads.some((h) => h.playId === x.id))
+        .map((x) => { const h = leads.find((l) => l.playId === x.id); return h ? { ...x, die: h.die } : x; });
+    }
+  }
 
   // ---- the one card on screen -------------------------------------------
   // title: where you are. prose: what just happened. choices: what you can do.
@@ -155,7 +175,8 @@ export function renderPlayPanel(root, ctx) {
     ask({
       eyebrow: `Shift ${st.shiftNo || 1}`,
       title: "Where do you go?",
-      prose: [st.caseOpen.assignment ? `The case: ${st.caseOpen.assignment}` : null,
+      prose: [p.lastNarration || null,
+        st.caseOpen.assignment ? `The case: ${st.caseOpen.assignment}` : null,
         p.leadHint || null,
         // After Shift 1 you are following something, so stop telling the player
         // there is no wrong answer. [playtest journal, finding 9]
@@ -184,7 +205,8 @@ export function renderPlayPanel(root, ctx) {
         ? [`Something goes wrong before you even get inside: ${ev.name.toLowerCase()}.`, ev.examples,
            "Play it out however you like — then get on with the search."]
         : ["You get there without trouble. The pressure is building, though; it will catch up with you eventually."],
-      choices: [["Go in →", () => set({ stage: "here", event: null })]],
+      // Going in is playing the event out — the Scene tab's Interruption clears too.
+      choices: [["Go in →", () => { if (ev) st.pendingEvent = null; set({ stage: "here", event: null }); }]],
     });
   }
 
@@ -332,11 +354,14 @@ export function renderPlayPanel(root, ctx) {
 
   // Going somewhere is the book's step 1 and step 2: travel, then the check.
   function goTo(where) {
-    const fired = countdown();
+    // Once per Shift (Solo Mode p.006): if the Shift tab already rolled it, the
+    // result stands — an event it fired is the one waiting for you.
+    const already = !!st.shiftFlags?.countdown;
+    const fired = already ? (st.pendingEvent || null) : countdown();
     const scene = lookupRange(S.SCENE_CHECK, rollDie(8));
     say(`\n— ${where} —`);
     set({
-      stage: "travel", location: where, options: null, found: 0, lastNarration: null,
+      stage: "travel", shift: st.shiftNo || 1, location: where, options: null, found: 0, lastNarration: null,
       danger: scene.result === "Complicated" || scene.result === "Challenging" ? "not going to be easy" : null,
       event: fired,
     });
@@ -347,9 +372,12 @@ export function renderPlayPanel(root, ctx) {
     const parts = String(st.timerDie).split("/");
     let hits = 0;
     for (const part of parts) if (rollDie(parseInt(part.replace("D", ""), 10) || 6) >= D.SUCCESS_THRESHOLD) hits++;
+    // The same check the Shift tab makes: it marks the Shift and holds the event.
+    (st.shiftFlags ||= {}).countdown = true;
     if (hits > 0) {
       const ev = S.COUNTDOWN_EVENT[rollDie(12) - 1];
       st.timerDie = S.ESCALATION_STEPS[0];
+      st.pendingEvent = { name: ev.name, examples: ev.examples, shift: st.shiftNo || 1 };
       say(`• Interruption: ${ev.name} — ${ev.examples}`);
       log("Countdown Event Check — guided play", `Event fires · ${ev.name}`);
       return ev;
@@ -387,6 +415,7 @@ export function renderPlayPanel(root, ctx) {
     if (!suspect) return;
     st.hypotheses = st.hypotheses || [];
     const text = `${suspect.name} did it`;
+    suspect.lead = true;   // from here on the Leads tab owns this rating
     const found = st.hypotheses.find((h) => h.playId === suspect.id);
     if (found) { found.die = suspect.die; found.text = text; }
     else st.hypotheses.push({ id: `h${Date.now()}${st.hypotheses.length}`, playId: suspect.id, text, die: suspect.die });
@@ -499,7 +528,7 @@ export function renderPlayPanel(root, ctx) {
   // Moving on ends the Shift: the character's counter advances on the sheet.
   function nextShift() {
     ctx.endShift();
-    set({ stage: "plan", options: null, location: null, found: 0, lastNarration: null, leadHint: null });
+    set({ stage: "plan", shift: st.shiftNo || 1, options: null, location: null, found: 0, lastNarration: null, leadHint: null });
   }
 
   // The real Hypothesis Check: roll the rating, no push. It pays out if it ends

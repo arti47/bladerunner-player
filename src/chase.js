@@ -336,12 +336,17 @@ export function renderChaseCard(rerender) {
   if (st.distIdx <= 0) {
     const caught = el("div", { class: "card card--target-dmg" });
     caught.append(el("div", { class: "card__eyebrow" }, "Caught"), el("p", {}, D.CHASE.caught));
+    // The free attack is the PURSUER's (data.js CHASE.caught): an NPC pursuer
+    // rolls it at its own level; your character rolls Hand-to-Hand, close weapons only.
+    const npcPursues = !!st.npcSide?.pursuer;
     caught.append(el("div", { class: "rec-actions" },
-      el("button", { class: "btn btn--sm btn--roll", onClick: () => {
+      npcPursues
+        ? el("button", { class: "btn btn--sm btn--roll", onClick: () => npcRoll("pursuer", "Hand-to-Hand free attack") }, "⚔ The NPC's free attack (Hand-to-Hand, no defence roll)")
+        : el("button", { class: "btn btn--sm btn--roll", onClick: () => {
         const ch = Store.getActive();
         if (!ch) { showToast("No active character to roll for.", { kind: "warn" }); return; }
-        openWeaponPicker(ch, rerender);
-      } }, "⚔ Free attack (no defence roll)"),
+        openWeaponPicker(ch, rerender, { closeOnly: true });
+      } }, "⚔ Free attack (Hand-to-Hand, no defence roll)"),
       el("button", { class: "btn btn--sm btn--ghost", onClick: () => commit((s) => { s.distIdx = 1; }) }, "They break away again")));
     card.append(caught);
   }

@@ -7,7 +7,7 @@ import { emblem, natureMark, portraitPlaceholder, badgeNumber, barcode, vitalWav
 import * as D from "../data.js";
 import * as R from "./rules.js";
 import { maxHealth, maxResolve, reclampVitals, isBrokenByDamage, isBrokenByStress, downtimeLimitFor, applyInvestigationShift, applyDowntimeShift } from "./derived.js";
-import { Store, RollLog } from "./store.js";
+import { Store, RollLog, advanceSoloShift } from "./store.js";
 import { showToast, confirmModal, promptModal, modal, sectionTitle, rollLogCard, guidanceChip, undoToast, howNote, placeHow } from "./ui.js";
 import { navigate } from "./router.js";
 import { Settings } from "./settings.js";
@@ -562,6 +562,7 @@ function chooseSource(ch, item, commit, rerender) {
                     showToast(D.ACQUISITION.failureNote + (r?.overLimit ? " Over the Downtime limit: +1 stress." : ""),
                       { kind: "warn", timeout: 4500 });
                   }
+                  advanceSoloShift(ch, `spent waiting on ${item.name} — ${r?.shifts}/${r?.limit} since Downtime${r?.overLimit ? " (+1 stress)" : ""}`);
                   promptShiftSaves(ch, commit, rerender);
                   rerender();
                 },
@@ -795,6 +796,7 @@ const downtimeLimit = (ch) => downtimeLimitFor(ch);   // §3.8 transitions live 
 function downtimeShift(ch, commit, care, rerender) {
   let r;
   commit((c) => { r = applyDowntimeShift(c, care); });
+  advanceSoloShift(ch, `Downtime on the sheet — +${r.health} Health, +${r.resolve} Resolve`);
   showToast(`Downtime Shift: +${r.health} Health, +${r.resolve} Resolve.`);
   promptShiftSaves(ch, commit, rerender);
 }
@@ -813,6 +815,7 @@ function promptShiftSaves(ch, commit, rerender) {
 function investigationShift(ch, commit, rerender) {
   let r;
   commit((c) => { r = applyInvestigationShift(c); });
+  advanceSoloShift(ch, `closed on the sheet — ${r.shifts}/${r.limit} since Downtime${r.overLimit ? " (+1 stress)" : ""}`);
   showToast([r.overLimit ? "Investigation Shift — over the limit: +1 stress." : "Investigation Shift logged.",
     r.brokenHeal ? `Broken and alone: +${r.brokenHeal} Health.` : ""].filter(Boolean).join(" "));
   promptShiftSaves(ch, commit, rerender);

@@ -324,6 +324,7 @@ export function renderSolo(mount, rerender) {
       openStats: { pp: ch?.state.promotionPoints || 0, humanity: ch?.state.humanityPoints || 0,
         spent: { pp: ch?.state.spent?.pp || 0, humanity: ch?.state.spent?.humanity || 0 } },
       character: ch?.name || null,
+      charId: ch?.id || null,
     };
     st.shiftNo = 1;
     // A new case starts clean: the previous case's leads, once-per-Shift markers
@@ -353,7 +354,9 @@ export function renderSolo(mount, rerender) {
       if (outcome === null) return;
     }
 
-    const ch = Store.getActive();
+    // What the case paid is measured on the detective who opened it — switching
+    // the active character mid-case must not diff someone else's points.
+    const ch = (c.charId && Store.get(c.charId)) || Store.getActive();
     const shifts = st.shiftNo || 1;
     // What the case PAID, not what is left in the pocket: points spent on
     // advancement mid-case are added back, or a case that funded a skill step
@@ -1082,6 +1085,7 @@ export function renderSolo(mount, rerender) {
         // because passing the Downtime limit costs Resolve.  [playtest audit]
         const r = applyInvestigationShift(ch);
         Store.save(ch);
+        warnShiftSaves(ch);   // a lethal Shift-interval wound owes its save here too
         record("Shift", `Shift ${closed} closed · ${r.shifts}/${r.limit} since Downtime${r.overLimit ? " · +1 stress" : ""}`,
           `[Shift ${closed}] closed — ${r.shifts}/${r.limit} Shifts since Downtime${r.overLimit ? " (+1 stress)" : ""}`);
         if (r.overLimit || r.brokenHeal) showToast([

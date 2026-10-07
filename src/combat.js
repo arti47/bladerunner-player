@@ -50,6 +50,7 @@ export function renderCombat(mount) {
   lastMount = mount;
   bindRemoteCombat();
   const state = Combat.get();
+  syncPcs(state);
   clear(mount);
   const commit = (mutate) => { mutate(state); Combat.save(state); renderCombat(mount); };
   const wrap = el("section", { class: "screen" }, el("h1", { class: "screen__title" }, "Combat Tracker"));
@@ -178,12 +179,19 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
     if (cond.key.startsWith("broken")) continue; // derived from Health
     const on = !!(c.conditions || {})[cond.key];
     chips.append(el("button", { class: "chip chip--sm" + (on ? " chip--on" : ""), title: cond.text,
-      onClick: () => commit((s) => {
-        const t = s.combatants.find((x) => x.id === c.id);
-        if (!t) return;
-        t.conditions = { ...(t.conditions || {}) };
-        if (on) delete t.conditions[cond.key]; else t.conditions[cond.key] = true;
-      }) }, cond.name));
+      onClick: () => {
+        // A PC's chips are the sheet's own conditions.
+        if (c.kind === "pc" && c.charId) {
+          const pc = Store.get(c.charId);
+          if (pc) { pc.state.conditions = { ...(pc.state.conditions || {}) }; if (on) delete pc.state.conditions[cond.key]; else pc.state.conditions[cond.key] = true; Store.save(pc); }
+        }
+        commit((s) => {
+          const t = s.combatants.find((x) => x.id === c.id);
+          if (!t) return;
+          t.conditions = { ...(t.conditions || {}) };
+          if (on) delete t.conditions[cond.key]; else t.conditions[cond.key] = true;
+        });
+      } }, cond.name));
   }
   card.append(chips);
   // A lethal critical owes a save every interval (§3.7) — say so, and offer the roll.
@@ -201,6 +209,24 @@ function combatantCard(c, isTurn, commit, open = true, turnIsNew = false) {
     el("button", { class: "btn btn--sm btn--roll", onClick: () => rollCombatAttack(c, commit) }, "⚔ Attack"),
     el("button", { class: "btn btn--sm", onClick: () => rollCombatSkill(c, commit) }, "🎲 Skill")));
   return card;
+}
+
+// A player character in the tracker IS their sheet: Health, conditions, critical
+// injuries and death are read from it on every render, so a push bane, a heal, a
+// GM's damage or a Prone toggled on the sheet reaches the fight (and the attack
+// engine reads the real state). Writes from the tracker go to the sheet first.
+function syncPcs(state) {
+  let changed = false;
+  for (const c of state.combatants) {
+    if (c.kind !== "pc" || !c.charId) continue;
+    const pc = Store.get(c.charId);
+    if (!pc) continue;
+    const next = { name: pc.name, nature: pc.nature, health: pc.state.health, maxHealth: maxHealth(pc),
+      conditions: { ...(pc.state.conditions || {}) }, criticalInjuries: [...(pc.state.criticalInjuries || [])], dead: !!pc.state.dead };
+    if (JSON.stringify(next) !== JSON.stringify({ name: c.name, nature: c.nature, health: c.health, maxHealth: c.maxHealth,
+      conditions: c.conditions || {}, criticalInjuries: c.criticalInjuries || [], dead: !!c.dead })) { Object.assign(c, next); changed = true; }
+  }
+  if (changed) Combat.save(state);
 }
 
 // Which rows you opened by hand, and whose turn was last shown — per page load.
