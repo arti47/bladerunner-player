@@ -4363,14 +4363,17 @@ test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, r
 
   // FAB: steps aside scrolling down, comes back scrolling up.
   assert.equal(await p.locator("#quick-roll").isVisible(), true);
+  // Distances from the page's own height (a sheet page is only as tall as it is).
   await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(150);
-  await p.evaluate(() => window.scrollTo(0, 700)); await p.waitForTimeout(150);
+  const maxY = await p.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+  assert.ok(maxY > 400, `the Record page scrolls (${maxY}px)`);
+  await p.evaluate((y) => window.scrollTo(0, y), Math.floor(maxY * 0.4)); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), true, "away while scrolling down");
   await p.waitForTimeout(2300);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), false, "back on its own after 2s without scrolling");
-  await p.evaluate(() => window.scrollTo(0, 1100)); await p.waitForTimeout(150);
+  await p.evaluate((y) => window.scrollTo(0, y), maxY); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), true, "away again scrolling down");
-  await p.evaluate(() => window.scrollTo(0, 300)); await p.waitForTimeout(150);
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), false, "back scrolling up");
   // Quick roll marks key skills.
   await p.click("#quick-roll"); await p.waitForTimeout(200);
