@@ -67,12 +67,12 @@ function readSoloState() {
   return base;
 }
 // A filed case wears its ending: SOLVED when someone was named, COLD when not.
-const isSolved = (culprit) => !!(culprit && !/^\s*(unsolved|unknown|no one|nobody|cold|never established)\b/i.test(culprit));
+export const isSolved = (culprit) => !!(culprit && !/^\s*(unsolved|unknown|no one|nobody|cold|never established)\b/i.test(culprit));
 function writeSoloState(st) { try { localStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch (e) {} }
 
 // Closed case files. A campaign is a sequence of cases, so the record outlives
 // any one of them: this key is never touched by "Start a fresh case".
-const Cases = {
+export const Cases = {
   read() {
     try { const c = JSON.parse(localStorage.getItem(CASES_KEY) || "null"); if (c) return { files: [], nextNo: 1, ...c }; } catch (e) {}
     return { files: [], nextNo: 1 };
@@ -415,14 +415,18 @@ export function renderSolo(mount, rerender) {
   // header + segmented nav
   // The page heading is for screen readers; the tab bar already names the screen.
   mount.append(el("h1", { class: "visually-hidden" }, "Solo Mode Assistant"));
-  mount.append(statusStrip());
+  // Rookie (radical redesign): ▶ Play is the whole screen — the scene, its own
+  // slim status bar and a Kit button. The toolbox (the other seven tabs, the
+  // HUD) appears once you open the kit, or always in the Veteran interface.
+  const sceneOnly = st.panel === "play" && !Settings.veteran();
+  if (!sceneOnly) mount.append(statusStrip());
   // A dot on the tabs whose step is already done this Shift (round 3).
   const doneTabs = { case: !!st.caseOpen, shift: !!st.shiftFlags?.countdown, leads: !!st.shiftFlags?.review };
-  mount.append(segmentNav({ segments: SEGMENTS.map((s) => ({ ...s, done: doneTabs[s.key] })), active: st.panel, grid: true,
+  if (!sceneOnly) mount.append(segmentNav({ segments: SEGMENTS.map((s) => ({ ...s, done: doneTabs[s.key] })), active: st.panel, grid: true,
     // Switching tabs starts at the top; an in-panel roll keeps your place.
-    onSelect: (k) => { st.panel = k; st.introSeen = true; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
+    onSelect: (k) => { st.panel = k; if (k !== "play") st.lastKit = k; st.introSeen = true; writeSoloState(st); rerender(); window.scrollTo(0, 0); } }));
   // First visit only: one line saying what this screen is, gone once you move on.
-  if (!st.introSeen) mount.append(introLine("Official Solo Mode oracle, generators, and trackers — organized by the flow of play.",
+  if (!st.introSeen && !sceneOnly) mount.append(introLine("Official Solo Mode oracle, generators, and trackers — organized by the flow of play.",
     () => { st.introSeen = true; writeSoloState(st); rerender(); }));
 
   // Step 4's actual dice. openSkillRoll/openWeaponPicker/openOpposedSkillRoll are
@@ -535,13 +539,13 @@ export function renderSolo(mount, rerender) {
   }
   const doneChip = (key) => (flagged(key) ? el("span", { class: "chip chip--done" }, "✓ done this Shift") : null);
 
-  const panel = el("div", { class: "panel" + (st.panel !== lastPanelKey ? " panel--enter" : "") });
+  const panel = el("div", { class: "panel" + (st.panel === "play" ? " panel--play" : "") + (st.panel !== lastPanelKey ? " panel--enter" : "") });
   lastPanelKey = st.panel;
   ({ play: panelPlay, case: panelCase, shift: panelShift, scene: panelScene, board: panelBoard, leads: panelLeads, wrap: panelWrap, notes: panelNotes }[st.panel] || panelCase)(panel);
   cardHeads(panel);
   // A faint drawing for the panel, in its first card's corner (round 3).
   // (Shift's first card carries its clock instead — round 5.)
-  if (st.panel !== "shift") panel.querySelector(".card:not(.rolllog)")?.append(sceneArt(st.panel, "card__art"));
+  if (st.panel !== "shift" && st.panel !== "play") panel.querySelector(".card:not(.rolllog)")?.append(sceneArt(st.panel, "card__art"));
   paintResults(panel);
   // Desktop (≥1280px): the case notes ride alongside every other panel (round 4).
   if (st.panel !== "notes" && window.matchMedia?.("(min-width: 1280px)").matches) {
@@ -1094,8 +1098,6 @@ export function renderSolo(mount, rerender) {
           { kind: r.overLimit ? "warn" : "info" });
       },
     });
-    root.append(el("p", { class: "muted small play__escape" },
-      "Every other tab is still here if you want the tables themselves — this one just picks for you."));
   }
 
   // The Solo briefing, rolled as one block and written to the notes.

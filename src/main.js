@@ -1,6 +1,6 @@
 // main.js — entry point / boot.
-import { applyTheme, applyGuidance, applyRain, applyTextSize } from "./settings.js";
-import { bindGlobalKeys, bindSwipe, bindOfflineChip } from "./ui.js";
+import { applyTheme, applyGuidance, applyRain, applyTextSize, applyInterface } from "./settings.js";
+import { bindGlobalKeys, bindSwipe, bindOfflineChip, bindAmbient } from "./ui.js";
 import { bindPalette } from "./quick.js";
 import { skyline } from "./art.js";
 import { mountSprite } from "./icons.js";
@@ -29,6 +29,7 @@ function boot() {
   applyGuidance();
   applyRain();
   applyTextSize();
+  applyInterface();
   // Atmosphere: a rain layer behind everything, a skyline in the app bar.
   if (!document.getElementById("rain")) document.body.prepend(Object.assign(document.createElement("div"), { id: "rain", ariaHidden: "true" }));
   document.querySelector(".appbar")?.append(skyline("appbar__skyline"));
@@ -47,6 +48,7 @@ function boot() {
   startRouter();
   bindGlobalKeys();
   bindPalette();
+  bindAmbient();
   bindSwipe();
   dismissSplash();
   registerServiceWorker();

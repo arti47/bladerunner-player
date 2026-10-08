@@ -94,6 +94,7 @@ function paint(mount) {
   wrap.append(el("h1", { class: "screen__title" }, step.title));
   const body = el("div", { class: "wiz__body" });
   step.render(body, () => paint(mount));
+  repaintReview = () => { paint(mount); };
   wrap.append(body);
 
   // nav buttons
@@ -153,15 +154,21 @@ function onEnter() {
 // budget. This fills every step the way the book says to roll it, keeps the
 // result legal by construction (key attribute B+, key skills C+, exact budgets),
 // and drops you on the Review step so nothing is saved behind your back.
-function quickBuild() {
+// `lock` keeps what is already dealt (a single card re-dealt from the Review
+// hand): the nature, archetype and years given are kept; `flavor` keeps the
+// memory, relationship and identity. Everything downstream is re-rolled, so the
+// result stays legal by construction.
+function quickBuild(lock = {}) {
+  const prev = draft;
   draft = newDraft();
+  if (lock.flavor && prev) { draft.memory = prev.memory; draft.relationship = prev.relationship; draft.identity = { ...prev.identity }; draft.secretReplicant = !!prev.secretReplicant; }
 
   // ① nature ② archetype ③ years — all straight off the book's tables.
-  draft.nature = R.lookupRange(D.NATURE_TABLE, rollDie(6)).nature;
-  draft.archetype = R.lookupRange(D.ARCHETYPE_TABLE[draft.nature], rollDie(12)).key;
+  draft.nature = lock.nature || R.lookupRange(D.NATURE_TABLE, rollDie(6)).nature;
+  draft.archetype = lock.archetype || R.lookupRange(D.ARCHETYPE_TABLE[draft.nature], rollDie(12)).key;
   draft.years = draft.nature === "replicant"
     ? "rookie"
-    : R.lookupRange(D.YEARS_ON_FORCE.map((y) => ({ min: y.d12[0], max: y.d12[1], key: y.key })), rollDie(12)).key;
+    : lock.years || R.lookupRange(D.YEARS_ON_FORCE.map((y) => ({ min: y.d12[0], max: y.d12[1], key: y.key })), rollDie(12)).key;
 
   const arch = R.archetype(draft.archetype);
 
@@ -171,7 +178,7 @@ function quickBuild() {
   const attrOrder = [arch.keyAttr,
     ...(draft.nature === "replicant" ? ["STR", "AGI"] : []),
     ...arch.keySkills.map((k) => R.skill(k)?.attr).filter((a) => a && a !== "MANEUVER"),
-    ...D.ATTRIBUTES.map((a) => a.key)];
+    ...shuffled(D.ATTRIBUTES.map((a) => a.key))];
   let attrLeft = R.attrBudget(draft.years, draft.nature);
   // The mandatory step first, then spread — never below C, never past A.
   const raiseAttr = (key) => {
@@ -190,13 +197,14 @@ function quickBuild() {
   };
   for (const k of arch.keySkills) raiseSkill(k);                       // D → C, the legal floor
   for (const k of arch.keySkills) { raiseSkill(k); raiseSkill(k); }    // deepen what you are for
-  for (const s of D.SKILLS) while (raiseSkill(s.key)) if (skillLeft <= 0) break;
+  for (const s of shuffled(D.SKILLS)) while (raiseSkill(s.key)) if (skillLeft <= 0) break;
 
   // ⑥ specialties: as many as the years give, archetype suggestions first.
   const need = R.years(draft.years)?.specialties ?? 0;
   const pool = [...(arch.specialtyOptions || []), ...D.SPECIALTIES.map((sp) => sp.key)];
   for (const k of pool) { if (draft.specialties.length >= need) break; if (!draft.specialties.includes(k)) draft.specialties.push(k); }
 
+  if (lock.flavor) { draft.step = STEPS.length - 1; return; }
   // ⑦–⑨ memory, relationship, identity — the flavor tables, rolled.
   draft.memory = { when: D.MEMORY_WHEN[rollDie(6) - 1], where: D.MEMORY_WHERE[rollDie(12) - 1],
     who: D.MEMORY_WHO[rollDie(12) - 1], what: D.MEMORY_WHAT[rollDie(12) - 1], feel: D.MEMORY_FEEL[rollDie(12) - 1] };
@@ -212,14 +220,47 @@ function quickBuild() {
   draft.step = STEPS.length - 1;   // land on Review — you still press Finish
 }
 
+// A die-driven shuffle (Fisher–Yates on rollDie), so a re-deal spreads the
+// leftover points differently without ever breaking the legal floor.
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = rollDie(i + 1) - 1; [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+// One card of the dealt hand re-dealt. Each keeps everything upstream of it.
+function redeal(part) {
+  const keep = { nature: draft.nature, archetype: draft.archetype, years: draft.years };
+  const arch = R.archetype(draft.archetype);
+  switch (part) {
+    case "nature": quickBuild({ flavor: true }); break;
+    case "archetype": quickBuild({ nature: keep.nature, flavor: true }); break;
+    case "years": quickBuild({ nature: keep.nature, archetype: keep.archetype, flavor: true }); break;
+    case "stats": quickBuild({ ...keep, flavor: true }); break;
+    case "memory":
+      draft.memory = { when: D.MEMORY_WHEN[rollDie(6) - 1], where: D.MEMORY_WHERE[rollDie(12) - 1],
+        who: D.MEMORY_WHO[rollDie(12) - 1], what: D.MEMORY_WHAT[rollDie(12) - 1], feel: D.MEMORY_FEEL[rollDie(12) - 1] };
+      syncMemory(); break;
+    case "relationship":
+      draft.relationship = { who: D.RELATIONSHIP_WHO[rollDie(12) - 1], like: D.RELATIONSHIP_LIKE[rollDie(12) - 1], going: D.RELATIONSHIP_GOING_ON[rollDie(12) - 1] };
+      syncRelationship(); break;
+    case "name": { const names = (arch?.names || []).filter(Boolean); if (names.length) draft.identity.name = pick(names); break; }
+    case "look":
+      if (arch?.appearance?.length) draft.identity.appearance = arch.appearance[d3() - 1];
+      draft.identity.signatureItem = D.SIGNATURE_ITEMS[rollDie(12) - 1];
+      draft.identity.home = R.lookupRange(D.HOME_TABLE, rollDie(12)).text; break;
+  }
+}
+
 // ---- Step 1: Nature -------------------------------------------------------
 function stepNature(body, rerender) {
   // The escape hatch for anyone who does not yet know what any of this means.
-  body.append(el("div", { class: "card quickbuild" },
-    el("div", { class: "card__title" }, "Never played before?"),
-    el("p", { class: "muted" }, "Let the dice make every choice. You land on the review screen and can still change anything, or start over."),
-    el("button", { class: "btn btn--primary", onClick: () => { quickBuild(); showToast("Rolled a complete Blade Runner — check it over, then press Create Blade Runner."); rerender(); } }, "⚄ Roll me a whole Blade Runner")));
-  body.append(el("p", { class: "muted" }, "Replicants are stronger and tougher (+2 Health) but less stable (−2 Resolve), all rookies, and start with fewer points. Humans are the baseline."));
+  // The deal (radical redesign): one press deals a whole legal detective as a
+  // hand of cards; building by hand is the quieter path underneath.
+  body.append(el("div", { class: "deal quickbuild" },
+    dealArt(),
+    el("div", { class: "deal__title" }, "Deal me a detective"),
+    el("button", { class: "btn btn--primary deal__go", onClick: () => { quickBuild(); showToast("Dealt. Re-deal any card, then press Create Blade Runner."); rerender(); } }, "⚄ Roll me a whole Blade Runner")));
+  body.append(el("div", { class: "deal__or" }, el("span", {}, "or build one yourself")));
   for (const key of ["human", "replicant"]) {
     const n = D.NATURES[key];
     const on = draft.nature === key && !draft.secretReplicant;
@@ -428,8 +469,30 @@ function stepReview(body) {
       (D.SKILLS.filter((s) => draft.skills[s.key] !== "D").map((s) => `${s.name} ${draft.skills[s.key]}`).join(", ") || "none")),
     draft.specialties.length ? el("div", { class: "muted" }, "Specialties: " + draft.specialties.map((k) => R.specialty(k).name).join(", ")) : null,
   ));
-  body.append(el("p", { class: "muted" }, "Starting Promotion & Chinyen Points are rolled when you create the character."));
+  // The hand: every part of the detective as a card you can re-deal on its own.
+  const mem = draft.identity.keyMemory, rel = draft.identity.keyRelationship;
+  const cards = [
+    ["nature", "Nature", natureMark(draft.nature), `${titleCase(draft.nature)}${draft.secretReplicant ? " (secret Replicant)" : ""}`, 0],
+    ["archetype", "Archetype", emblem(draft.archetype), arch.name, 1],
+    ["years", "Years", null, y.name, 2],
+    ["stats", "Strengths", null, D.SKILLS.filter((s) => draft.skills[s.key] !== "D").slice(0, 3).map((s) => s.name).join(", ") || "Untrained", 3],
+    ["memory", "Key memory", null, mem || "—", 6],
+    ["relationship", "Key relationship", null, rel || "—", 7],
+    ["name", "Name", null, draft.identity.name || "—", 8],
+    ["look", "Look & home", null, draft.identity.appearance || draft.identity.home || "—", 8],
+  ];
+  const hand = el("div", { class: "hand", role: "list", "aria-label": "Your dealt detective" });
+  cards.forEach(([part, label, art, value, step], i) => hand.append(el("div", { class: "hand__card", role: "listitem", style: `--i:${i}` },
+    el("span", { class: "hand__label" }, label),
+    art ? el("span", { class: "hand__art" }, art) : null,
+    el("span", { class: "hand__value" }, value),
+    el("span", { class: "hand__actions" },
+      el("button", { class: "hand__btn", "aria-label": `Re-deal ${label}`, title: `Re-deal ${label}`, onClick: () => { redeal(part); repaintReview(); } }, "↻"),
+      el("button", { class: "hand__btn", "aria-label": `Edit ${label}`, title: `Edit ${label}`, onClick: () => { draft.step = step; repaintReview(); } }, "✎")))));
+  body.append(hand);
+  body.append(el("p", { class: "muted small" }, "Promotion and Chinyen Points are rolled when you create the character."));
 }
+let repaintReview = () => {};
 
 // ---- Finish: roll points, build & save ------------------------------------
 function finish() {
@@ -500,4 +563,14 @@ const textArea = (label, value, onInput, ph) => field(label, value, onInput, nul
 function errorsFor(body, res) {
   if (res.ok) return;
   body.append(el("ul", { class: "errors" }, ...res.errors.map((e) => el("li", {}, e))));
+}
+
+// Three cards fanned out — the deck you are about to be dealt from.
+function dealArt() {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 200 120"); s.setAttribute("class", "deal__art"); s.setAttribute("aria-hidden", "true");
+  s.innerHTML = [[-14, 70], [0, 100], [14, 130]].map(([rot, x], i) =>
+    `<g transform="translate(${x} 64) rotate(${rot})"><rect x="-30" y="-46" width="60" height="88" rx="6" class="deal__card deal__card--${i}"/>`
+    + `<path d="M-14 -6l14-20 14 20h-6l-8-11-8 11z" class="deal__mark"/><path d="M-10 14h20M-16 24h32" class="deal__line"/></g>`).join("");
+  return s;
 }

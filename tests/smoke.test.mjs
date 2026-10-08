@@ -84,7 +84,7 @@ before(async () => {
   await page.evaluate(async () => {
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true, advanced: false }));
     // The sheet's less-used half sits behind "More"; most checks drive it, so open it.
-    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true, adjust: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const ch = normalizeCharacter({ name: "Test Runner", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
@@ -230,6 +230,10 @@ test("the rules library indexes chases, vehicles and combat reference [§3.12]",
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?rules#rules`, { waitUntil: "load" });
   await page.waitForTimeout(200);
+  // Search first: the library opens on topic tiles, one per section.
+  const topics = await page.$$eval(".rules__topic strong", (els) => els.map((e) => e.textContent));
+  for (const cat of ["Chases", "Vehicles", "Combat"]) assert.ok(topics.includes(cat), `a ${cat} topic tile`);
+  await page.click('.rules__cats .chip:text-is("All")');
   const cats = await page.$$eval(".rules__group summary", (els) => els.map((e) => e.textContent));
   for (const cat of ["Chases", "Vehicles", "Combat", "Critical Injuries", "Stress", "Recovery"])
     assert.ok(cats.some((c) => c.startsWith(cat)), `rules library has a ${cat} section (got ${cats.join(", ")})`);
@@ -1089,8 +1093,11 @@ test("guided play runs a whole case with one question at a time", async (t) => {
   });
   await go();
 
-  // Play is the first tab and the default — a lazy user lands in it.
-  assert.equal(await page.$eval(".segnav__pill--on", (e) => e.textContent.trim()), "Play");
+  // Play is the default and, for a Rookie, the whole screen: a scene, a slim
+  // status bar and a Kit button — no toolbox tabs to read first.
+  assert.ok(await page.$(".panel--play .vn__bar"), "the scene's own status bar");
+  assert.equal(await page.$(".segnav"), null, "no toolbox tabs on the scene");
+  assert.ok(await page.$(".vn__art svg"), "a picture leads the card");
   assert.deepEqual(await choices(), ["Get me a case"], "with no case, there is exactly one thing to press");
 
   await page.getByRole("button", { name: /Get me a case/ }).click();
@@ -1116,7 +1123,7 @@ test("guided play runs a whole case with one question at a time", async (t) => {
   opts = await choices();
   for (const verb of ["Look the place over", "Examine something closely", "Talk to whoever is here", "Put the word out"])
     assert.ok(opts.some((o) => o.includes(verb)), `offers "${verb}": ${opts}`);
-  assert.match(await cardText(), /Health \d+\/\d+/, "and shows the state you are in");
+  assert.match(await page.$eval(".vn__bar", (b) => b.textContent), /\d+\/\d+.*\d+\/\d+/, "and shows the state you are in");
 
   // A success hands you something already interpreted, and files it for you.
   await page.evaluate(() => { Math.random = () => 0.999; });
@@ -1155,7 +1162,7 @@ test("guided play runs a whole case with one question at a time", async (t) => {
   await page.evaluate(() => { Math.random = () => 0.999; });
   await page.getByRole("button", { name: /I think .* did it/ }).click();
   await page.waitForTimeout(250);
-  assert.match(await cardText(), /piece.? of evidence pointing their way/);
+  assert.match(await cardText(), /pieces? of evidence: a D\d+ hunch/);
   await page.getByRole("button", { name: /Put it to the test/ }).click();
   await page.waitForTimeout(300);
   assert.match(await cardText(), /Case closed/);
@@ -2142,7 +2149,7 @@ test("a first-timer is walked from a cold launch to a playable character", async
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("brp:settings")).solo), true,
     "the one-press start turns Solo Mode on for you");
   const tabs = await page.$$eval("#nav .nav__btn", (els) => els.map((e) => e.getAttribute("aria-label")));
-  assert.ok(tabs.includes("Solo"), `the Solo tab appears straight away: ${tabs.join(",")}`);
+  assert.deepEqual(tabs, ["Case", "Detective", "Files", "Menu"], "three destinations and a menu");
   assert.equal(await page.evaluate(() => location.hash), "#wizard", "and sends you to make a detective");
 
   // …and the manual route is still there for anyone who wants it
@@ -2188,7 +2195,7 @@ test("a first-timer is walked from a cold launch to a playable character", async
   await page.evaluate(async () => {
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: true, advanced: false }));
     // The sheet's less-used half sits behind "More"; most checks drive it, so open it.
-    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true, adjust: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const ch = normalizeCharacter({ name: "Test Runner", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
@@ -2217,6 +2224,8 @@ test("every control-heavy screen explains itself", async (t) => {
   // The Rules Library leads with the glossary, expanded.
   await page.goto(`${base}/index.html?guide3#rules`, { waitUntil: "load" });
   await page.waitForTimeout(350);
+  assert.equal(await page.$eval(".rules__topic strong", (e) => e.textContent), "Glossary", "the first topic tile is the glossary");
+  await page.click('.rules__cats .chip:text-is("All")');
   const groups = await page.$$eval(".rules__group summary", (els) => els.map((e) => e.textContent));
   assert.match(groups[0], /^Glossary/, `glossary comes first: ${groups.slice(0, 3).join(" | ")}`);
   assert.equal(await page.$eval(".rules__group", (n) => n.open), true, "and is open without being asked");
@@ -3393,7 +3402,7 @@ test("no label glyph reaches the screen as text — every one is an SVG icon [UX
 // ---------------------------------------------------------------------------
 // UX audit Phase 3 — layout.
 // ---------------------------------------------------------------------------
-test("the sheet is a priority stack: four sections open, the rest behind one remembered More", async (t) => {
+test("the sheet is four pages you swipe between — Status · Skills · Gear · Record — and remembers the last one", async (t) => {
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?stack#sheet`, { waitUntil: "load" });
   await page.evaluate(async () => {
@@ -3405,22 +3414,25 @@ test("the sheet is a priority stack: four sections open, the rest behind one rem
   });
   await page.goto(`${base}/index.html?stack2#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(300);
-  const layout = await page.evaluate(() => ({
-    top: [...document.querySelectorAll(".sheet > .card .sheet__section")].map((h) => h.textContent),
-    more: [...document.querySelectorAll(".sheet-more .sheet__section")].map((h) => h.textContent),
-    open: document.querySelector(".sheet-more").open,
-  }));
-  assert.deepEqual(layout.top, ["Vitals", "Resources", "Conditions", "Attributes", "Skills", "Inventory"], "the stack you touch every scene");
+  const layout = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".sheet-page")].map((pg) =>
+    [pg.dataset.page, [...pg.querySelectorAll(".sheet__section")].map((h) => h.textContent)])));
+  assert.deepEqual(Object.keys(layout), ["status", "skills", "gear", "record"]);
+  assert.deepEqual(layout.status, ["Vitals", "Resources", "Conditions"], "Status: what changes every scene");
+  assert.deepEqual(layout.skills, ["Attributes", "Skills"]);
+  assert.deepEqual(layout.gear, ["Inventory"]);
   for (const s of ["Specialties", "Critical Injuries", "Rest & Recovery", "Advancement", "Roll Log", "Journal", "Identity & Notes"])
-    assert.ok(layout.more.includes(s), `${s} sits behind More`);
-  assert.equal(layout.open, false, "More starts closed on a new device");
-  await page.click(".sheet-more__summary");
-  // <details> fires "toggle" as a queued task — wait for the save before leaving the page.
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem("brp:sheet") || "{}").moreOpen === true);
+    assert.ok(layout.record.includes(s), `${s} is on Record`);
+  assert.deepEqual(await page.$$eval(".sheet-tab", (b) => b.map((x) => x.textContent)), ["Status", "Skills", "Gear", "Record"]);
+  assert.equal(await page.$eval(".sheet-tab[aria-selected=true]", (b) => b.textContent), "Status", "a new device opens on Status");
+  await page.getByRole("tab", { name: "Gear" }).click();
+  await page.waitForTimeout(500);
+  const shown = await page.evaluate(() => { const tr = document.querySelector(".sheet-pages"), g = document.querySelector("#sheet-page-gear").getBoundingClientRect(), t = tr.getBoundingClientRect(); return Math.abs(g.left - t.left) < 4; });
+  assert.ok(shown, "the Gear page slides into view");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("brp:sheet") || "{}").page === "gear");
   await page.goto(`${base}/index.html?stack3#sheet`, { waitUntil: "load" });
-  await page.waitForTimeout(250);
-  assert.equal(await page.$eval(".sheet-more", (d) => d.open), true, "and remembers being opened");
-  // a live wound is never hidden behind More
+  await page.waitForTimeout(300);
+  assert.equal(await page.$eval(".sheet-tab[aria-selected=true]", (b) => b.textContent), "Gear", "and the last page is remembered");
+  // A live wound sits on Status, never on a page you might not open.
   await page.evaluate(async () => {
     const { Store } = await import("/src/store.js");
     const ch = Store.getActive(); ch.state.criticalInjuries = [{ id: "w1", injury: "Broken nose", type: "crushing", roll: 1, lethal: false, deathSave: null, disadvantage: [], effect: "" }];
@@ -3428,11 +3440,15 @@ test("the sheet is a priority stack: four sections open, the rest behind one rem
   });
   await page.goto(`${base}/index.html?stack4#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(250);
-  assert.ok(await page.$(".sheet > .card .sheet__section:text-is('Critical Injuries')"), "an injury joins the stack");
+  assert.ok(await page.$("#sheet-page-status .sheet__section:text-is('Critical Injuries')"), "an injury joins Status");
   // Vitals+Resources and Attributes+Skills each carry both sets of guidance lines
-  const how = await page.$$eval(".sheet > .card", (cs) => cs.map((c) => [c.querySelector(".sheet__section")?.textContent, c.querySelectorAll(".how__line").length]));
+  const how = await page.$$eval(".sheet-page > .card", (cs) => cs.map((c) => [c.querySelector(".sheet__section")?.textContent, c.querySelectorAll(".how__line").length]));
   assert.ok(how.find(([k, n]) => k === "Vitals" && n >= 6), `folded guidance: ${JSON.stringify(how)}`);
-  await page.evaluate(() => localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true })));
+  // Rookie: Health and Resolve change through play; the hand buttons sit behind Adjust.
+  assert.equal(await page.locator(".vitals .stepper__ctrl").first().isVisible(), false, "no hand buttons in Rookie");
+  await page.getByRole("button", { name: /Adjust by hand/ }).click();
+  assert.equal(await page.locator(".vitals .stepper__ctrl").first().isVisible(), true, "Adjust shows them");
+  await page.evaluate(() => localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true, adjust: true })));
 });
 
 test("one Guidance switch hides every how-to note; Solo/GM open with a one-line intro that goes once you move on", async (t) => {
@@ -3460,14 +3476,19 @@ test("one Guidance switch hides every how-to note; Solo/GM open with a one-line 
   assert.equal(await page.$(".intro-line"), null, "the intro is gone once you move on");
 });
 
-test("Home leads with the active character; the tiles carry icons", async (t) => {
+test("Home leads with the active character and ONE next move; everything else is in the Menu", async (t) => {
   if (unavailable) return t.skip(unavailable);
   await page.goto(`${base}/index.html?hero#home`, { waitUntil: "load" });
   await page.waitForTimeout(200);
   assert.ok(await page.$(".hero .hero__portrait"), "a face on the hero card");
-  assert.equal(await page.$eval(".hero .btn--primary", (b) => b.textContent.trim()), "Open sheet");
-  const tiles = await page.$$eval(".tile", (n) => n.map((x) => !!x.querySelector(".tile__icon .i")));
-  assert.ok(tiles.length >= 6 && tiles.every(Boolean), "every tile has an icon");
+  assert.equal(await page.$$eval("#screen .btn--primary", (b) => b.length), 1, "one amber button");
+  assert.match(await page.$eval(".hero .btn--primary", (b) => b.textContent.trim()), /^(Play a case|Pick up case #\d+)$/);
+  assert.ok(await page.$(".hero .btn:text-is('Open sheet')"), "the sheet is one tap away");
+  assert.equal(await page.$$eval(".tile", (n) => n.length), 0, "no tile grid — the Menu holds the rest");
+  await page.getByRole("button", { name: "Menu" }).click();
+  const menu = await page.$$eval(".menu-item strong", (n) => n.map((x) => x.textContent));
+  for (const m of ["Home", "Combat tracker", "Rules", "How to play", "Settings"]) assert.ok(menu.includes(m), `Menu has ${m}: ${menu}`);
+  await page.keyboard.press("Escape");
   assert.equal(await page.$eval("h1", (h) => getComputedStyle(h).position), "absolute", "the duplicate title is for screen readers only");
 });
 
@@ -3486,8 +3507,8 @@ test("wide screens: a left rail, two card columns, nothing overflowing", async (
   }
   await page.goto(`${base}/index.html?wide2#sheet`, { waitUntil: "load" });
   await page.waitForTimeout(200);
-  const xs = await page.$$eval(".sheet > .card", (cs) => [...new Set(cs.map((c) => Math.round(c.getBoundingClientRect().left)))]);
-  assert.ok(xs.length >= 2, `the sheet flows into two columns: ${xs}`);
+  const xs = await page.$$eval(".sheet-page", (cs) => [...new Set(cs.map((c) => Math.round(c.getBoundingClientRect().left)))]);
+  assert.ok(xs.length >= 2, `the sheet's pages sit side by side as columns: ${xs}`);
   await page.setViewportSize({ width: 390, height: 800 });
 });
 
@@ -3982,7 +4003,7 @@ test("feel & flow: haptics on a roll (not when off), no sound unless asked, text
   // Board box: back with its connection on both sides.
   await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo") || "{}"); s.panel = "board"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
   await p.goto(`${base}/index.html?f3#solo`, { waitUntil: "load" }); await p.waitForTimeout(300);
-  await p.locator('.rowmenu__toggle[aria-label="More for S2"]').click();
+  await p.locator('.rowmenu__toggle[aria-label="More for S2"]').click(); await p.waitForTimeout(120);
   // A rotated index card must not become the fixed menu's containing block, and the menu opens clear of the nav.
   const box = await p.evaluate(() => { const r = document.querySelector(".rowmenu[open] .rowmenu__list").getBoundingClientRect(); return { l: r.left, r: r.right, b: r.bottom, t: r.top, nav: document.getElementById("nav").getBoundingClientRect().top, w: innerWidth }; });
   assert.ok(box.l >= 0 && box.r <= box.w && box.t >= 0 && box.b <= box.nav, `board ⋯ menu on screen and above the nav: ${JSON.stringify(box)}`);
@@ -4037,7 +4058,7 @@ test("long table text wraps: the longest signature item at 130 % text fits a 360
     const D = await import("/data.js");
     const item = [...D.SIGNATURE_ITEMS].sort((a, b) => b.length - a.length)[0];
     localStorage.setItem("brp:settings", JSON.stringify({ solo: true, textSize: "130" }));
-    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true, adjust: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const ch = normalizeCharacter({ name: "Wrap Test", nature: "human", archetype: "enforcer", years: "seasoned", attributes: { STR: "A", AGI: "B", INT: "C", EMP: "C" } });
@@ -4120,7 +4141,8 @@ test("round 3 chrome: card headers, (i) guidance, two-row HUD, GM HUD, grouped s
   const groups = await p.$$eval(".settings-group", (gs) => gs.map((g) => [g.querySelector(".settings-group__title")?.textContent, [...g.querySelectorAll(".settings-list > .settings__row .settings__label")].map((l) => l.textContent)]));
   const map = Object.fromEntries(groups);
   assert.deepEqual(map["Play modes"], ["Solo Mode", "GM Screen", "Advanced Automation"]);
-  assert.deepEqual(map["Feel"], ["Haptics", "Dice sound", "Guidance"]);
+  assert.deepEqual(map["Feel"], ["Haptics", "Dice sound", "Rain sound", "Guidance"]);
+  assert.deepEqual(map["Interface"], ["Veteran interface"], "Rookie / Veteran leads Settings");
   assert.ok(map["Appearance"].includes("Rain") && map["Appearance"].includes("Theme"), "Rain sits with the look of the app");
   const sw = await p.$eval(".switch__input:checked + .switch__track", (n) => getComputedStyle(n).borderTopColor);
   const cyan = await p.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--cyan").trim());
@@ -4223,8 +4245,15 @@ test("round 3 identity & fights: ID card, avatars, panel art, empty scenes, init
   assert.deepEqual(await p.$$eval(".init-strip__no", (n) => n.map((x) => x.textContent)), ["#3", "#6"], "turn order at a glance");
   assert.ok(await p.$(".init-strip__card--on"), "the one acting is lit");
   assert.ok(await p.$(".combatant .combatant__avatar"), "the NPC wears an avatar");
+  // The fight stage: tapping someone else attacks them with whoever is acting
+  // (the weapon is still yours to pick); tapping the actor opens their row.
   await p.locator(".init-strip__card").nth(1).click(); await p.waitForTimeout(300);
-  assert.equal(await p.locator('.combatant[data-cid="b"]').evaluate((c) => c.classList.contains("combatant--closed")), false, "tapping a card opens that row");
+  assert.match(await p.$eval(".modal", (m) => m.textContent), /Combat Attack/, "tapping a rival opens the attack");
+  await p.keyboard.press("Escape"); await p.waitForTimeout(150);
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:combat")); s.turnIndex = 1; localStorage.setItem("brp:combat", JSON.stringify(s)); });
+  await p.goto(`${base}/index.html?r3k2#combat`, { waitUntil: "load" }); await p.waitForTimeout(300);
+  await p.locator(".init-strip__card--on").click(); await p.waitForTimeout(300);
+  assert.equal(await p.locator('.combatant[data-cid="b"]').evaluate((c) => c.classList.contains("combatant--closed")), false, "tapping the actor opens that row");
   assert.equal(await p.locator('.combatant[data-cid="b"] > .combatant__vitals > .btn', { hasText: "Remove" }).count(), 0, "Remove is not beside Health");
   await p.getByRole("button", { name: "damage Street Thug" }).click(); await p.waitForTimeout(150);
   const dmg = p.locator(".modal .btn--primary, .modal .btn--danger").first();
@@ -4257,7 +4286,7 @@ test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, r
   const ids = await p.evaluate(async () => {
     localStorage.clear();
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true }));
-    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true, adjust: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const a = Store.save(normalizeCharacter({ name: "Aaron First", nature: "human", archetype: "analyst", years: "seasoned" })).id;
@@ -4325,8 +4354,8 @@ test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, r
   // Sheet: scroll past Vitals and the mini bar shows; journal removal undoes.
   await go("sheet");
   assert.equal(await p.$eval(".sheet-mini", (m) => m.classList.contains("sheet-mini--on")), false);
-  await p.evaluate(() => window.scrollTo(0, 1500)); await p.waitForTimeout(400);
-  assert.equal(await p.$eval(".sheet-mini", (m) => m.classList.contains("sheet-mini--on")), true, "mini-vitals after scrolling");
+  await p.getByRole("tab", { name: "Record" }).click(); await p.waitForTimeout(600);
+  assert.equal(await p.$eval(".sheet-mini", (m) => m.classList.contains("sheet-mini--on")), true, "mini-vitals once Vitals is out of view (another page)");
   assert.match(await p.$eval(".sheet-mini", (m) => m.textContent), /\d+\/\d+.*\d+\/\d+/);
   await p.locator(".journal__entry", { hasText: "First entry" }).getByRole("button", { name: "delete entry" }).click(); await p.waitForTimeout(200);
   await p.locator(".toast__btn", { hasText: "Undo" }).click(); await p.waitForTimeout(250);
@@ -4334,13 +4363,14 @@ test("round 4: toast and chase fit, FAB steps aside, Play crumbs, board tools, r
 
   // FAB: steps aside scrolling down, comes back scrolling up.
   assert.equal(await p.locator("#quick-roll").isVisible(), true);
-  await p.evaluate(() => window.scrollTo(0, 2200)); await p.waitForTimeout(150);
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(150);
+  await p.evaluate(() => window.scrollTo(0, 700)); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), true, "away while scrolling down");
   await p.waitForTimeout(2300);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), false, "back on its own after 2s without scrolling");
-  await p.evaluate(() => window.scrollTo(0, 2600)); await p.waitForTimeout(150);
+  await p.evaluate(() => window.scrollTo(0, 1100)); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), true, "away again scrolling down");
-  await p.evaluate(() => window.scrollTo(0, 1000)); await p.waitForTimeout(150);
+  await p.evaluate(() => window.scrollTo(0, 300)); await p.waitForTimeout(150);
   assert.equal(await p.$eval("#quick-roll", (f) => f.classList.contains("fab--away")), false, "back scrolling up");
   // Quick roll marks key skills.
   await p.click("#quick-roll"); await p.waitForTimeout(200);
@@ -4415,7 +4445,7 @@ test("round 5: portraits, vitals signals, dice/meters/tokens, weapons, notes pap
   await p.evaluate(async () => {
     localStorage.clear();
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true }));
-    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true, adjust: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const ch = normalizeCharacter({ name: "Rachael Voss", nature: "human", archetype: "inspector", years: "veteran", attributes: { STR: "C", AGI: "B", INT: "A", EMP: "B" } });
@@ -4499,7 +4529,8 @@ test("round 5: portraits, vitals signals, dice/meters/tokens, weapons, notes pap
   assert.equal(await p.$eval(".tut__num", (x) => x.textContent), "1");
   assert.match(await p.$eval(".tut__step--num .tut__label", (x) => x.textContent), /^1[.·]?\s*[·.]?\s*\S/, "the label's text is unchanged");
   await go("rules");
-  assert.ok(await p.$("summary .rules__icon .i"), "sections have icons");
+  assert.ok(await p.$(".rules__topic-icon .i"), "sections have icons");
+  await p.click('.rules__topic:has-text("Glossary")'); await p.waitForTimeout(150);
   assert.equal(await p.$eval(".rules__mono", (m) => m.textContent), "Ba");
 
   // Wizard
@@ -4516,8 +4547,7 @@ test("round 5: portraits, vitals signals, dice/meters/tokens, weapons, notes pap
   // Atmosphere: skyline floor in dark, not in light; Home grid has no hole
   await go("home");
   assert.equal(await p.$eval("#skyfloor", (f) => getComputedStyle(f).display), "block");
-  const tiles = await p.$$eval(".home-grid > .tile", (t) => t.map((x) => Math.round(x.getBoundingClientRect().right)));
-  assert.ok(Math.max(...tiles) >= 370, "the last row reaches the edge");
+  assert.equal(await p.$$eval(".home-grid", (t) => t.length), 0, "no tile grid on Home (radical redesign — the Menu holds it)");
   await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:settings")); s.theme = "light"; localStorage.setItem("brp:settings", JSON.stringify(s)); });
   await go("home");
   assert.equal(await p.$eval("#skyfloor", (f) => getComputedStyle(f).display), "none");
@@ -4615,7 +4645,7 @@ test("linked tabs: one Countdown per Shift, sheet Shifts move the case, Leads ow
   const ids = await p.evaluate(async () => {
     localStorage.clear();
     localStorage.setItem("brp:settings", JSON.stringify({ theme: "dark", solo: true, gm: false }));
-    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true }));
+    localStorage.setItem("brp:sheet", JSON.stringify({ moreOpen: true, adjust: true }));
     const { Store } = await import("/src/store.js");
     const { normalizeCharacter } = await import("/src/derived.js");
     const other = Store.save(normalizeCharacter({ name: "Partner", nature: "human", archetype: "analyst", years: "seasoned" }));
@@ -4714,6 +4744,117 @@ test("linked tabs: one Countdown per Shift, sheet Shifts move the case, Leads ow
   const file = await p.evaluate(() => JSON.parse(localStorage.getItem("brp:cases")).files[0]);
   assert.equal(file.pp, 2, "the case paid Kaz +2, not the partner's 9");
   assert.equal(file.character, "Kaz");
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
+test("radical redesign: four destinations, the scene is the screen, a map to travel on, tappable words, one-time hints, a ticker, a cold open, Files, search-first rules, a dealt detective, a fight stage, the dice moment, a timeline", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const p = await ctx.newPage();
+  await p.route("**", (route) => (route.request().url().startsWith(base) ? route.continue() : route.abort()));
+  const errs = []; p.on("pageerror", (e) => errs.push(e.message));
+  let n = 0;
+  const go = async (route) => { await p.goto(`${base}/index.html?vn${++n}#${route}`, { waitUntil: "load" }); await p.waitForTimeout(350); };
+  await go("home");
+  await p.evaluate(() => localStorage.clear());
+  await go("home");
+
+  // A fresh install is a cold open: the city, one line, one button.
+  assert.ok(await p.$(".cold .scene"), "the cold open is a picture");
+  assert.equal(await p.$$eval("#screen .btn--primary", (b) => b.length), 1, "one thing to press");
+  assert.deepEqual(await p.$$eval("#nav .nav__btn", (b) => b.map((x) => x.getAttribute("aria-label"))), ["Case", "Detective", "Files", "Menu"]);
+
+  // The wizard deals a detective as a hand; one card re-deals on its own and stays legal.
+  await go("wizard");
+  await p.getByRole("button", { name: /Roll me a whole Blade Runner/ }).click(); await p.waitForTimeout(250);
+  assert.equal(await p.$$eval(".hand__card", (c) => c.length), 8, "eight cards in the hand");
+  const legal = () => p.evaluate(async () => {
+    const R = await import("/src/rules.js");
+    const d = JSON.parse(localStorage.getItem("brp:wizard"));
+    return R.validateAttributes(d).ok && R.validateSkills(d).ok;
+  });
+  for (let i = 0; i < 4; i++) { await p.getByRole("button", { name: "Re-deal Strengths" }).click(); await p.waitForTimeout(80); assert.ok(await legal(), "a re-dealt hand is legal"); }
+  await p.getByRole("button", { name: "Re-deal Archetype" }).click(); await p.waitForTimeout(80);
+  assert.ok(await legal(), "re-dealing the archetype re-legalises the stats");
+  await p.getByRole("button", { name: /Create Blade Runner/ }).click(); await p.waitForTimeout(400);
+  assert.equal(await p.evaluate(() => location.hash), "#sheet");
+
+  // Solo: the scene is the whole screen for a Rookie.
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:settings") || "{}"); s.solo = true; localStorage.setItem("brp:settings", JSON.stringify(s)); });
+  await go("solo");
+  assert.equal(await p.$(".segnav"), null, "no toolbox tabs on the scene");
+  assert.ok(await p.$(".vn__bar") && await p.$(".vn__art .scene"), "a status bar and a picture");
+  // A one-time hint, with tappable game words; Got it retires it for good.
+  assert.ok(await p.$(".hint"), "a first-time hint");
+  await p.getByRole("button", { name: /Get me a case/ }).click(); await p.waitForTimeout(250);
+  await p.getByRole("button", { name: /Take the case/ }).click(); await p.waitForTimeout(250);
+  await p.locator(".modal").getByRole("button", { name: /Take the case|OK/ }).click(); await p.waitForTimeout(350);
+  // The ticker: one plain message at a time.
+  assert.ok(await p.$$eval("#toast-region .toast:not(.toast--action)", (t) => t.length) <= 1, "one line at a time");
+  // The map: one pin per place on offer; a pin is a way to travel.
+  const pins = await p.$$eval(".citymap .map-pin--option", (g) => g.length);
+  assert.equal(pins, await p.$$eval(".play__choices .btn .i--place", (x) => x.length), "a pin for every place offered");
+  const term = p.locator(".hint .term").first();
+  assert.ok(await term.count(), "the hint links a game word");
+  await term.click(); await p.waitForTimeout(150);
+  assert.ok((await p.$eval(".modal .term-def", (d) => d.textContent)).length > 20, "the word opens its meaning");
+  await p.keyboard.press("Escape");
+  await p.locator(".hint").getByRole("button", { name: /Got it/ }).click();
+  await go("solo");
+  assert.equal(await p.$(".hint"), null, "a dismissed hint stays gone");
+  await p.locator(".citymap .map-pin--option").first().dispatchEvent("click"); await p.waitForTimeout(300);
+  assert.equal(await p.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")).play.stage), "travel", "tapping a pin travels");
+  // The Kit opens the toolbox; ▶ Play comes back to the scene.
+  await p.getByRole("button", { name: /^Kit/ }).click(); await p.waitForTimeout(250);
+  assert.ok(await p.$(".segnav"), "the kit is the full toolbox");
+  await p.click('.segnav__pill:text-is("Play")'); await p.waitForTimeout(250);
+  assert.equal(await p.$(".segnav"), null, "back on the scene");
+  // Veteran shows every tool at once.
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:settings")); s.veteran = true; localStorage.setItem("brp:settings", JSON.stringify(s)); });
+  await go("solo");
+  assert.ok(await p.$(".segnav"), "Veteran: tabs on the scene too");
+  assert.equal(await p.locator(".vn__bar").isVisible(), false, "and the HUD instead of the slim bar");
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:settings")); s.veteran = false; localStorage.setItem("brp:settings", JSON.stringify(s)); });
+
+  // The notes read as a timeline: each entry carries a mark.
+  await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("brp:solo")); s.panel = "notes"; s.scratchpad += "\n• [Clue] A torn sleeve\n• [Kaz · Observation] Success"; localStorage.setItem("brp:solo", JSON.stringify(s)); });
+  await go("solo");
+  const marks = await p.$$eval(".notes-read__entry .notes-read__icon use", (u) => u.map((x) => x.getAttribute("href")));
+  assert.ok(marks.includes("#i-examine") && marks.includes("#i-dice"), `timeline marks: ${marks}`);
+
+  // Files: detectives and closed cases.
+  await go("characters");
+  await p.getByRole("button", { name: "Case files" }).click();
+  assert.ok(await p.$(".empty"), "no closed cases yet — and it says how to get one");
+  // Rules: topics first, nothing listed until you search or pick.
+  await go("rules");
+  assert.ok((await p.$$(".rules__topic")).length >= 10 && !(await p.$(".rules__item")), "topic tiles, no wall of entries");
+  await p.fill(".rules__search input", "push");
+  assert.ok((await p.$$(".rules__item")).length > 0, "a search lists matches");
+
+  // The fight stage: tap a rival to attack them with whoever is acting.
+  await p.evaluate(async () => {
+    const { Combat, Store } = await import("/src/store.js");
+    const id = Store.getActiveId();
+    Combat.save({ active: true, round: 1, turnIndex: 0, combatants: [
+      { id: "a", kind: "pc", charId: id, name: "Me", health: 4, maxHealth: 4, card: 1, conditions: {}, criticalInjuries: [] },
+      { id: "b", kind: "npc", npcKey: "street_thug", name: "Thug", health: 4, maxHealth: 4, card: 2, conditions: {}, criticalInjuries: [] }] });
+  });
+  await go("combat");
+  assert.equal(await p.$$eval(".fight-token .fight-token__face", (f) => f.length), 2, "everyone on the stage has a face");
+  await p.locator(".fight-token").nth(1).click(); await p.waitForTimeout(250);
+  assert.match(await p.$eval(".modal", (m) => m.textContent), /Combat Attack/);
+  await p.locator(".modal .list__row--weapon").filter({ hasText: /Blaster/ }).first().click(); await p.waitForTimeout(250);
+  assert.ok(await p.$(".modal .chip--on:has-text('Thug')"), "the tapped rival is already the target");
+  await p.keyboard.press("Escape");
+
+  // The dice moment: a roll's result fills a phone screen.
+  await go("sheet");
+  await p.locator(".skill--btn").first().click(); await p.waitForTimeout(1600);
+  const mh = await p.$eval(".modal", (m) => Math.round(m.getBoundingClientRect().height));
+  assert.ok(mh >= 840, `the roll result is full screen on a phone (${mh})`);
+  await p.keyboard.press("Escape");
   assert.deepEqual(errs, []);
   await ctx.close();
 });

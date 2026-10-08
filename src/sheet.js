@@ -136,36 +136,57 @@ export function renderSheet(mount) {
   wrap.append(mini);
   wrap.append(sheetHeader(ch, arch, y, commit));
   if (ch.state.dead) wrap.append(deceasedBanner(ch, commit, rerender));
-  // Priority stack: what you touch every scene stays open at the top; the rest
-  // sits behind one "More" (UX audit). A wound or a breakdown is never hidden —
-  // while one is live its section joins the stack.
+  // Four pages you swipe between (radical redesign): Status · Skills · Gear ·
+  // Record. Every page is in the DOM side by side in a snap carousel, so a
+  // control is never more than a swipe away; the tabs above say where you are.
+  // A wound or a breakdown sits on Status while it lasts. On a wide screen the
+  // pages are simply laid out as columns.
   const injured = (ch.state.criticalInjuries || []).length > 0;
   const vitals = vitalsSection(ch, commit);
   vitals.append(resourcesBlock(ch, commit));
-  wrap.append(vitals);
-  if (injured) wrap.append(criticalInjuriesSection(ch, commit, rerender));
-  if (isBrokenByStress(ch) && !ch.state.dead) wrap.append(stressSection(ch, commit));
-  wrap.append(conditionsSection(ch, commit));
   const skills = skillsSection(ch, arch, rerender);
   skills.prepend(attributesBlock(ch));   // the dice you roll, above the skills that use them
-  wrap.append(skills);
-  wrap.append(inventorySection(ch, commit, rerender));
-  const more = el("details", { class: "sheet-more", open: sheetPrefs().moreOpen || null });
-  more.addEventListener("toggle", () => sheetPrefs({ moreOpen: more.open }));
-  more.append(el("summary", { class: "sheet-more__summary" },
-    el("span", { class: "sheet-more__title" }, "More"),
-    el("span", { class: "muted sheet-more__list" }, `specialties, ${injured ? "" : "injuries, "}recovery, advancement, roll log, journal, identity`)));
-  const moreBody = el("div", { class: "sheet-more__body" });
-  moreBody.append(specialtiesSection(ch));
-  if (!injured) moreBody.append(criticalInjuriesSection(ch, commit, rerender));
-  moreBody.append(recoverySection(ch, commit, rerender));
-  moreBody.append(advancementSection(ch, commit, rerender));
-  moreBody.append(rollLogSection(ch, commit, rerender));
-  moreBody.append(journalSection(ch, commit));
-  moreBody.append(identitySection(ch, commit));
-  more.append(moreBody);
-  wrap.append(more);
-  wrap.append(dangerZone(ch, mount));
+  const PAGES = [
+    ["status", "Status", [vitals, injured ? criticalInjuriesSection(ch, commit, rerender) : null,
+      isBrokenByStress(ch) && !ch.state.dead ? stressSection(ch, commit) : null, conditionsSection(ch, commit)]],
+    ["skills", "Skills", [skills]],
+    ["gear", "Gear", [inventorySection(ch, commit, rerender)]],
+    ["record", "Record", [specialtiesSection(ch), injured ? null : criticalInjuriesSection(ch, commit, rerender),
+      recoverySection(ch, commit, rerender), advancementSection(ch, commit, rerender), rollLogSection(ch, commit, rerender),
+      journalSection(ch, commit), identitySection(ch, commit), dangerZone(ch, mount)]],
+  ];
+  const at = Math.max(0, PAGES.findIndex(([k]) => k === sheetPrefs().page));
+  const tabs = el("div", { class: "sheet-tabs segmented", role: "tablist", "aria-label": "Sheet pages" });
+  const track = el("div", { class: "sheet-pages", tabindex: "-1" });
+  PAGES.forEach(([key, label, cards], i) => {
+    tabs.append(el("button", { class: "segmented__opt sheet-tab" + (i === at ? " segmented__opt--on" : ""), role: "tab", "aria-selected": i === at ? "true" : "false",
+      "aria-controls": `sheet-page-${key}`, onClick: () => showPage(i, true) }, label));
+    track.append(el("div", { class: "sheet-page", id: `sheet-page-${key}`, role: "tabpanel", "aria-label": label, dataset: { page: key } }, ...cards.filter(Boolean)));
+  });
+  wrap.append(tabs, track);
+  // Which page is in view: the tabs follow a swipe, the track's height follows
+  // the page (so a short page never leaves a long blank tail).
+  let current = at;
+  function fit() { const pg = track.children[current]; if (pg && !matchMedia("(min-width: 900px)").matches) track.style.height = `${pg.offsetHeight}px`; else track.style.height = ""; }
+  function mark(i) {
+    current = i;
+    [...tabs.children].forEach((b, k) => { b.classList.toggle("segmented__opt--on", k === i); b.setAttribute("aria-selected", k === i ? "true" : "false"); });
+    sheetPrefs({ page: PAGES[i][0] });
+    fit();
+  }
+  function showPage(i, smooth) {
+    track.scrollTo({ left: i * track.clientWidth, behavior: smooth && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
+    mark(i);
+  }
+  let settle = null;
+  track.addEventListener("scroll", () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => { const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth)); if (i !== current) mark(Math.min(PAGES.length - 1, Math.max(0, i))); }, 90);
+  }, { passive: true });
+  // A control on another page that takes focus (keyboard, a test) brings its page along.
+  track.addEventListener("focusin", (e) => { const pg = e.target.closest(".sheet-page"); const i = [...track.children].indexOf(pg); if (i >= 0 && i !== current) { mark(i); } });
+  requestAnimationFrame(() => { track.scrollLeft = at * track.clientWidth; fit(); });
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => fit()); for (const pg of track.children) ro.observe(pg); }
   paintGuidance(wrap);
 
   mount.append(wrap);
@@ -186,7 +207,9 @@ function watchVitals(vitals, mini) {
   vitalsObserver?.disconnect();
   if (!window.IntersectionObserver) return;
   vitalsObserver = new IntersectionObserver(([e]) => {
-    mini.classList.toggle("sheet-mini--on", !e.isIntersecting && e.boundingClientRect.bottom < 0);
+    // Off screen above, or off to the side (another sheet page is showing).
+    const r = e.boundingClientRect;
+    mini.classList.toggle("sheet-mini--on", !e.isIntersecting && (r.bottom < 0 || r.right <= 0 || r.left >= innerWidth));
   });
   vitalsObserver.observe(vitals);
 }
@@ -261,10 +284,15 @@ function sheetHeader(ch, arch, y, commit) {
 // ---- Vitals (Health / Resolve) --------------------------------------------
 function vitalsSection(ch, commit) {
   const hp = maxHealth(ch), rp = maxResolve(ch);
-  const card = el("div", { class: "card" },
+  // Rookie: Health and Resolve change through play (rolls, pushes, Shifts);
+  // the hand buttons sit behind Adjust. Veteran shows them always.
+  const card = el("div", { class: "card vitals" + (sheetPrefs().adjust ? " vitals--adjust" : "") },
     sectionTitle("Vitals"),
-    vitalTrack("Health", "health", ch.state.health, hp, "health", commit, ch.id),
-    vitalTrack("Resolve", "resolve", ch.state.resolve, rp, "resolve", commit, ch.id));
+    el("div", { class: "vitals__pair" },
+      vitalTrack("Health", "health", ch.state.health, hp, "health", commit, ch.id),
+      vitalTrack("Resolve", "resolve", ch.state.resolve, rp, "resolve", commit, ch.id)),
+    el("button", { class: "btn btn--sm btn--ghost vitals__adjust", "aria-pressed": sheetPrefs().adjust ? "true" : "false",
+      onClick: (e) => { const on = !sheetPrefs().adjust; sheetPrefs({ adjust: on }); card.classList.toggle("vitals--adjust", on); e.currentTarget.setAttribute("aria-pressed", on ? "true" : "false"); } }, "✎ Adjust by hand"));
   const badges = el("div", { class: "sheet__badges" });
   if (isBrokenByDamage(ch)) badges.append(el("span", { class: "badge badge--danger" }, "Broken (Damage) — no actions or skill rolls"));
   if (isBrokenByStress(ch)) badges.append(el("span", { class: "badge badge--danger" }, "Broken (Stress) — critical stress effect"));
@@ -377,10 +405,10 @@ function skillsSection(ch, arch, rerender) {
         onClick: () => openSkillRoll(ch, s.key, rerender) }, "⋯")));
   }
   return el("div", { class: "card" }, sectionTitle("Skills"),
-    el("p", { class: "muted sheet__note" }, `Tap a skill to roll its Base Dice. ${D.LEVELS.map((l) => `${l} ${D.SKILL_LEVEL_DESC[l]}`).join(" · ")}.`), list,
+    el("p", { class: "muted sheet__note", title: D.LEVELS.map((l) => `${l} ${D.SKILL_LEVEL_DESC[l]}`).join(" · ") }, "Tap to roll."), list,
     el("div", { class: "inv__actions" },
-      el("button", { class: "btn btn--sm btn--roll", onClick: () => openOpposedSkillRoll(ch, rerender) }, "⚖ Opposed roll"),
-      el("span", { class: "muted sheet__note" }, "Stealth vs Observation, Manipulation vs Insight, Interrogation vs Stamina, the Voight-Kampff test — only the initiator may push.")));
+      el("button", { class: "btn btn--sm btn--roll", title: "Stealth vs Observation, Manipulation vs Insight, Interrogation vs Stamina, the Voight-Kampff test — only the initiator may push.",
+        onClick: () => openOpposedSkillRoll(ch, rerender) }, "⚖ Opposed roll")));
 }
 
 // ---- Specialties ----------------------------------------------------------

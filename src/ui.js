@@ -3,6 +3,7 @@
 import { el, $, $$, clear, appendToNotes, icon } from "./core.js";
 import { Settings } from "./settings.js";
 import { emptyScene } from "./art.js";
+import { GLOSSARY } from "../data.js";
 
 let modalHost = null;
 function host() {
@@ -30,6 +31,9 @@ export function showToast(message, { kind = "info", timeout = 2600, action = nul
     t.append(el("button", { class: "toast__btn", onClick: () => { dismiss(); action.onClick?.(); } }, action.label));
     t.append(el("button", { class: "toast__close", "aria-label": "Dismiss", onClick: dismiss }, "\u2715"));
   }
+  // One line at a time (a ticker, not a pile): a new message replaces the
+  // last plain one. Toasts carrying a button (Undo, Update) stay until used.
+  if (!action?.label) for (const old of region.querySelectorAll(".toast:not(.toast--action)")) old.remove();
   region.append(t);
   requestAnimationFrame(() => t.classList.add("toast--in"));
   if (timeout > 0) setTimeout(dismiss, timeout);
@@ -181,6 +185,11 @@ export function introLine(text, onDismiss) {
     el("button", { class: "btn btn--sm btn--ghost", "aria-label": "Dismiss this introduction", onClick: onDismiss }, "✕"));
 }
 
+// The case notes read as a timeline: each entry wears a mark for what it was.
+const NOTE_ICONS = [[/location|place|where|—/i, "place"], [/clue|evidence|discover/i, "examine"], [/countdown|timer|interrupt/i, "timer"],
+  [/idea|meaning|cipher/i, "sparkle"], [/case closed|closed/i, "check"], [/shift/i, "next"], [/downtime/i, "bed"], [/death|crit/i, "skull"],
+  [/accus|hypothes|lead/i, "scale"], [/npc|someone|suspect|person/i, "person"], [/ · /, "dice"]];
+function noteIcon(tag) { for (const [re, name] of NOTE_ICONS) if (re.test(tag)) return name; return "pin"; }
 // Case notes: a rendered read view by default (pinned rolls as tagged entries,
 // case headers as headings), with Edit switching to the plain textarea. The
 // stored text is exactly what it was — this is presentation only.
@@ -198,6 +207,7 @@ export function notesView({ value = "", onSave, rows = 10, placeholder = "", sav
       if ((m = line.match(/^=+\s*(.*?)\s*=+$/))) read.append(el("h3", { class: "notes-read__head" }, m[1]));
       else if (/^-{3,}$/.test(line)) read.append(el("hr", { class: "notes-read__rule" }));
       else if ((m = line.match(/^[•*-]?\s*\[([^\]]+)\]\s*(.*)$/))) read.append(el("div", { class: "notes-read__entry" },
+        el("span", { class: "notes-read__icon" }, icon(noteIcon(m[1]))),
         el("span", { class: "tag tag--sm notes-read__tag" }, m[1]), el("span", { class: "notes-read__text" }, m[2])));
       else read.append(el("p", { class: "notes-read__p" }, line.replace(/^[•*]\s*/, "")));
     }
@@ -318,13 +328,20 @@ export function rowMenu(name, items) {
     if (!menu.open) return;
     document.querySelectorAll(".rowmenu[open]").forEach((m) => { if (m !== menu) m.open = false; });
     const pop = menu.querySelector(".rowmenu__list");
-    const r = menu.querySelector("summary").getBoundingClientRect();
-    const h = pop.offsetHeight;
-    pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
-    // Open downwards unless that would run under the bottom nav (or off-screen) — then up.
-    const nav = document.getElementById("nav")?.getBoundingClientRect();
-    const floor = nav && nav.top > innerHeight / 2 ? nav.top - 4 : innerHeight - 8;
-    pop.style.top = `${r.bottom + 4 + h > floor ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+    // Placed now and again on the next frame: a card that straightens while its
+    // menu is open (or a panel still settling) moves the toggle under us.
+    const place = () => {
+      if (!menu.open) return;
+      const r = menu.querySelector("summary").getBoundingClientRect();
+      const h = pop.offsetHeight;
+      pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
+      // Open downwards unless that would run under the bottom nav (or off-screen) — then up.
+      const nav = document.getElementById("nav")?.getBoundingClientRect();
+      const floor = nav && nav.top > innerHeight / 2 ? nav.top - 4 : innerHeight - 8;
+      pop.style.top = `${r.bottom + 4 + h > floor ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+    };
+    place();
+    requestAnimationFrame(() => { place(); requestAnimationFrame(place); });
     window.addEventListener("scroll", () => { menu.open = false; }, { once: true, capture: true });
   });
   return menu;
@@ -543,4 +560,105 @@ export function placeHow(cardEl, note) {
   const anchor = cardEl.querySelector(":scope > .card__head") || cardEl.querySelector(":scope > .sheet__section");
   if (anchor) anchor.after(note); else cardEl.prepend(note);
   cardEl.classList.add("card--how");
+}
+
+
+// ---- Words you can tap (radical redesign) -----------------------------------
+// The game's vocabulary, wherever it appears in running text, becomes a small
+// button that opens its one-line meaning from the glossary — so prose never has
+// to stop and explain itself. Only the first mention of each term is linked.
+const TERM_WORDS = [
+  ["Base Dice", /\bbase dice\b/i], ["Push", /\bpush(?:ed|ing|es)?\b/i], ["Bane", /\bbanes?\b/i],
+  ["Resolve", /\bresolve\b/], ["Health", /\bHealth\b/], ["Broken", /\bbroken\b/i], ["Critical injury", /\bcritical injur(?:y|ies)\b/i],
+  ["Shift", /\bShifts?\b/], ["Downtime", /\bdowntime\b/i], ["Promotion Points", /\bpromotion points?\b/i],
+  ["Chinyen Points", /\bchinyen(?: points?)?\b/i], ["Humanity Points", /\bhumanity(?: points?)?\b/i],
+  ["Baseline Test", /\bbaseline test\b/i], ["Scene Check", /\bscene check\b/i], ["Question Check", /\bquestion check\b/i],
+  ["Countdown Event Check", /\bcountdown\b/i], ["Hypothesis", /\bhypothes(?:is|es)\b/i], ["Initiative card", /\binitiative\b/i],
+  ["Engaged", /\bengaged\b/i], ["Prey / pursuer", /\b(?:prey|pursuer)\b/i], ["Specialty", /\bspecialt(?:y|ies)\b/i],
+];
+export function termify(text) {
+  const out = [];
+  let rest = String(text ?? "");
+  const used = new Set();
+  for (;;) {
+    let best = null;
+    for (const [term, rx] of TERM_WORDS) {
+      if (used.has(term)) continue;
+      const m = rest.match(rx);
+      if (m && (best === null || m.index < best.m.index)) best = { term, m };
+    }
+    if (!best) break;
+    used.add(best.term);
+    out.push(rest.slice(0, best.m.index));
+    const g = GLOSSARY.find((x) => x.term === best.term);
+    out.push(g ? el("button", { class: "term", type: "button", "aria-label": `What does \u201c${best.m[0]}\u201d mean?`,
+      onClick: (e) => { e.stopPropagation(); openTerm(g); } }, best.m[0]) : best.m[0]);
+    rest = rest.slice(best.m.index + best.m[0].length);
+  }
+  out.push(rest);
+  return out.filter((x) => x !== "");
+}
+function openTerm(g) {
+  modal({ title: g.term, render(body, close) {
+    body.append(el("p", { class: "term-def" }, g.text),
+      el("div", { class: "modal__actions" }, el("button", { class: "btn btn--primary", onClick: () => close() }, "Got it")));
+  } });
+}
+
+// ---- One-time hints (coach marks) -------------------------------------------
+// A hint shows the FIRST time its moment comes round, stays while that moment
+// is on screen (the token), and never again once dismissed or moved past.
+const HINTS_KEY = "brp:hints";
+function hintsRead() { try { return JSON.parse(localStorage.getItem(HINTS_KEY) || "{}") || {}; } catch { return {}; } }
+function hintsWrite(h) { try { localStorage.setItem(HINTS_KEY, JSON.stringify(h)); } catch { /* best effort */ } }
+export function hint(key, text, token = "1") {
+  const h = hintsRead();
+  if (h[key] === undefined) { h[key] = String(token); hintsWrite(h); }
+  else if (h[key] !== String(token)) return null;
+  const box = el("div", { class: "hint", role: "note" },
+    el("span", { class: "hint__icon" }, icon("bulb")),
+    el("span", { class: "hint__text" }, ...termify(text)),
+    el("button", { class: "hint__ok", type: "button", "aria-label": "Got it — hide this tip", onClick: () => { const x = hintsRead(); x[key] = "done"; hintsWrite(x); box.remove(); } }, "Got it"));
+  return box;
+}
+
+// ---- Ambient rain (sound) -----------------------------------------------------
+// Filtered noise that sounds like rain on glass. Off by default; it can only
+// start after a tap (browsers block audio before one), and stops when hidden.
+let rainAudio = null;
+function rainStart() {
+  if (rainAudio || !Settings.ambient()) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    let last = 0, seed = 1;
+    for (let i = 0; i < len; i++) { seed = (seed * 16807) % 2147483647; const w = (seed / 2147483647) * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.2; }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1400;
+    const gain = ctx.createGain(); gain.gain.value = 0.18;
+    src.connect(lp).connect(gain).connect(ctx.destination); src.start();
+    rainAudio = ctx;
+  } catch { rainAudio = null; }
+}
+function rainStop() { try { rainAudio?.close(); } catch { /* ignore */ } rainAudio = null; }
+export function bindAmbient() {
+  const kick = () => { if (Settings.ambient()) rainStart(); };
+  document.addEventListener("pointerdown", kick, { passive: true });
+  window.addEventListener("brp:ambient", () => (Settings.ambient() ? rainStart() : rainStop()));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) rainStop(); });
+}
+
+// Type a short line in, a letter at a time (CSS delays on per-letter spans), so
+// the text is whole in the DOM from the start — screen readers and tests read
+// the full line; only the paint is staggered. Words never break mid-word.
+export function typeText(text, { step = 28 } = {}) {
+  let i = 0;
+  const out = [];
+  for (const word of String(text).split(/(\s+)/)) {
+    if (/^\s+$/.test(word)) { out.push(document.createTextNode(word)); i++; continue; }
+    const w = el("span", { class: "type__word" });
+    for (const ch of word) w.append(el("span", { class: "type__ch", style: `--d:${(i++ * step)}ms` }, ch));
+    out.push(w);
+  }
+  return out;
 }

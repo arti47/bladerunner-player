@@ -1051,7 +1051,12 @@ export function rollCombatDeathProcedure(c, inj, mode, commit) {
   });
 }
 
-export function rollCombatAttack(c, commit) {
+// The fight stage lets you tap the one you are attacking first: that target is
+// carried into the attack (the ranged target chip, or straight to the opposed
+// roll), and you still choose the weapon.
+let pendingTarget = null;
+export function rollCombatAttack(c, commit, { targetId = null } = {}) {
+  pendingTarget = targetId;
   if (c.dead) { showToast(`${c.name} is dead — no more attacks.`, { kind: "warn" }); return; }
   if (c.health <= 0) { showToast(`${c.name} is Broken — attack rolls blocked.`, { kind: "warn" }); return; }
   const rc = resolveCombatant(c);
@@ -1108,7 +1113,8 @@ function openRangedAttack(c, rc, w, commit) {
   const skLv = rc.skills[skKey] || "D";
   const enemies = Combat.get().combatants.filter((x) => x.id !== c.id);
   const st = { adv: 0, dis: 0, aiming: false, fullAuto: false, phase: "config", dice: null, pushed: false, note: null,
-    targetId: enemies[0]?.id || null, armorRes: null, applied: false };
+    targetId: (pendingTarget && enemies.some((e) => e.id === pendingTarget) ? pendingTarget : enemies[0]?.id) || null, armorRes: null, applied: false };
+  pendingTarget = null;
   const targetOf = () => Combat.get().combatants.find((x) => x.id === st.targetId) || null;
 
   modal({
@@ -1293,6 +1299,9 @@ function openOpposedMelee(c, rc, w, commit) {
     showToast("No active opponents in combat to oppose.", { kind: "warn" });
     return;
   }
+  const picked = pendingTarget && enemies.find((e) => e.id === pendingTarget);
+  pendingTarget = null;
+  if (picked) { runOpposedMeleeModal(c, rc, w, picked, resolveCombatant(picked), commit); return; }
   modal({
     title: `Opposed Melee — ${w.name}`,
     render(body, close) {

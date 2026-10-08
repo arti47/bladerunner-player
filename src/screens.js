@@ -1,13 +1,15 @@
 // screens.js — top-level screen renderers (home / characters / rules / settings)
 // + party banner. Wizard, sheet, combat, gm, solo mount from their own modules.
 import { el, clear, icon, titleCase } from "./core.js";
-import { emblem, natureMark, portraitPlaceholder, ringGauge, emptyScene, skyline } from "./art.js";
+import { emblem, natureMark, portraitPlaceholder, ringGauge, emptyScene, skyline, stamp } from "./art.js";
+import { bigScene } from "./scenes.js";
+import { Cases, isSolved } from "./solo.js";
 import * as D from "../data.js";
 import * as S from "../data-solo.js";
 import { NPCS, NPC_BUILD } from "../data-npcs.js";
 import { Store, RollLog } from "./store.js";
 import { Settings, TOGGLES, THEMES, TEXT_SIZES } from "./settings.js";
-import { showToast, promptModal, confirmModal, rollLogCard, openShortcuts } from "./ui.js";
+import { showToast, promptModal, confirmModal, rollLogCard, openShortcuts, typeText } from "./ui.js";
 import { maxHealth, maxResolve } from "./derived.js";
 import { navigate } from "./router.js";
 import { Sync, linkGoogle, createCampaign, joinCampaign, leaveCampaign, accountLabel, retrySync } from "./sync.js";
@@ -27,30 +29,15 @@ export function renderHome(mount) {
   const chars = Store.list();
   const active = Store.getActive();
   const rerender = () => renderHome(mount);
-  // The app bar already names the app, so Home's heading is for screen readers
-  // and the one-line description sits under it quietly.
-  const body = el("section", { class: "screen" },
+  // No paragraphs (radical redesign): a fresh install is a cold open — the
+  // city, one line, one button. With a detective it is their card and the one
+  // thing to do next. Everything else lives in the Menu.
+  const body = el("section", { class: "screen home" },
     el("h1", { class: "visually-hidden" }, "Blade Runner Player"),
-    el("p", { class: "muted small home-tagline" }, "A player companion for the Blade Runner RPG — create Blade Runners, track cases, and roll the dice."),
     renderPartyBanner(),
-    startHereCard(chars, rerender),
-    active ? heroCard(active) : el("div", { class: "card" },
-          chars.length || dismissed() ? skyline("home-sky") : null,
-          el("p", {}, "No active character yet."),
-          el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "Create a Blade Runner")),
-    el("div", { class: "home-grid" },
-      tile("Characters", `${chars.length} saved`, () => navigate("characters"), "people"),
-      tile("New Blade Runner", "Creation wizard", () => navigate("wizard"), "pen"),
-      tile("How to Play", "Solo & table tutorial", () => navigate("tutorial"), "book"),
-      tile("Rules Library", "Searchable reference", () => navigate("rules"), "library"),
-      tile("Combat Tracker", "Initiative & vitals", () => navigate("combat"), "attack"),
-      Settings.solo() ? tile("Play", "Guided solo — one question at a time", () => navigate("solo"), "play") : null,
-      Settings.gm() ? tile("GM Screen", "Run the table", () => navigate("gm"), "gm") : null,
-      tile("Settings", "Theme & toggles", () => navigate("settings"), "settings"),
-    ),
-  );
+    active ? heroCard(active) : coldOpen(chars, rerender));
   const rolls = RollLog.list();
-  if (rolls.length) {
+  if (active && rolls.length) {
     body.append(rollLogCard({ emptyHint: "Open sheet and roll something.",
       open: false,
       entries: rolls.slice(0, 20).map((e) => (e.charName ? { ...e, label: `${e.charName} · ${e.label}` } : e)),
@@ -60,52 +47,35 @@ export function renderHome(mount) {
   }
   mount.append(body);
 }
-// First-run guidance. A newcomer lands on a screen of equal-looking tiles with
-// no idea that Solo Mode is a toggle, or which order to do things in — so until
-// they have a character (or dismiss it) the path is spelled out.
-const ONBOARD_KEY = "brp:onboarded";
-const dismissed = () => { try { return localStorage.getItem(ONBOARD_KEY) === "1"; } catch { return false; } };
-function startHereCard(chars, rerender) {
-  if (chars.length || dismissed()) return null;
+// The whole cold start in one press: Solo Mode on, a detective, then play.
+function justPlay() {
+  if (!Settings.solo()) Settings.set("solo", true);
+  if (!Store.getActive()) { showToast("Deal yourself a detective — then the case begins."); navigate("wizard"); return; }
+  try { const st = JSON.parse(localStorage.getItem("brp:solo") || "{}"); st.panel = "play"; localStorage.setItem("brp:solo", JSON.stringify(st)); } catch {}
+  navigate("solo");
+}
+function coldOpen(chars) {
   const solo = Settings.solo();
-  const step = (n, title, text, label, onClick, done) => el("li", { class: "start__step" + (done ? " start__step--done" : "") },
+  const step = (n, title, label, onClick, done) => el("li", { class: "start__step" + (done ? " start__step--done" : "") },
     el("span", { class: "start__n" }, done ? "✓" : String(n)),
-    el("span", { class: "start__body" },
-      el("span", { class: "start__title" }, title),
-      el("span", { class: "start__text muted" }, text),
-      label ? el("button", { class: "btn btn--sm" + (done ? " btn--ghost" : " btn--primary"), onClick }, label) : null));
-  return el("div", { class: "card card--active start" },
-    skyline("home-sky"),   // round 4: the city you are about to work in
-    el("div", { class: "card__eyebrow" }, "New here?"),
-    el("div", { class: "card__title" }, "Start here"),
-    el("p", { class: "muted" }, "You don't need the rulebook, and you don't need to have played one of these before. One button: the app turns on what it needs, rolls you a detective if you have none, and then asks you one question at a time."),
-    el("div", { class: "btn-row" },
-      el("button", { class: "btn btn--primary", onClick: () => {
-        // The whole cold start, in one press: solo on, a detective, then play.
-        if (!solo) Settings.set("solo", true);
-        if (!Store.getActive()) { showToast("Roll a detective — then press ▶ Play in the Solo tab."); navigate("wizard"); return; }
-        try { const st = JSON.parse(localStorage.getItem("brp:solo") || "{}"); st.panel = "play"; localStorage.setItem("brp:solo", JSON.stringify(st)); } catch {}
-        navigate("solo");
-      } }, "▶ Just start playing")),
-    el("p", { class: "muted small" }, "It walks you through a whole case — where to go, what to do there, what you found, and how it ends. Nothing to read first."),
-    el("details", { class: "rules__group" },
-      el("summary", {}, "I'd rather set it up myself"),
-      el("ol", { class: "start__list" },
-        step(1, "Read the walkthrough", "How to Play explains the whole loop — what to press, and when.", "Open How to Play", () => navigate("tutorial")),
-        step(2, "Playing on your own? Turn on Solo Mode", "It adds a Solo tab that takes the Game Runner's job: dice answer your questions.",
-          solo ? "Solo Mode is on" : "Turn on Solo Mode",
-          // navigate() re-renders through the router, so the Solo tab appears in
-          // the bottom nav immediately — a local rerender would only redraw Home.
-          () => { Settings.set("solo", !solo); showToast(solo ? "Solo Mode off." : "Solo Mode on — see the Solo tab."); navigate("home"); }, solo),
-        step(3, "Create a Blade Runner", "The wizard walks it; every step can be rolled for you if you'd rather not choose.", "Create a Blade Runner", () => navigate("wizard")))),
-    el("button", { class: "btn btn--ghost btn--sm", onClick: () => { try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {} rerender(); } }, "Hide this"));
+    el("span", { class: "start__body" }, el("span", { class: "start__title" }, title),
+      label ? el("button", { class: "btn btn--sm" + (done ? " btn--ghost" : ""), onClick }, label) : null));
+  return el("div", { class: "cold start" },
+    el("div", { class: "cold__art" }, bigScene("cold", "home"), skyline("home-sky")),
+    el("div", { class: "cold__copy" },
+      el("p", { class: "cold__kicker" }, "LAPD · Rep-Detect"),
+      el("p", { class: "cold__line" }, ...typeText(chars.length ? "Your detectives are on file." : "Dispatch has a case for you.", { step: 45 })),
+      el("button", { class: "btn btn--primary cold__go", onClick: justPlay }, "▶ Just start playing"),
+      chars.length ? el("button", { class: "btn btn--ghost btn--sm", onClick: () => navigate("characters") }, "Choose a detective") : null,
+      el("details", { class: "cold__manual" },
+        el("summary", {}, "I'd rather set it up myself"),
+        el("ol", { class: "start__list" },
+          step(1, "Read the walkthrough", "How to Play", () => navigate("tutorial")),
+          step(2, "Playing alone? Turn on Solo Mode", solo ? "Solo Mode is on" : "Turn on Solo Mode",
+            () => { Settings.set("solo", !solo); showToast(solo ? "Solo Mode off." : "Solo Mode on."); navigate("home"); }, solo),
+          step(3, "Create a Blade Runner", "Create a Blade Runner", () => navigate("wizard"))))));
 }
 const archLabel = (key) => (key ? (D.ARCHETYPES.find((a) => a.key === key)?.name || titleCase(key)) : "No archetype");
-function tile(title, sub, onClick, iconName) {
-  return el("button", { class: "tile", onClick },
-    iconName ? el("span", { class: "tile__icon" }, icon(iconName)) : null,
-    el("span", { class: "tile__title" }, title), el("span", { class: "tile__sub muted" }, sub));
-}
 // The active character, front and centre: face, name, vitals, and the two
 // places you are most likely going next.
 function heroCard(ch) {
@@ -115,6 +85,7 @@ function heroCard(ch) {
   let caseOpen = null;
   try { caseOpen = JSON.parse(localStorage.getItem("brp:solo") || "{}").caseOpen || null; } catch { /* storage best-effort */ }
   return el("div", { class: "card card--hero hero" },
+    el("div", { class: "hero__scene", "aria-hidden": "true" }, bigScene("cold", ch.name)),
     el("div", { class: "hero__row" }, face,
       el("div", { class: "hero__id" },
         el("div", { class: "card__eyebrow" }, "Active character"),
@@ -127,10 +98,11 @@ function heroCard(ch) {
         el("span", { class: "pip" }, icon("badge"), `PP ${ch.state.promotionPoints}`),
         el("span", { class: "pip" }, icon("coin"), `¥ ${ch.state.chinyenPoints}`))),
     el("div", { class: "btn-row hero__actions" },
-      el("button", { class: "btn btn--primary", onClick: () => navigate("sheet") }, "Open sheet"),
+      // One amber button: the next thing to do. A case in progress beats the sheet.
       Settings.solo() && caseOpen && !ch.state?.dead
-        ? el("button", { class: "btn btn--roll", onClick: () => navigate("solo") }, `▶ Pick up case #${caseOpen.no}`)
-        : null));
+        ? el("button", { class: "btn btn--primary hero__go", onClick: () => navigate("solo") }, `▶ Pick up case #${caseOpen.no}`)
+        : !ch.state?.dead ? el("button", { class: "btn btn--primary hero__go", onClick: justPlay }, "▶ Play a case") : null,
+      el("button", { class: "btn btn--ghost", onClick: () => navigate("sheet") }, "Open sheet")));
 }
 function vitalsPips(ch) {
   return el("div", { class: "pips" },
@@ -142,8 +114,18 @@ function vitalsPips(ch) {
 }
 
 // ---- CHARACTERS -----------------------------------------------------------
+// Files: your detectives, and the cases they closed (radical redesign).
+let filesTab = "detectives";
 export function renderCharacters(mount) {
   clear(mount);
+  const rerender = () => renderCharacters(mount);
+  const seg = el("div", { class: "segmented files__tabs", role: "group", "aria-label": "Files" });
+  for (const [k, label] of [["detectives", "Detectives"], ["cases", "Case files"]])
+    seg.append(el("button", { class: "segmented__opt" + (filesTab === k ? " segmented__opt--on" : ""), "aria-pressed": filesTab === k ? "true" : "false",
+      onClick: () => { filesTab = k; rerender(); } }, label));
+  mount.append(screen("Files", seg, filesTab === "cases" ? caseFileList() : detectiveList()));
+}
+function detectiveList() {
   const chars = Store.list();
   const list = el("div", { class: "list" });
   if (!chars.length) list.append(emptyScene("character", "empty-scene--center"), el("p", { class: "muted empty empty--people" }, "No characters yet. Create your first Blade Runner."));
@@ -162,9 +144,29 @@ export function renderCharacters(mount) {
         el("span", { class: "list__sub muted char-row__kind" }, natureMark(ch.nature), emblem(ch.archetype), `${titleCase(ch.nature)} · ${archLabel(ch.archetype)}${ch.state?.dead ? " · deceased" : ""}`),
         ch.state && !ch.state.dead ? vitalsPips(ch) : null)));
   }
-  mount.append(screen("Characters",
-    el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "＋ New Blade Runner"),
-    list));
+  return el("div", {}, el("button", { class: "btn btn--primary", onClick: () => navigate("wizard") }, "＋ New Blade Runner"), list);
+}
+// Closed cases as a stack of folders, each stamped with how it ended.
+function caseFileList() {
+  const files = Cases.read().files;
+  if (!files.length) return el("div", { class: "card" }, emptyScene("leads", "empty-scene--center"),
+    el("p", { class: "muted empty empty--pen" }, "No closed cases yet. Close one from Case ▸ Kit ▸ Wrap, or by solving it."));
+  const list = el("div", { class: "files__cases" });
+  for (const f of files) {
+    const solved = isSolved(f.culprit);
+    list.append(el("article", { class: "card files__case" + (solved ? " files__case--solved" : " files__case--cold") },
+      el("div", { class: "files__tab" }, `CASE #${f.no}`),
+      stamp(solved ? "SOLVED" : "COLD", solved ? "ok" : "resolve"),
+      el("h2", { class: "card__title" }, f.title),
+      f.assignment ? el("p", { class: "muted small" }, f.assignment) : null,
+      el("p", {}, el("strong", {}, "Answer: "), f.culprit),
+      el("div", { class: "files__stats" },
+        el("span", { class: "pip" }, `${f.shifts} Shift${f.shifts === 1 ? "" : "s"}`),
+        el("span", { class: "pip" }, icon("badge"), `${f.pp >= 0 ? "+" : ""}${f.pp} PP`),
+        el("span", { class: "pip" }, icon("hand"), `${f.humanity >= 0 ? "+" : ""}${f.humanity} Humanity`),
+        f.character ? el("span", { class: "pip" }, f.character) : null)));
+  }
+  return list;
 }
 
 // ---- RULES LIBRARY (searchable) -------------------------------------------
@@ -172,11 +174,13 @@ export function renderRules(mount) {
   clear(mount);
   const results = el("div", { class: "rules" });
   const detail = el("aside", { class: "rules__detail", "aria-live": "polite" });
-  const search = el("input", { class: "input", type: "search", placeholder: "Search skills, specialties, gear, conditions…", "aria-label": "Search rules" });
+  const search = el("input", { class: "input", type: "search", placeholder: "Search any word — push, Shift, blaster…", "aria-label": "Search rules" });
   const count = el("span", { class: "rules__count muted" });
   const index = buildRulesIndex();
   const cats = [...new Set(index.map((r) => r.cat))];
-  let cat = null;          // a category chip narrows the list; null = all
+  // undefined = the topic grid (nothing listed until you search or pick);
+  // null = every entry ("All"); a name = that category only.
+  let cat = undefined;
   let selected = null;     // wide screens: the entry shown in the detail pane
   const chipRow = el("div", { class: "chips rules__cats", role: "group", "aria-label": "Categories" });
   const paintChips = () => {
@@ -204,6 +208,17 @@ export function renderRules(mount) {
   function run(q) {
     clear(results);
     const query = q.trim().toLowerCase();
+    // Search first: with nothing typed and nothing picked, show the topics as
+    // tiles instead of 400 entries.
+    if (!query && cat === undefined) {
+      count.textContent = "";
+      const grid = el("div", { class: "rules__topics" });
+      for (const c of cats) grid.append(el("button", { class: "rules__topic", onClick: () => { cat = c; paintChips(); run(search.value); } },
+        el("span", { class: "rules__topic-icon" }, icon(RULE_ICONS[c] || "book")), el("strong", {}, c),
+        el("span", { class: "muted small" }, String(index.filter((r) => r.cat === c).length))));
+      results.append(grid);
+      return;
+    }
     const hits = index.filter((r) => (!cat || r.cat === cat) && (!query || r.text.toLowerCase().includes(query)));
     count.textContent = query || cat ? `${hits.length} result${hits.length === 1 ? "" : "s"}` : "";
     const byCat = {};
@@ -228,7 +243,6 @@ export function renderRules(mount) {
   paintChips();
   paintDetail(null);
   mount.append(screen("Rules Library",
-    el("p", { class: "muted" }, "Everything the app knows, searchable. New to the game? Open Glossary first — it explains the words the rest of the app uses."),
     el("div", { class: "rules__bar" }, el("div", { class: "rules__search" }, search, count), chipRow),
     el("div", { class: "rules-layout" }, results, detail)));
   run("");
@@ -330,6 +344,7 @@ export function renderSettings(mount) {
     toggleRow(t.label, t.desc, !!Settings.get(t.key), (on) => { Settings.set(t.key, on); showToast(`${t.label} ${on ? "on" : "off"}`); navigate(location.hash.slice(1) || "settings"); }));
   bindSyncRerender();
   mount.append(screen("Settings & About",
+    group("Interface", list(...toggles("interface"))),
     group("Play modes", list(...toggles("modes"))),
     group("Appearance", list(themeControl(), textSizeControl(), ...toggles("appearance"))),
     group("Feel", list(...toggles("feel"))),
@@ -337,7 +352,7 @@ export function renderSettings(mount) {
     group("App",
       el("div", { class: "card" },
         el("div", { class: "card__title" }, "App version"),
-        el("p", { class: "muted" }, "The app updates itself from GitHub when a new version is deployed — you get a toast with an Update button. Check by hand here."),
+        el("p", { class: "muted" }, "Updates arrive by themselves."),
         el("button", { class: "btn btn--ghost", onClick: async (e) => {
           const b = e.currentTarget;
           b.disabled = true; b.textContent = "Checking…";
@@ -348,7 +363,6 @@ export function renderSettings(mount) {
         } }, "Check for updates")),
       el("div", { class: "card" },
         el("div", { class: "card__title" }, "How to Play"),
-        el("p", { class: "muted" }, "Step-by-step walkthroughs for running a case solo or at a table, plus a cheat sheet."),
         el("button", { class: "btn btn--ghost", onClick: () => navigate("tutorial") }, "Open the tutorial →"),
         el("button", { class: "btn btn--ghost only-fine-pointer", onClick: openShortcuts }, "Keyboard shortcuts (?)")),
       el("div", { class: "about muted" },
@@ -374,7 +388,7 @@ function themeControl() {
   return el("div", { class: "settings__row settings__row--static" },
     el("span", { class: "settings__text" },
       el("span", { class: "settings__label" }, "Theme"),
-      el("span", { class: "settings__desc muted" }, "Neo-noir dark, noir-by-day light, or follow your device.")),
+      el("span", { class: "settings__desc muted" }, "Dark, light, or your device's.")),
     seg);
 }
 function textSizeControl() {
@@ -391,7 +405,7 @@ function textSizeControl() {
   return el("div", { class: "settings__row settings__row--static" },
     el("span", { class: "settings__text" },
       el("span", { class: "settings__label" }, "Text size"),
-      el("span", { class: "settings__desc muted" }, "Makes every word and control larger. The layout reflows to fit.")),
+      el("span", { class: "settings__desc muted" }, "Everything larger.")),
     seg);
 }
 const mount = () => document.getElementById("screen");

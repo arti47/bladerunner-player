@@ -409,7 +409,11 @@ case* / *Give me a different one*, and only the acceptance asks for a name and w
 briefing to the notes. Home's first-run card is now a single
 **▶ Just start playing** that turns Solo Mode on, sends you to the wizard if you have no
 character, and otherwise opens this panel; the manual three-step setup is demoted behind a
-collapsed "I'd rather set it up myself".
+collapsed "I'd rather set it up myself". **Scene-first (2026-10-07):** for a Rookie the panel is
+the whole screen — a slim status bar with the **Kit**, a full-width picture of the moment
+(`src/scenes.js`), the **city map** when choosing where to go (a pin per place the Location
+tables offered; tapping one travels), and the card with big choice tiles. It still holds no
+rules: the map pins are the same `goTo()` the tiles call.
 
 **3.19 Meaning Tables — HOUSE AID, not canon** (`data-meanings.js` + `src/meanings.js`,
 owner request 2026-10-01). The GM-emulator "meaning table" *procedure* — roll on two
@@ -662,6 +666,46 @@ reads an undefined custom property or if any text role drops below WCAG AA.
   phone** too, looping along the right edge. Defects: the mini-vitals bar floats (no blank band
   above the ID card), the panel drawing skips the roll-log card and is fainter on paper, Home
   tiles fill the last row, a wrapped button row fills each line.
+- **Radical redesign (2026-10-07) — the app is the game.** **Navigation:** four bottom
+  destinations — **Case** (the guided solo case when Solo Mode is on, the lobby otherwise) ·
+  **Detective** (the sheet) · **Files** (detectives + closed case files) · **Menu** (a bottom
+  sheet: Home, Combat tracker, Rules, How to play, GM screen, Settings). **Rookie / Veteran**
+  (`Settings.veteran()`, default Rookie, `data-ui` on the root): Rookie keeps ▶ Play as the
+  whole screen — a slim status bar (`.vn__bar`: name, ♥/◈ meters, Shift clock, timer, **Kit**)
+  over a **full-width scene** and one card; the Kit opens the toolbox (HUD + the eight tabs,
+  `st.lastKit` remembers the tab) and the ▶ Play pill comes back. Veteran shows the tabs and HUD
+  on the scene too, and the sheet's vitals buttons always. **Scenes** (`src/scenes.js`):
+  `bigScene(kind, seed)` — a seeded night skyline, rain, wet-street reflections and a foreground
+  per place word (street, building, bar, clinic, dock, factory, tower, shop, rooftop, transit,
+  tunnel, ruin) or moment (dispatch, travel, event, interrogation, evidence, solved, dead, cold);
+  `cityMap()` — an invented grid of blocks, a river and a freeway with a pin per place on offer
+  (tap to travel), dimmer pins where you have been and a marker where you are. Never film art.
+  **Play card:** a picture, a typed-in title on Dispatch, one or two lines (data text is shown
+  raw; app text gets **tappable game words** — `termify()` turns glossary terms into buttons that
+  open their one-line meaning), choices as **two-across tiles** (small options on a quieter chip
+  row), the guided roll's dice on the card, a witness/suspect as a **portrait set into the
+  scene**, a find as an **evidence tag**, and each find **flying onto the Case Board**.
+  **One-time hints** (`hint(key, text, token)`, `brp:hints`): the first case, the first trip
+  (Shift + Countdown), the first roll, the first push, the first suspect, the first accusation —
+  each shows once for its moment and "Got it" retires it. **Toasts are a one-line ticker** at the
+  top (a new plain message replaces the last; Undo/Update toasts stay). **Home** is a **cold open**
+  on a fresh install (the city, "Dispatch has a case for you.", ▶ Just start playing; the manual
+  steps folded) and, with a detective, their card with **one** amber next move — no tile grid.
+  **Files** adds a Case files tab (folders stamped SOLVED/COLD). **Rules** opens on **topic
+  tiles**; nothing is listed until you search or pick (All lists everything). **Wizard:** step 1
+  leads with **Deal me a detective**; Review is the **hand** — eight cards (nature, archetype,
+  years, strengths, memory, relationship, name, look), each **re-dealt on its own** (`redeal()`;
+  upstream kept, downstream re-rolled, legal by construction) or edited. **Sheet:** the ID card
+  over **four pages you swipe** — Status · Skills · Gear · Record — all in the DOM in a snap
+  carousel whose height follows the page (`brp:sheet.page` remembers it; a wound or breakdown sits
+  on Status; ≥900px the pages are columns); vitals side by side, the −/+ buttons behind **Adjust
+  by hand** in Rookie (`brp:sheet.adjust`); skills as **two-across tiles**. **Combat:** the
+  initiative strip is a **fight stage** of portrait tokens with Health bars — tap the actor to
+  open their row, tap anyone else to **attack them** with the actor (target carried into the
+  attack: `rollCombatAttack(c, commit, { targetId })`). **The dice moment:** a roll's result
+  fills a phone screen with bigger dice. **Notes** read as a **timeline** with a mark per entry
+  kind. **Rain sound** (`Settings.ambient()`, off) — filtered noise after a tap. Copy cut
+  throughout (Settings descriptions to a few words, the wizard's and sheet's notes to a line).
 - **Dice** wear their type: `die--d6|d8|d10|d12` silhouette + a `d10` size tag, and an
   `aria-label` naming die, face and result (`dieNode()` in `roller.js`).
 
@@ -692,6 +736,7 @@ reads an undefined custom property or if any text role drops below WCAG AA.
 | `src/play.js` | **Guided play** (§3.18): the one-question-at-a-time loop that drives the official machinery for someone who has read nothing |
 | `src/board.js` | Case Board (house aid, §3.17): the `Board` store (`brp:board`), the pure board operations, and the Solo ▸ Board panel |
 | `src/quick.js` | Quick-roll button + Ctrl+K palette (UX round 3) |
+| `src/scenes.js` | Big scene illustrations and the city map for guided play (radical redesign) |
 | `src/meanings.js` | Meaning Tables — house aid (§3.19): the roll, the shared card, the anywhere dialog |
 | `tests/reachability.test.mjs` | The reachability lens (§11.2): drives the real app and reports every finding per run. `tests/harness.mjs` holds the browser discovery + static server it shares. |
 | `.claude/agents/solo-rpg-playtester.md` | **Playtest agent** (owner-supplied, installed 2026-09-08). Plays a full solo session through the real UI — building its own Playwright driver — and reports where play stalls rather than whether the code is correct. AUDIT mode (seeded, ≥3 seeds, CI-gateable) and PLAY mode (one beat at a time, written up as a session). Complements the §11.2 lenses: they ask "is this reachable", it asks "can a person play a session". |
@@ -728,11 +773,12 @@ One module per responsibility; explicit `import`/`export`, nothing smuggled thro
 | `gm.js` | GM dashboard — panels follow the arc of a session: Prep · Play · Fight · Wrap · Notes. |
 | `tutorial.js` | "How to Play" — opens with **What is this?** (what a roleplaying game is, no jargon), then procedural walkthroughs (setup / solo / **Case Board** / table) + a live cheat sheet. Every number is read live from `data.js` / `data-house.js`. |
 | `screens.js` | Top-level screen renderers (home/rules/about) + party banner. |
-| `router.js` | Bottom-nav routing + conditional tab gating; preserves scroll on in-screen re-renders. |
+| `router.js` | Bottom nav (Case · Detective · Files · Menu) + the Menu sheet; preserves scroll on in-screen re-renders. |
 | `main.js` | Entry point / boot. |
 | `update.js` | PWA update flow: spot a new deploy, offer the toast, apply it and reload. |
 | `meanings.js` | Meaning Tables — **house aid** (§3.19). `rollMeaning(key)`, `meaningTables()`, the card Solo ▸ Scene and GM ▸ Prep share (`meaningCard`), and `openMeaningRoll` for Ctrl+K / quick roll. Holds no state; words live in `data-meanings.js`. |
 | `quick.js` | The quick-roll button (roll any skill from any screen) and the Ctrl+K command palette (every screen, Solo tab and skill roll). Holds no rules and no state. |
+| `scenes.js` | `bigScene(kind, seed)` and `cityMap({ options, visited, here, seed, onPick })` — seeded, original noir illustrations for ▶ Play, Home and the Files hero. Decorative (`aria-hidden`); never draws from `Math.random`. |
 
 *(`power-automation.js` omitted unless Stage A finds a §3.9 subsystem.)*
 
@@ -786,15 +832,17 @@ prey, pursuer, vehicles{prey,pursuer}, hull{prey,pursuer}, log[] }`. `distIdx` i
 character's points at the moment the case opened, so closing can report what the case paid;
 `charId` (2026-10-07) names that character, so switching the active character mid-case
 does not diff someone else's points (older cases fall back to the active character).
-`st.play` also carries `shift` (the Shift it is at a place in) and each Play suspect a `lead`
-flag once a Leads hypothesis owns its rating.
+`st.play` also carries `shift` (the Shift it is at a place in), `visited[]` and `lastPlace`
+(the city map's pins), and each Play suspect a `lead` flag once a Leads hypothesis owns its
+rating; `st.lastKit` is the toolbox tab the Kit button reopens.
 **Closed case files live in their own key, `brp:cases`** — `{ files[{ id, no, title,
 assignment, culprit, outcome, shifts, pp, humanity, opened, closed, character }], nextNo }`
 — deliberately outside `brp:solo` so "Start a fresh case" cannot wipe the record.
 
 **Per-device view preferences** (local-only, not case data): `brp:palette.recent` (the
-last five Ctrl+K picks), `brp:sheet.moreOpen` (the
-sheet's More expander), `brp:solo.introSeen` / `brp:gm.introSeen` (the first-visit
+last five Ctrl+K picks), `brp:sheet.page` (the sheet page last shown) and `brp:sheet.adjust`
+(the vitals buttons shown in Rookie), `brp:hints` (`{ key: token | "done" }` — one-time hints),
+`brp:sheet.moreOpen` (legacy, unused since the pages), `brp:solo.introSeen` / `brp:gm.introSeen` (the first-visit
 one-liner), and `brp:settings.guidance` (§5.1).
 
 **Case Board state** (local-only, house aid, §3.17) lives under `brp:board` via `board.js`
@@ -833,8 +881,8 @@ with a one-line description, every related UI checks the flag before rendering, 
 tabs for gated modes are hidden by the router when off. Explicit user choice always beats
 role-based defaults (store `true`/`false` distinctly from unset).
 
-Toggles for this project: **solo mode** · **GM screen** · **advanced/GM automation** (if
-built) · **guidance** (defaults ON: `guidance() → get("guidance") !== false`) · **rain** (defaults ON, dark theme only) · **haptics** (defaults ON) · **dice sound** (off). **Text size** (100/115/130 %) sits beside Theme in Appearance. No expansion toggles (§0.2). **Theme** is not a toggle but a three-way choice
+Toggles for this project: **Veteran interface** (off = Rookie, the default) · **solo mode** · **GM screen** · **advanced/GM automation** (if
+built) · **guidance** (defaults ON: `guidance() → get("guidance") !== false`) · **rain** (defaults ON, dark theme only) · **haptics** (defaults ON) · **dice sound** (off) · **rain sound** (`ambient`, off). **Text size** (100/115/130 %) sits beside Theme in Appearance. No expansion toggles (§0.2). **Theme** is not a toggle but a three-way choice
 (Dark · Light · System, default Dark) in Settings ▸ Appearance (§5.1).
 
 ---
@@ -971,7 +1019,7 @@ Build strictly in order:
   incl. 130 % text). **Round 3 (same day, one batch):** card headers + (i) guidance, two-row
   HUD, GM header, grouped settings, destination cards, cinematic roll result, ID-card sheet
   header, avatars, panel art, empty-state art, initiative strip + hit feedback, tap-to-roll,
-  quick-roll button, Ctrl+K palette, tab dots, masonry/micro-interactions/nav bar. **Round 4** (one batch) and **round 5** (portraits, signals, dice, weapons, case-file notes, clocks, dials, tutorial/rules art, folders, atmosphere). Spec: §5.1.
+  quick-roll button, Ctrl+K palette, tab dots, masonry/micro-interactions/nav bar. **Round 4** (one batch) and **round 5** (portraits, signals, dice, weapons, case-file notes, clocks, dials, tutorial/rules art, folders, atmosphere). **Radical redesign (2026-10-07):** the app is the game — four destinations, Rookie/Veteran, scene-first ▶ Play with a city map, cold open, Files, search-first rules, a dealt detective, sheet pages, fight stage, dice moment, timeline notes, hints, tappable words, a ticker. Spec: §5.1.
 - [x] **Security follow-up (closed 2026-07-28):** RTDB rules hardened (no character seizure
   via `newData.owner`, no self-promotion to `gm`, join codes no longer enumerable, plus
   `.validate` on owner/campaignId/role/portraitUrl) and **`storage.rules` is now tracked in
@@ -1222,3 +1270,4 @@ static files. No build step and no Actions workflow — `git push` to `main` *is
 | 2026-10-01 | **UX round 5 — audit + one batch (visuals).** Audit of 40 screens found 7 defects: a ~70px blank band above the sheet's ID card (the hidden mini-vitals bar was `position: sticky` and kept its layout height), the panel drawing colliding with the Roll Log's count, the drawing reading as a pasted box on light paper, an empty cell beside Settings on Home, portrait initials across the face, ragged wrapped button rows, and no strings on a one-column Case Board. All fixed. Built (owner choices): generated noir portraits; ECG/waveform vitals; die-shape attributes, grade meters, stamped tokens, weapon silhouettes; case-file notes; floating change numbers; d6 pips, bounce and crit sparks; Shift clock (new `SHIFTS_PER_DAY = 4` in `data.js`, from TIME_UNITS — §10.2); lead dials; tutorial spot art + neon numerals; Rules section icons + glossary monograms; folder-stack case files; wizard timeline + die chips; skyline floor, passing Spinner light, light paper grain; five empty scenes; board strings on a phone. Text content unchanged. Meaning tables (owner request) drafted separately for review — not in this change. | Owner: round-5 UX audit | `npm test` → **227 pass / 0 fail / 0 skipped**. Two existing checks moved: round 4 now finds the Shift clock where the Shift drawing was, and `--sky-y` gets a CSS default (the custom-property check caught it). Sweep 84 renders, zero errors, zero overflow. New smoke check covers every item (portrait stability, initials in the corner, no band above the ID card, two signals and flat at 0, 4 die shapes, 13 meters with B = 3 lit, round tokens, inventory/picker weapon kinds, journal scene, a −1 float, d6 pips on a real roll, HUD/Shift clocks, a lead dial's label, typed notes, two folder tabs, a phone board string, tutorial spots + numeral with label text intact, rules icons + monogram, wizard timeline + 4 die chips, skyline floor dark-only, paper grain, no Home hole, no overflow, no errors). | brp-v82 |
 | 2026-10-01 | **Meaning Tables — the second house aid (owner request; words owner-approved).** New `data-meanings.js` (6 tables × 2 columns × D100 = 1,200 original, setting-neutral neo-noir words, `HOUSE_AID`, `MEANING_DIE`) and `src/meanings.js` (`rollMeaning`, `meaningTables`, `meaningCard`, `openMeaningRoll`), both in the SW shell. Reach, as the owner chose: a house-aid card on Solo ▸ Scene and GM ▸ Prep; every table in Ctrl+K and the quick-roll sheet (dialog with Reroll and Pin to case notes, logged to the roll log); ▶ Play's *✦ Give me an idea* (Locations / Actions / Characters by moment, shown on the card and written to the notes); and rolled Case Board boxes keep their official name and gain a meaning-table `prompt` (Objects / Characters). The official Cipher is untouched. §1, §3.19, §6, §6.1, §7 (box `prompt`), §12 updated. | Owner: "I am thinking of generating a meanings table… specific for this game" → 7 answers → "good to go" | `npm test` → **229 pass / 0 fail / 0 skipped** (the GM panel-order check now expects the Meaning tables card on Prep). New unit check: six tables, both columns exactly D100 with no repeats, the file labelled HOUSE AID / original, and no canonical file or `data-house.js` holding any of it. New smoke check: the Scene card's six buttons and an inline Actions pair drawn from the table, the GM Prep card, Ctrl+K → Events dialog + Pin into the notes, quick roll's six rows under a house-aid heading, a Play idea on the card and in the notes, a rolled Board clue carrying an Objects prompt. The round-3 quick-roll check now counts skill rows by their dice icon. | brp-v83 |
 | 2026-10-07 | **Linkage audit — every surface that shares state now shares it (owner: "are all the parts / tabs that need to be linked together linked?").** Seven gaps, all fixed. **(1) Countdown twice in one Shift (rules):** ▶ Play rolled its own check without marking the Shift, so the Shift tab could roll it again, and a check made on the Shift tab was re-rolled by Play — the book allows one per Shift. Play now marks `shiftFlags.countdown`, holds a fired event in `st.pendingEvent` (the Scene tab's Interruption), uses the Shift tab's result if it was already rolled, and clears the event on *Go in*. **(2) Sheet Shifts did not move the case:** the sheet's Investigation / Downtime / purchase Shifts advanced the character but not the case's Shift counter, markers or pending event — new `advanceSoloShift()` in `store.js` (Solo on, case open, the active character) does, and writes the line into the notes. **(3)** Play stayed "at" a place after the Shift ended on another tab — it now returns to *Where do you go?* and says why; Play's own Shift end also warns of an owed Shift-interval death save (it skipped `warnShiftSaves`). **(4) Leads ↔ Play:** a lead re-rated or deleted on Leads kept its old rating or stayed accusable in Play — Play reads ratings from Leads and drops a suspect whose lead is gone. **(5) Tracker ↔ sheet:** a PC combatant was a snapshot — push banes, heals, GM damage, Prone or a crit on the sheet never reached the fight (so the attack engine read stale conditions). `syncPcs()` re-reads Health, max, conditions, injuries and death from the sheet on every render; a PC's condition chip and a spent aim write to the sheet; the five tracker paths that wrote a PC (damage, spill, death save, stabilize, aim) write the sheet *before* committing. **(6) Chase caught (rules):** the free attack opened the player's full weapon picker whichever side they were on — the book gives it to the **pursuer**, Hand-to-Hand. An NPC pursuer now rolls it at its level; yours offers close-combat weapons only (`openWeaponPicker(…, { closeOnly })`). **(7)** Closing a case diffed the *active* character's points — switch characters mid-case and the file recorded the partner's. `caseOpen.charId` now names the case's detective. §10.12–13 record the owner's reporting rule and the shared-state owners. | Owner: linkage audit, "always make sure this app still faithful to rules" | `npm test` → **230 pass / 0 fail / 0 skipped**. New smoke check drives all seven: no second Countdown after the Shift tab's (timer unchanged, the Shift tab's event on the way), Play's check marking the Shift and the Scene interruption, a sheet Investigation Shift moving the case to Shift 2 and Play back to *Where do you go?*, a D10 rating and a dropped lead read from Leads, the tracker showing the sheet's 3/6 and Prone and writing In Cover back, both caught branches (NPC roll; close-only picker), and a case filed at Kaz's +2 with the partner active. | brp-v84 |
+| 2026-10-07 | **Radical redesign — the app is the game (owner: "cluttered, too wordy, not enough graphics… intimidating… be as radical as possible"; then "follow all your recommendations").** Measured first (22 screens at 390px): ~250px of chrome above ▶ Play, 18–55 controls per Solo tab, 333 words on Scene, 5 amber buttons on a fresh Home, a 3,051px sheet with 92 controls, no large picture anywhere. Built, all 21 recommendations (the Visual-novel direction; the desk alternative was not taken): **(1)** four destinations — Case · Detective · Files · Menu (a bottom sheet for Home, Combat, Rules, How to play, GM, Settings); **(2)** Rookie/Veteran (`veteran`, default Rookie): the toolbox, HUD and vitals buttons step back for a Rookie; **(3)** ▶ Play as a visual novel — a slim bar with the Kit, a full-width picture per moment, one card, tiles; **(4)** new `src/scenes.js`: seeded original noir scenes (12 place kinds + 8 moments) and a made-up **city map** whose pins travel; **(5)** a cold-open Home and a hero with one next move (no tile grid); **(6)** the first case teaches itself through **one-time hints** (`hint()`, `brp:hints`); **(7)** a **dealt detective**: Deal me a detective, then a hand of eight cards each re-dealt on its own, legal by construction (`redeal()`, `quickBuild(lock)`); **(8)** portraits of witnesses and suspects set into the scene, finds as evidence tags that **fly onto the Case Board**; **(9)** **tappable game words** (`termify()` → glossary); **(10)** toasts as a **one-line ticker** at the top; **(11)** **Files** with a Case files tab; **(12)** **search-first Rules** (topic tiles); **(13)** the sheet as **four swipeable pages** (Status · Skills · Gear · Record) under the ID card, vitals side by side, skills as tiles, hand buttons behind *Adjust by hand*; **(14)** a **fight stage** — tap a rival to attack them with whoever is acting (`rollCombatAttack(…, { targetId })`); **(15)** the **dice moment** fills a phone screen; **(16)** **notes as a timeline**; **(17)** an optional **rain sound** (`ambient`); and copy cut throughout (Settings rows to a few words, play prose to a line or two). **Rules fidelity:** no mechanic changed — every scene, map pin and tile drives the same engine calls as before (the map pins call the same `goTo()`; the dealt hand re-runs the book's tables; the fight stage only pre-selects a target the attack already offered). **Caught in build:** the art's entrance scaled it past the viewport for 300ms (a horizontal-overflow failure) — now opacity only; a clip-path typewriter cut multi-line titles mid-word — now per-letter spans (text whole in the DOM); the cold-open scene sliced into blobs in a tall box — now a wide band; a board ⋯ menu placed before its card straightened — re-placed over two frames; the mini-vitals bar ignored a Vitals card scrolled off *sideways* (another sheet page). | Owner: radical UX/UI rethink | `npm test` → **231 pass / 0 fail / 0 skipped**; 84-render sweep (360/390/1280 × dark/light) zero errors, zero overflow. 13 existing checks moved with the design (nav labels, Home hero, sheet pages, rules topics, the fight stage's tap, settings groups, FAB scroll distances, play prose), and one new check drives the whole redesign: the cold open, the four destinations, a dealt hand re-dealt five times and still legal, the scene with no tabs, a hint with a tappable word retired by Got it, the one-line ticker, a pin per place and a pin that travels, the Kit and back, Veteran's tabs, timeline marks, Files, topic tiles, the fight stage pre-selecting its target, and a full-screen roll result. | brp-v85 |

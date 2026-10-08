@@ -14,7 +14,7 @@ import { rollCombatAttack, rollCombatSkill, armorForCombatant as armorFor, rollC
 import { renderChaseCard } from "./chase.js";
 import { Settings } from "./settings.js";
 import { navigate } from "./router.js";
-import { avatar, emptyScene } from "./art.js";
+import { avatar, emptyScene, portraitPlaceholder } from "./art.js";
 
 const INIT_CARDS = D.INITIATIVE_CARDS; // 10
 
@@ -96,16 +96,31 @@ export function renderCombat(mount) {
     el("button", { class: "btn btn--sm btn--danger", onClick: async () => { if (await confirmModal("End combat and clear the tracker?", { title: "End combat", okLabel: "End", danger: true })) { Combat.clear(); renderCombat(mount); } } }, "End combat")) : null;
   // Turn order at a glance: mini cards in order, the current one lit; tap one
   // to open that row and bring it into view (round 3).
+  // The fight as a stage (radical redesign): everyone as a portrait token in
+  // turn order, with their card and Health. Tapping the one acting opens their
+  // row; tapping anyone else ATTACKS them with whoever is acting (you still pick
+  // the weapon — the target is already chosen).
   if (state.active && ordered.length > 1) {
-    const strip = el("div", { class: "init-strip", role: "list", "aria-label": "Turn order" });
+    const actor = ordered.find((x) => x.id === activeId);
+    const strip = el("div", { class: "init-strip fight-stage", role: "list", "aria-label": "Turn order" });
     for (const c of ordered) {
-      strip.append(el("button", { class: "init-strip__card" + (c.id === activeId ? " init-strip__card--on" : "") + (c.health <= 0 ? " init-strip__card--down" : ""),
-        role: "listitem", "aria-label": `${c.name} — card ${c.card ?? "none"}${c.id === activeId ? ", acting now" : ""}`,
-        onClick: () => { openRows.add(c.id); renderCombat(mount); requestAnimationFrame(() => document.querySelector(`.combatant[data-cid="${c.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })); } },
+      const isActor = c.id === activeId;
+      const canHit = actor && !isActor && !actor.dead && actor.health > 0;
+      const face = c.kind === "pc" ? portraitPlaceholder(c.name, "fight-token__face") : avatar(c.name, "fight-token__face");
+      strip.append(el("button", { class: "init-strip__card fight-token" + (isActor ? " init-strip__card--on" : "") + (c.health <= 0 ? " init-strip__card--down" : "") + (c.kind === "pc" ? " fight-token--pc" : ""),
+        role: "listitem", "aria-label": `${c.name} — card ${c.card ?? "none"}${isActor ? ", acting now" : canHit ? `, attack with ${actor.name}` : ""}`,
+        onClick: () => {
+          if (canHit) { rollCombatAttack(actor, commit, { targetId: c.id }); return; }
+          openRows.add(c.id); renderCombat(mount); requestAnimationFrame(() => document.querySelector(`.combatant[data-cid="${c.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+        } },
         el("span", { class: "init-strip__no" }, c.card ? `#${c.card}` : "—"),
-        el("span", { class: "init-strip__name" }, c.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 3).toUpperCase())));
+        face,
+        el("span", { class: "fight-token__hp", style: `--v:${c.maxHealth ? Math.max(0, c.health) / c.maxHealth : 0}` }),
+        el("span", { class: "init-strip__name" }, c.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 3).toUpperCase()),
+        canHit ? el("span", { class: "fight-token__aim", "aria-hidden": "true" }, "🎯") : null));
     }
     wrap.append(strip);
+    if (actor) wrap.append(el("p", { class: "muted small fight-stage__tip" }, `${actor.name} is acting — tap someone to attack them.`));
   }
   for (const c of ordered) {
     // Compact rows: while setting up, everyone is open; in a fight, the one

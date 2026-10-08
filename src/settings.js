@@ -12,6 +12,8 @@ const DEFAULTS = {
   haptics: true,        // a short buzz when dice land / damage lands (devices that vibrate)
   diceSound: false,     // a dice clatter on every roll (owner decision: off by default)
   textSize: "100",      // "100" | "115" | "130" — scales every rem in the stylesheet
+  veteran: false,       // Rookie (default) shows the game; Veteran shows every tool at once
+  ambient: false,       // ambient rain sound behind play (off by default)
 };
 
 function readAll() {
@@ -22,7 +24,7 @@ function writeAll(obj) { localStorage.setItem(KEY, JSON.stringify(obj)); }
 
 export const Settings = {
   get(k) { return readAll()[k]; },
-  set(k, v) { const all = readAll(); all[k] = v; writeAll(all); if (k === "guidance") applyGuidance(); if (k === "rain") applyRain(); if (k === "textSize") applyTextSize(); return v; },
+  set(k, v) { const all = readAll(); all[k] = v; writeAll(all); if (k === "guidance") applyGuidance(); if (k === "rain") applyRain(); if (k === "textSize") applyTextSize(); if (k === "veteran") applyInterface(); if (k === "ambient") window.dispatchEvent(new Event("brp:ambient")); return v; },
   all() { return readAll(); },
   // convenience flags
   solo() { return !!readAll().solo; },
@@ -32,6 +34,8 @@ export const Settings = {
   rain() { return readAll().rain !== false; },
   haptics() { return readAll().haptics !== false; },
   diceSound() { return !!readAll().diceSound; },
+  veteran() { return !!readAll().veteran; },
+  ambient() { return !!readAll().ambient; },
   textSize() { return TEXT_SIZES.includes(String(readAll().textSize)) ? String(readAll().textSize) : "100"; },
   theme() { return readAll().theme; },
   setTheme(t) { this.set("theme", THEMES.includes(t) ? t : "dark"); applyTheme(); return t; },
@@ -51,6 +55,11 @@ export function applyRain() {
 // every size and space in the token scale is in rem, so the whole UI follows.
 export function applyTextSize() {
   document.documentElement.dataset.text = Settings.textSize();
+}
+// Rookie / Veteran: one root attribute. Rookie (every new install) keeps the
+// game on screen and the toolbox one tap away; Veteran shows every tool at once.
+export function applyInterface() {
+  document.documentElement.dataset.ui = Settings.veteran() ? "veteran" : "rookie";
 }
 export function applyGuidance() {
   document.documentElement.dataset.guidance = Settings.guidance() ? "on" : "off";
@@ -79,11 +88,13 @@ export function applyTheme(theme = Settings.theme()) {
 }
 
 export const TOGGLES = [
-  { key: "solo", group: "modes", label: "Solo Mode", desc: "Playing on your own, with no one running the game? This adds a Solo tab where dice answer your questions and walk you through a case." },
-  { key: "gm", group: "modes", label: "GM Screen", desc: "Running the game for other people? This adds a GM tab: build the case, watch the party's health, drop in adversaries." },
-  { key: "advanced", group: "modes", label: "Advanced Automation", desc: "Extra helpers for experienced players. Leave it off to start." },
-  { key: "rain", group: "appearance", label: "Rain", desc: "Slow rain falling behind the dark theme. Hidden in light mode and when your device asks for reduced motion." },
-  { key: "haptics", group: "feel", label: "Haptics", desc: "A short buzz when your dice land or damage lands. Only on devices that can vibrate." },
-  { key: "diceSound", group: "feel", label: "Dice sound", desc: "A quiet clatter every time you roll. Off unless you turn it on." },
-  { key: "guidance", group: "feel", label: "Guidance", desc: "Show the \u201cHow to use this\u201d notes on the sheet, Solo and GM screens. Turn off once you know your way round." },
+  { key: "veteran", group: "interface", label: "Veteran interface", desc: "Every tool on screen at once: Solo tabs, vitals buttons, table tools." },
+  { key: "solo", group: "modes", label: "Solo Mode", desc: "Play alone — the dice run the case." },
+  { key: "gm", group: "modes", label: "GM Screen", desc: "Run the game for other people." },
+  { key: "advanced", group: "modes", label: "Advanced Automation", desc: "Extra helpers for experienced players." },
+  { key: "rain", group: "appearance", label: "Rain", desc: "Rain behind the dark theme." },
+  { key: "haptics", group: "feel", label: "Haptics", desc: "A buzz when dice or damage land." },
+  { key: "diceSound", group: "feel", label: "Dice sound", desc: "A clatter on every roll." },
+  { key: "ambient", group: "feel", label: "Rain sound", desc: "Soft rain under play." },
+  { key: "guidance", group: "feel", label: "Guidance", desc: "The (i) how-to notes on every card." },
 ];

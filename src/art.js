@@ -324,7 +324,7 @@ const PLACE_WORDS = [
   ["ruin", /\bruin\b/i],
   ["building", /\b(apartment|home|hotel|safehouse|lobby)\b/i],
 ];
-function placeKind(name) { return (PLACE_WORDS.find(([, re]) => re.test(name || "")) || ["street"])[0]; }
+export function placeKind(name) { return (PLACE_WORDS.find(([, re]) => re.test(name || "")) || ["street"])[0]; }
 export function placeArt(name, cls = "") {
   const kind = placeKind(name);
   const s = svg("0 0 48 48", `<g ${STROKE}>${PLACES[kind]}</g>`, `art place-art place-art--${kind} ${cls}`.trim());
