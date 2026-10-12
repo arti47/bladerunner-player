@@ -2799,6 +2799,104 @@ test("guided play writes its finds to the Case Board and its suspects to Leads",
   assert.equal(after.length, 0, "a disproved suspect does not stay on Leads at full rating");
 });
 
+// Owner: "the gameplay and journalling link is not intuitive and strong enough".
+// The card said "write it down" and offered nowhere to write; the notes were a tab
+// away. Now you write on the card, it is filed with the find, read back to you,
+// and the notebook in the bar is where you act on what you have written.
+test("the journal is part of play: write on the card, a notebook in hand that drives the case", async (t) => {
+  if (unavailable) return t.skip(unavailable);
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.goto(`${base}/index.html?jr#solo`, { waitUntil: "load" });
+  await page.evaluate(async () => {
+    localStorage.setItem("brp:settings", JSON.stringify({ solo: true }));
+    localStorage.removeItem("brp:board");
+    const { Store } = await import("/src/store.js");
+    const { normalizeCharacter } = await import("/src/derived.js");
+    const ch = normalizeCharacter({ name: "Ink", attributes: { STR: "C", AGI: "C", INT: "A", EMP: "B" },
+      skills: { observation: "A", connections: "A" } });
+    Store.setActiveId(Store.save(ch).id);
+    localStorage.setItem("brp:solo", JSON.stringify({
+      panel: "play", shiftNo: 1, timerDie: "D6", hypotheses: [], scratchpad: "",
+      caseOpen: { no: 1, title: "Inkwell", assignment: "Murder", opened: Date.now(), openStats: { pp: 0, humanity: 0, spent: { pp: 0, humanity: 0 } } },
+      play: { stage: "here", location: "A wet alley", found: 0, suspects: [], pending: null, caseNo: 1, shift: 1 },
+    }));
+  });
+  await page.goto(`${base}/index.html?jr2#solo`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { Math.random = () => 0.99; });
+  const solo = () => page.evaluate(() => JSON.parse(localStorage.getItem("brp:solo")));
+
+  // Two people, so a clue can be pointed at the second from the notebook.
+  for (const said of ["Owes the victim money", "Saw nothing, says too much"]) {
+    await page.getByRole("button", { name: /Put the word out/ }).first().click();
+    await page.waitForTimeout(250);
+    const box = page.getByLabel("How are they mixed up in this?");
+    assert.ok(await box.isVisible(), "a found person asks how they fit — on the card");
+    await box.fill(said);
+    await page.getByRole("button", { name: /Write it down and carry on/ }).first().click();
+    await page.waitForTimeout(250);
+  }
+  let st = await solo();
+  const [newer, older] = st.play.suspects;
+  assert.equal(newer.mine, "Saw nothing, says too much", "your line is kept with the person");
+  assert.match(st.scratchpad, /✎ Owes the victim money/, "…and written in the notes under them");
+  const board = await page.evaluate(() => JSON.parse(localStorage.getItem("brp:board")));
+  assert.ok(board.boxes.some((b) => /Owes the victim money/.test(b.detail)), "…and on their Case Board box");
+
+  // The notebook: a count on the bar, both suspects, and it drives play.
+  const nb = page.getByRole("button", { name: /^Notebook — 2 entries/ });
+  assert.ok(await nb.isVisible(), "the notebook sits on the play bar with a count");
+  await nb.click();
+  await page.waitForTimeout(250);
+  const sheet = await page.$eval(".modal", (n) => n.textContent);
+  assert.match(sheet, /Saw nothing, says too much/); assert.match(sheet, /Owes the victim money/);
+  await page.getByRole("button", { name: "Point new clues at them" }).first().click();
+  await page.waitForTimeout(250);
+  st = await solo();
+  assert.equal(st.play.suspects[0].id, older.id, "the notebook chose who new evidence points at");
+
+  // A clue, with a line — it points at the suspect the notebook chose.
+  await page.getByRole("button", { name: /Look the place over/ }).first().click();
+  await page.waitForTimeout(250);
+  await page.getByLabel("What does it mean?").fill("The ledger was torn out on purpose");
+  await page.getByRole("button", { name: /Write it down and carry on/ }).first().click();
+  await page.waitForTimeout(250);
+  st = await solo();
+  assert.equal(st.play.clues.length, 1);
+  assert.equal(st.play.clues[0].suspectId, older.id, "evidence follows the notebook's focus");
+  assert.equal(st.play.suspects[0].clues, 1, "and strengthens that hunch");
+  assert.match(st.scratchpad, /points at .*\n\s+✎ The ledger was torn out on purpose/);
+
+  // A line written in the notebook lands in the notes and is read back there.
+  await nb.click().catch(async () => page.getByRole("button", { name: /^Notebook — / }).click());
+  await page.waitForTimeout(250);
+  await page.getByLabel("Write a line in the case notes").fill("Check the docks tomorrow");
+  await page.getByRole("button", { name: "Add the line" }).click();
+  await page.waitForTimeout(250);
+  st = await solo();
+  assert.match(st.scratchpad, /✎ Check the docks tomorrow\s*$/);
+
+  // Accuse from the notebook; the accusation reads your own words back.
+  await page.getByRole("button", { name: /^Notebook — / }).click();
+  await page.waitForTimeout(250);
+  assert.match(await page.$eval(".modal", (n) => n.textContent), /Check the docks tomorrow/, "your lines show in the notebook");
+  await page.getByRole("button", { name: /^Accuse / }).first().click();
+  await page.waitForTimeout(250);
+  const card = await page.$eval(".play-card", (n) => n.textContent);
+  assert.match(card, /You wrote: “Owes the victim money”/, card.slice(0, 200));
+
+  // The draft survives a re-render, and nothing overflows at 360px.
+  await page.getByRole("button", { name: /Not yet/ }).click();
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: /Look the place over/ }).first().click();
+  await page.waitForTimeout(250);
+  await page.getByLabel("What does it mean?").fill("half a thought");
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(400);
+  assert.equal(await page.getByLabel("What does it mean?").inputValue(), "half a thought", "a draft survives a reload");
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no overflow at 360px");
+});
+
 // The prey's maneuver was a decision the app said you should not make. [2] [5]
 test("the chase rolls the NPC's maneuver in place, for one side only", async (t) => {
   if (unavailable) return t.skip(unavailable);

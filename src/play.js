@@ -15,7 +15,7 @@
 import * as S from "../data-solo.js";
 import * as D from "../data.js";
 import { el, rollDie, successesFor, outcomeSummary } from "./core.js";
-import { showToast, promptModal, sectionTitle, termify, hint, typeText } from "./ui.js";
+import { showToast, promptModal, sectionTitle, termify, hint, typeText, modal } from "./ui.js";
 import { lookupRange, rollColumn, skill as findSkill } from "./rules.js";
 import { Store, RollLog } from "./store.js";
 import { maxHealth, maxResolve } from "./derived.js";
@@ -90,7 +90,7 @@ export function renderPlayPanel(root, ctx) {
   // A picture, a title, a line or two, and big choices (radical redesign): the
   // screen is the scene. title: where you are. prose: what just happened.
   // choices: what you can do. art: the picture above the card.
-  function ask({ eyebrow, title, prose, choices, footer, art, tip, typewriter, dice }) {
+  function ask({ eyebrow, title, prose, choices, footer, art, tip, typewriter, dice, write }) {
     root.append(bar());
     if (art) root.append(el("figure", { class: "vn__art" }, ...[].concat(art)));
     const h = sectionTitle(title);
@@ -112,6 +112,10 @@ export function renderPlayPanel(root, ctx) {
     if (p.idea && p.idea.stage === (p.stage || "plan"))
       c.append(el("p", { class: "play__idea" }, el("span", { class: "tag tag--sm play__idea-tag" }, "House aid"), ` ${p.idea.label}: `, el("strong", {}, p.idea.text)));
     if (tip) c.append(tip);
+    // The journal lives ON the card: what you make of this moment, in your words,
+    // is kept with the find itself (notes, board, notebook). Optional; a draft
+    // survives a re-render.
+    if (write) c.append(writeBox(write));
     // Numbered choices: press 1–4 on a keyboard, or tap. Big tiles first, the
     // small "other options" after them on a quieter row.
     const row = el("div", { class: "play__choices" });
@@ -141,6 +145,9 @@ export function renderPlayPanel(root, ctx) {
       ch ? pill("vn__pill--resolve", "◈", meter(ch.state.resolve, maxResolve(ch), "resolve"), `${ch.state.resolve}/${maxResolve(ch)}`) : null,
       st.caseOpen ? pill("vn__pill--shift", shiftClock(st.shiftNo || 1, D.SHIFTS_PER_DAY, "sclock--xs"), `S${st.shiftNo || 1}`) : null,
       st.caseOpen ? pill("vn__pill--timer", "⏱", st.timerDie) : null,
+      st.caseOpen ? el("button", { class: "vn__kit vn__book", type: "button", "aria-label": `Notebook — ${notebookCount()} entries in this case`, onClick: openNotebook },
+        el("span", { class: "vn__kit-icon", "aria-hidden": "true" }, "✍"), el("span", { class: "vn__book-text" }, "Notebook"),
+        notebookCount() ? el("span", { class: "vn__count", "aria-hidden": "true" }, String(notebookCount())) : null) : null,
       el("button", { class: "vn__kit", type: "button", "aria-label": "Kit — every Solo tool and table", onClick: openKit },
         el("span", { class: "vn__kit-icon", "aria-hidden": "true" }, "📋"), "Kit"));
   }
@@ -151,6 +158,65 @@ export function renderPlayPanel(root, ctx) {
   const caseSeed = () => String(st.caseOpen?.no ?? "x");
   // Hints are keyed to the moment, so each shows once (ui.js hint()).
   const moment = (k) => `${st.caseOpen?.no ?? 0}:${st.shiftNo || 1}:${k}`;
+
+  // ---- the journal, inside play ---------------------------------------------
+  // Your words are part of the find: what you write on a card is kept with the
+  // clue or the person (notes, Case Board box, notebook) and read back to you.
+  function writeBox({ label, placeholder = "" }) {
+    const ta = el("textarea", { id: "play-write", class: "input play__write-input", rows: "2", placeholder });
+    ta.value = p.draft || "";
+    ta.addEventListener("input", () => { p.draft = ta.value; save(); });
+    return el("div", { class: "play__write" }, el("label", { class: "play__write-label", for: "play-write" }, "✎ ", label), ta);
+  }
+  // Takes the draft (and clears it) — the caller files it with what it belongs to.
+  function takeDraft() { const v = String(p.draft || "").trim(); p.draft = ""; return v; }
+  const mineLine = (v) => (v ? `\n  ✎ ${v}` : "");
+  const notebookCount = () => (p.suspects || []).length + (p.clues || []).length;
+
+  // The notebook: the case as you have built it, in one sheet, and the place you
+  // act from — point new evidence at a suspect, or accuse one.
+  function openNotebook() {
+    modal({
+      title: `Notebook — Case #${st.caseOpen?.no ?? ""}`, sheet: true,
+      render(body, close) {
+        const go = (fn) => () => { close(); fn(); };
+        const head = (t) => el("h3", { class: "nb__head" }, t);
+        body.append(el("p", { class: "nb__case" }, el("strong", {}, st.caseOpen?.title || "Untitled case"),
+          st.caseOpen?.assignment ? el("span", { class: "muted small nb__assign" }, st.caseOpen.assignment) : null));
+        const sus = p.suspects || [];
+        body.append(head(`Suspects (${sus.length})`));
+        if (!sus.length) body.append(el("p", { class: "muted small" }, "No one yet — talk to people or put the word out."));
+        sus.forEach((s, i) => body.append(el("div", { class: "nb__row nb__row--suspect" + (i === 0 ? " is-focus" : "") },
+          portraitPlaceholder(s.name, "nb__face"),
+          el("div", { class: "nb__body" },
+            el("div", { class: "nb__name" }, s.name, el("span", { class: "tag tag--sm" }, `${s.die} hunch`),
+              i === 0 ? el("span", { class: "tag tag--sm tag--ok" }, "New clues point here") : null),
+            el("div", { class: "muted small" }, `${s.clues} clue${s.clues === 1 ? "" : "s"} · ${s.detail}`),
+            s.mine ? el("p", { class: "nb__mine" }, s.mine) : null,
+            el("div", { class: "btn-row nb__acts" },
+              i > 0 ? btn("Point new clues at them", go(() => set({ suspects: [s, ...sus.filter((x) => x !== s)] })), "sm ghost") : null,
+              p.stage === "here" ? btn(`Accuse ${s.name}`, go(() => set({ stage: "accuse", suspects: [s, ...sus.filter((x) => x !== s)] })), "sm") : null)))));
+        const clues = p.clues || [];
+        body.append(head(`Evidence (${clues.length})`));
+        if (!clues.length) body.append(el("p", { class: "muted small" }, "Nothing yet — look a place over or examine something."));
+        for (const c of clues) body.append(el("div", { class: "nb__row nb__row--clue" },
+          el("span", { class: "nb__tag", "aria-hidden": "true" }, "Evidence"),
+          el("div", { class: "nb__body" },
+            el("div", { class: "nb__name" }, c.name),
+            el("div", { class: "muted small" }, c.detail, c.suspectName ? ` → points at ${c.suspectName}` : ""),
+            c.mine ? el("p", { class: "nb__mine" }, c.mine) : null)));
+        // Your own lines, newest last — the notes are the record.
+        const yours = String(st.scratchpad || "").split("\n").map((l) => l.trim()).filter((l) => l.startsWith("✎")).slice(-5);
+        body.append(head("In your words"));
+        for (const l of yours) body.append(el("p", { class: "nb__mine" }, l.replace(/^✎\s*/, "")));
+        const ta = el("textarea", { id: "nb-line", class: "input", rows: "2", placeholder: "A thought, a hunch, what you'll do next…" });
+        body.append(el("label", { class: "visually-hidden", for: "nb-line" }, "Write a line in the case notes"), ta,
+          el("div", { class: "btn-row modal__actions" },
+            btn("Open the full notes", go(() => { st.panel = "notes"; save(); rerender(); }), "ghost"),
+            btn("✎ Add the line", () => { const v = ta.value.trim(); if (!v) { ta.focus(); return; } close(); say(`✎ ${v}`); showToast("Written in your notes."); }, "primary")));
+      },
+    });
+  }
 
   // Always writes to the CURRENT step state — opening or closing a case replaces it.
   const set = (patch) => { Object.assign(st.play ||= { ...blank(), caseNo: st.caseOpen?.no ?? null }, patch); save(); rerender(); };
@@ -213,6 +279,7 @@ export function renderPlayPanel(root, ctx) {
       art: cityMap({ options: opts, visited: p.visited || [], here: p.lastPlace || null, seed: caseSeed(), onPick: goTo }),
       tip: hint("travel", "Each trip uses up a Shift — half a day — and rolls the Countdown: the longer you go without trouble, the likelier it finds you.", moment("plan")),
       prose: [p.lastNarration || null,
+        p.lastMine ? raw(`You wrote: “${p.lastMine}”`) : null,
         // After Shift 1 you are following something, so stop telling the player
         // there is no wrong answer. [playtest journal, finding 9]
         (p.suspects || []).length
@@ -239,8 +306,9 @@ export function renderPlayPanel(root, ctx) {
       prose: ev
         ? [`Trouble on the way: ${ev.name.toLowerCase()}.`, raw(ev.examples)]
         : ["You get there without trouble."],
+      write: { label: ev ? "What happens? (optional)" : "First look at the place (optional)", placeholder: ev ? "How it plays out…" : "Rain, neon, who's watching…" },
       // Going in is playing the event out — the Scene tab's Interruption clears too.
-      choices: [["Go in →", () => { if (ev) st.pendingEvent = null; set({ stage: "here", event: null }); }]],
+      choices: [["Go in →", () => { const v = takeDraft(); if (v) say(`✎ ${v}`); if (ev) st.pendingEvent = null; set({ stage: "here", event: null, lastMine: v || p.lastMine || null }); }]],
     });
   }
 
@@ -278,6 +346,9 @@ export function renderPlayPanel(root, ctx) {
       art, dice,
       tip: !r.ok && r.canPush ? hint("push", `Push = roll again. Every ${D.PUSH_BANE_FACE} you are left with hurts: Health for physical skills, Resolve for mental ones.`, moment("push")) : r.ok && r.finds === "person" ? hint("suspect", "Every clue you find from now on makes this hunch stronger. When you're sure, accuse them.", "first") : null,
       prose: [raw(r.prose), r.detail, r.stateNote ? `Your condition counted: ${r.stateNote}.` : null],
+      write: r.ok ? (r.finds === "person"
+        ? { label: "How are they mixed up in this?", placeholder: "Their angle, what they're hiding…" }
+        : { label: "What does it mean?", placeholder: "What it tells you, who it points at…" }) : null,
       choices: [
         r.ok ? ["✓ Write it down and carry on", keepResult] : null,
         // The Board's own economy was unreachable from the default panel: only
@@ -304,7 +375,7 @@ export function renderPlayPanel(root, ctx) {
       title: `Is it ${s.name}?`,
       art: withFace(bigScene("interrogation", s.name), s.name, "vn__face--lineup"),
       tip: hint("accuse", `The test rolls your hunch's dice. Any success closes the case (+${S.HYPOTHESIS_CHECK.success.pp} Promotion Points or more); none costs you ${Math.abs(S.HYPOTHESIS_CHECK.failure.pp)}.`, "first"),
-      prose: [raw(s.detail),
+      prose: [raw(s.detail), s.mine ? raw(`You wrote: “${s.mine}”`) : null,
         `${s.clues} piece${s.clues === 1 ? "" : "s"} of evidence: a ${s.die} hunch.`],
       choices: [
         ["⚖ Put it to the test", () => testAccusation(s), "primary"],
@@ -320,8 +391,9 @@ export function renderPlayPanel(root, ctx) {
       title: p.verdict?.title || "That's the case",
       art: bigScene("solved", p.verdict?.culprit || ""),
       prose: [p.verdict?.prose ? raw(p.verdict.prose) : null],
+      write: { label: "How did it go down? (optional)", placeholder: "The last scene, in a line or two…" },
       choices: [
-        ["✔ File it and take the next case", async () => { await closeCase({ culprit: p.verdict?.culprit, outcome: p.verdict?.outcome }); set(blank()); }, "primary"],
+        ["✔ File it and take the next case", async () => { const v = takeDraft(); if (v) say(`✎ ${v}`); await closeCase({ culprit: p.verdict?.culprit, outcome: v || p.verdict?.outcome }); set(blank()); }, "primary"],
         ["Keep playing this one", () => set({ stage: "here" }), "sm ghost"],
       ],
     });
@@ -516,8 +588,8 @@ export function renderPlayPanel(root, ctx) {
           ok: true, key: action.key, roll, finds: action.finds, finding,
           heading: action.finds === "clue" ? `You find something: ${finding.name}` : `You get a name: ${finding.name}`,
           prose: action.finds === "clue"
-            ? `${finding.detail} What it means is up to you — say it out loud, then write it down.`
-            : `${finding.detail} Decide how they're mixed up in this.`,
+            ? `${finding.detail} What it means is up to you.`
+            : `${finding.detail} You decide how they fit.`,
           detail: [(roll.notes || []).join(" · ") || null, pushed ? `You had to push for it.${cost}` : null].filter(Boolean).join(" ") || null,
         },
       });
@@ -543,24 +615,28 @@ export function renderPlayPanel(root, ctx) {
   function keepResult() {
     const r = p.pending;
     const suspects = [...(p.suspects || [])];
+    const clues = [...(p.clues || [])];
+    const mine = takeDraft();
+    const boxDetail = mine ? `${r.finding.detail} — ${mine}` : r.finding.detail;
     if (r.finds === "person") {
-      const box = boardAdd("suspect", r.finding.name, r.finding.detail);
-      const s = { id: `s${Date.now()}`, name: r.finding.name, detail: r.finding.detail, clues: 0,
+      const box = boardAdd("suspect", r.finding.name, boxDetail);
+      const s = { id: `s${Date.now()}`, name: r.finding.name, detail: r.finding.detail, mine: mine || null, clues: 0,
         die: S.HYPOTHESIS.newRating, boxId: box?.id || null };
       suspects.unshift(s);
       leadSync(s);
-      say(`• Someone involved: ${r.finding.name} — ${r.finding.detail}`);
+      say(`• Someone involved: ${r.finding.name} — ${r.finding.detail}${mineLine(mine)}`);
     } else {
-      say(`• Clue: ${r.finding.name} — ${r.finding.detail}`);
+      say(`• Clue: ${r.finding.name} — ${r.finding.detail}${suspects[0] ? ` (points at ${suspects[0].name})` : ""}${mineLine(mine)}`);
+      clues.push({ name: r.finding.name, detail: r.finding.detail, mine: mine || null, suspectId: suspects[0]?.id || null, suspectName: suspects[0]?.name || null });
       // Evidence points at whoever you are currently looking at, and a hypothesis
       // strengthens one step per piece of evidence. [Solo Mode: Hypotheses]
-      boardAdd("clue", r.finding.name, r.finding.detail, suspects[0]?.boxId || null);
+      boardAdd("clue", r.finding.name, boxDetail, suspects[0]?.boxId || null);
       if (suspects[0]) {
         suspects[0] = { ...suspects[0], clues: suspects[0].clues + 1, die: upgrade(suspects[0].die) };
         leadSync(suspects[0]);
       }
     }
-    set({ stage: "here", pending: null, suspects, found: (p.found || 0) + 1, lastNarration: r.heading });
+    set({ stage: "here", pending: null, suspects, clues, found: (p.found || 0) + 1, lastNarration: r.heading, lastMine: mine || p.lastMine || null });
   }
 
   function upgrade(die) {
@@ -619,4 +695,4 @@ function flyToBoard(kind, name) {
   setTimeout(() => chip.remove(), 1600);
 }
 
-const blank = () => ({ stage: "plan", briefing: null, earned: false, location: null, options: null, found: 0, suspects: [], pending: null, lastNarration: null, leadHint: null, event: null, danger: null, verdict: null });
+const blank = () => ({ stage: "plan", clues: [], draft: "", lastMine: null, briefing: null, earned: false, location: null, options: null, found: 0, suspects: [], pending: null, lastNarration: null, leadHint: null, event: null, danger: null, verdict: null });

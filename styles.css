@@ -2261,3 +2261,25 @@ body:has(.panel--play) .fab { display: none; }
   .modal:has(.dice) .roll-outcome__main { font-size: clamp(2rem, 10vw, 2.8rem); }
 }
 @media (max-width: 380px) { .vn__pill--timer, .vn__meter { display: none; } }
+
+/* ---- The journal inside play (brp-v86): write on the card, a notebook in hand ---- */
+.vn__book { margin-left: auto; position: relative; }
+.vn__book + .vn__kit { margin-left: 0; }
+.vn__count { font-family: var(--font-mono); font-size: var(--fs-2xs); min-width: 18px; height: 18px; display: inline-grid; place-items: center;
+  border-radius: var(--r-pill); background: var(--amber); color: var(--bg); padding: 0 4px; }
+@media (max-width: 419px) { .vn__book-text { display: none; } .vn__book { padding: 4px 10px; } }
+.play__write { display: grid; gap: var(--sp-1); margin: var(--sp-3) 0 var(--sp-2); }
+.play__write-label { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-sm); color: var(--cyan); display: inline-flex; align-items: center; gap: 6px; }
+.play__write-label .i { width: 16px; height: 16px; }
+.play__write-input { width: 100%; min-height: 64px; resize: vertical; font-family: var(--font-mono); font-size: 16px; line-height: 1.5;
+  background: repeating-linear-gradient(180deg, transparent 0 23px, color-mix(in srgb, var(--cyan) 14%, transparent) 23px 24px), var(--panel-2); }
+.nb__case { display: grid; gap: 2px; margin: 0 0 var(--sp-2); }
+.nb__head { font-family: var(--font-display); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: var(--sp-4) 0 var(--sp-2); }
+.nb__row { display: grid; grid-template-columns: 44px 1fr; gap: var(--sp-3); align-items: start; padding: var(--sp-2) 0; border-top: 1px solid var(--line); }
+.nb__row.is-focus { border-left: 3px solid var(--ok); padding-left: var(--sp-2); }
+.nb__face { width: 44px; height: 44px; border-radius: var(--r-sm); overflow: hidden; }
+.nb__body { min-width: 0; display: grid; gap: 2px; }
+.nb__name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 600; }
+.nb__tag { font-family: var(--font-mono); font-size: var(--fs-2xs); text-transform: uppercase; color: var(--amber); border: 1px dashed color-mix(in srgb, var(--amber) 55%, var(--line)); border-radius: var(--r-sm); padding: 2px 4px; text-align: center; align-self: start; }
+.nb__mine { margin: 2px 0 0; padding-left: var(--sp-2); border-left: 2px solid var(--cyan); font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }
+.nb__acts { margin-top: var(--sp-1); }
